@@ -2,9 +2,9 @@
 # 1. Core Project Metadata
 # ==============================================================================
 [project]
-site_name = "Python Project Template Docs"
-site_description = "Hardened Python Template optimized for Vertical Slice and Agentic Workflows"
-site_url = "https://foersben.github.io/python-project-template"
+site_name = "Industrial Anomaly Detection Docs"
+site_description = "Production intelligence pipelines and modeling for Anomaly Detection in Industrial Components"
+site_url = "https://foersben.github.io/industrial-component-anomaly-detection"
 docs_dir = "docs"
 site_dir = "site"
 language = "en"
@@ -70,6 +70,9 @@ src = "https://unpkg.com/mermaid@10/dist/mermaid.min.js"
 Home = "index.md"
 
 [[project.nav]]
+Roadmap = "project_roadmap.md"
+
+[[project.nav]]
 "Concepts & Architecture" = [
     { "Introduction" = "concepts/index.md" },
     { "Vertical Slice Architecture" = "concepts/vertical_slice_architecture.md" },
@@ -117,6 +120,7 @@ ci_cd = [".github/workflows/ci.yml"]
 [documentation]
 core = [
     "docs/index.md",
+    "docs/project_roadmap.md",
     "docs/api_reference.md",
     "docs/concepts/index.md",
     "docs/concepts/vertical_slice_architecture.md",

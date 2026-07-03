@@ -1,8 +1,8 @@
-# Modern Python Project Template
+# Industrial Component Anomaly Detection
 
-A high-performance, hardened Python repository template engineered explicitly for **Vertical Slice Architecture**, zero-bypass quality enforcement, and native **Multi-Agent AI Collaboration** (optimized for autonomous assistants like Roo Code or Antigravity).
+A high-performance, deep-learning-powered industrial computer vision system engineered explicitly for **Vertical Slice Architecture (VSA)**, zero-bypass quality enforcement, and native **Multi-Agent AI Collaboration** (optimized for autonomous assistants like Antigravity).
 
-This stack completely eliminates legacy toolchain friction (like slow dependency resolution or overlapping linters) by strictly prioritizing speed, deterministic environment isolation, and an uncompromising security model. It is designed for developers and AI architects who require a production-ready, typed, and instantly deployable foundation.
+This repository contains the production code, research notebooks, and operational pipelines designed to identify, isolate, and classify defects in industrial components. The architecture isolates complex CUDA-enabled graphics and deep learning dependencies using **Pixi** and separates detection features into decoupled vertical feature slices.
 
 ---
 
@@ -13,6 +13,7 @@ For a comprehensive, beginner-friendly deep dive into all the concepts and tools
 The generated documentation includes detailed guides on:
 * **Concepts & Architecture:** Deep dives into Vertical Slice Architecture, Pixi, OKF, Linting & Type Safety, and Data Validation.
 * **Guides:** How to properly use the Jupyter Notebooks workspace.
+* **Project Roadmap:** Strategic engineering milestones, deliverables log, and Phase 1-5 operational breakdowns.
 
 ---
 
@@ -23,6 +24,9 @@ The generated documentation includes detailed guides on:
 Unlike traditional horizontal layered architectures (Three-Tier, Onion, Hexagonal) that split code by technical concerns (controllers in one folder, services in another), this project organizes code into completely self-contained, vertical features.
 
 * Each slice within `app/pipelines/` contains all components required to fulfill a specific business capability.
+* **Slices Implemented:**
+  * `app/pipelines/anomaly_binary/`: Focuses exclusively on binary segregation (Normal vs. Anomalous).
+  * `app/pipelines/anomaly_classification/`: Multi-class vertical slice triggered upon anomaly detection to classify defect types.
 * **The AI Advantage:** Horizontal architectures force an AI agent to hop across multiple directories to implement a single feature, dramatically increasing token consumption, context window fragmentation, and the risk of context drift. Under VSA, an agent operates within a strictly bounded, discrete folder structure without leaking logic across distant parts of the application tree.
 
 ### 2. The Zero-Bypass Quality Gate
@@ -75,6 +79,8 @@ This ecosystem relies on modern, lightning-fast Rust-backed and asynchronous Pyt
 │   ├── core/               # Immutable core configs (Pydantic Settings) and exceptions
 │   ├── domain/             # Pure domain logic and models (zero external dependencies)
 │   └── pipelines/          # Isolated, self-contained feature slices
+│       ├── anomaly_binary/ # Binary anomaly detection (Normal vs Anomalous)
+│       └── anomaly_classification/ # Defect class sorting engine
 ├── docs/                   # Markdown architecture guides, references, and system logs
 ├── scripts/                # Local automated continuous integration tools
 │   └── validate_okf.py     # Script verifying documentation complies with Google OKF
@@ -115,8 +121,8 @@ This repository is designed to host a "Role-Playing State Machine" for single-th
 
 * **`01-orchestrator.md`:** The Lead. Analyzes user requests, generates technical OKF specs, and delegates state transitions. *Forbidden from writing functional code.*
 * **`02-architect.md`:** The System Designer. Defines pure domain entities and core Pydantic configurations. *Forbidden from writing tests.*
-* **`03-engineer.md`:** The Implementer. Scaffolds logic strictly inside `app/pipelines/` to turn red tests green. Enforces Google-style docstrings. *Forbidden from touching core configs.*
-* **`04-qa-automator.md`:** The Gatekeeper. Scaffolds failing TDD tests based on specs and verifies edge cases. *Forbidden from modifying `app/` logic.*
+* **`03-engineer.md`:** The Implementer. Scaffolds OpenCV and PyTorch logic strictly inside `app/pipelines/anomaly_binary/` and `app/pipelines/anomaly_classification/` to turn red tests green. Enforces Google-style docstrings. *Forbidden from touching core configs.*
+* **`04-qa-automator.md`:** The Gatekeeper. Scaffolds failing TDD tests based on specs and verifies edge cases in `tests/`. *Forbidden from modifying `app/` logic.*
 
 ### OKF Graph Compliance
 
