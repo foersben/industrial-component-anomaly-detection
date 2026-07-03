@@ -1,0 +1,10 @@
+# Repository Architecture and Rules
+
+## Core Tooling Constraints
+1. **Dependency Execution:** You must ALWAYS execute python packages, commands, and formatting scripts using `uv run` or via `just` commands. Never fall back to bare `pip`, `poetry`, or `python` environments.
+2. **Container Environments:** You must utilize `podman` or `podman-compose` if virtualization options are needed. Never reference or assume a global docker daemon exists.
+
+## Development Lifecycle
+1. **Vertical Slices:** When designing a feature or pipeline inside `app/pipelines/`, all code (logic, data transformation, router registration) must remain isolated in that folder. Do not tie feature-specific logic back into `app/core/`.
+2. **Pre-Commit Quality Gate:** Before notifying the user that a task is complete, you must run `just lint` and `just test` locally. If any type definitions fail validation checks or if code coverage metrics decrease, you must repair those code blocks immediately.
+3. **Docstring Enforcements:** Every class, public endpoint, and workflow component requires Google-style docstrings. This is necessary because the Zensical documentation layout extracts API definitions directly from your source docstring context via `mkdocstrings`.

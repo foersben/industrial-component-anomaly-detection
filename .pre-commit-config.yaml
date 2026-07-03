@@ -1,0 +1,68 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Keep our OKF frontmatter template syntax clean
+        exclude: ^(\.agents/|docs/)
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2
+    hooks:
+    - id: gitleaks
+
+  # NEW: Catch typos in code and documentation
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+        args: ["--skip", "*.lock"]
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.0
+    hooks:
+      - id: nbstripout
+        files: ^notebooks/
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff Check
+        entry: pixi run -e dev ruff check --fix
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: Ruff Format
+        entry: pixi run -e dev ruff format
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: Mypy
+        # Explicitly declare targets, block file string passing, and track changes
+        entry: pixi run -e dev mypy app scripts
+        language: system
+        files: ^(app/|scripts/|pyproject\.toml)
+        pass_filenames: false
+        types: [python]
+
+      - id: validate-okf
+        name: Enforce Google Open Knowledge Format
+        entry: pixi run -e dev python scripts/validate_okf.py
+        language: system
+        files: ^(docs/|\.agents/).*\.md$
+        pass_filenames: false
+
+      - id: enforce-author-identity
+        name: Enforce Author Identity
+        entry: bash -c '[ "$(git config --bool commit.gpgsign)" = "true" ]'
+        language: system
+        pass_filenames: false

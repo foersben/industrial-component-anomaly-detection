@@ -1,0 +1,129 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "python-project-template"
+version = "0.1.0"
+description = "Hardened Python Template optimized for Vertical Slice and Agentic Workflows"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+    "pre-commit>=4.0.0",
+    "zensical>=0.0.45",
+    "mkdocstrings[python]>=0.27.0",
+    "mkdocs-htmlproofer-plugin>=1.5.0",
+    "pyyaml>=6.0.2",
+    "types-PyYAML>=6.0.12.20240806", # Explicitly add type stubs for mypy
+    "nbstripout>=0.8.0",
+    "hypothesis>=6.0.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["notebooks/scratch"]
+cache-dir = ".cache/ruff_cache"
+
+[tool.ruff.lint]
+# Add "D" to the select array to activate docstring linting
+select = ["E", "W", "F", "I", "B", "UP", "ARG", "TCH", "FA", "N", "RUF", "D"]
+ignore = [
+    "D100", # Missing docstring in public module (optional, can be noisy)
+    "D104", # Missing docstring in public package
+]
+
+# Explicitly tell Ruff to validate against Google Style rules
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# [tool.ruff.lint.per-file-ignores]
+# "tests/**/*.py" = ["D"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+check_untyped_defs = true
+ignore_missing_imports = true
+explicit_package_bases = true
+exclude = ["notebooks/"]
+cache_dir = ".cache/mypy_cache"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=app --cov-report=term-missing --cov-report=html"
+cache_dir = ".cache/pytest_cache"
+hypothesis_database_file = ".cache/hypothesis"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+
+
+
+
+
+
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-options]
+index-strategy = "unsafe-best-match"
+extra-index-urls = [
+    "https://download.pytorch.org/whl/cu121",
+    "https://download.pytorch.org/whl/cpu"
+]
+
+[tool.pixi.pypi-dependencies]
+python-project-template = { path = ".", editable = true }
+
+[tool.pixi.dependencies]
+python = "3.12.*"
+pandas = "*"
+scikit-learn = "*"
+jupyter = "*"
+
+[tool.pixi.feature.gpu.pypi-dependencies]
+torch = { version = "==2.5.1" }
+torchvision = { version = "==0.20.1" }
+torchaudio = { version = "==2.5.1" }
+
+[tool.pixi.feature.cpu.pypi-dependencies]
+torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cpu" }
+torchvision = { version = "==0.20.1", index = "https://download.pytorch.org/whl/cpu" }
+torchaudio = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cpu" }
+
+[tool.pixi.environments]
+default = { features = ["gpu"], solve-group = "default" }
+dev = { features = ["dev", "gpu"], solve-group = "default" }
+ci = { features = ["cpu"], solve-group = "ci" }
+ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
+
+[tool.pixi.tasks]

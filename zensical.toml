@@ -1,0 +1,128 @@
+# ==============================================================================
+# 1. Core Project Metadata
+# ==============================================================================
+[project]
+site_name = "Python Project Template Docs"
+site_description = "Hardened Python Template optimized for Vertical Slice and Agentic Workflows"
+site_url = "https://foersben.github.io/python-project-template"
+docs_dir = "docs"
+site_dir = "site"
+language = "en"
+
+# ==============================================================================
+# 2. UI Theme & Top Menu Layout
+# ==============================================================================
+[project.theme]
+variant = "modern"
+
+# Navigation features (Placed inside theme for top-menu tabs to function correctly)
+features = [
+    "navigation.tabs",
+    "navigation.sections",
+    "navigation.top",
+    "toc.integrate",
+    "search.suggest",
+    "search.highlight",
+    "content.code.copy",
+]
+
+palette = [
+    { media = "(prefers-color-scheme: dark)", scheme = "slate", primary = "black", accent = "deep-orange" },
+    { media = "(prefers-color-scheme: light)", scheme = "default", primary = "black", accent = "deep-orange" },
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+# ==============================================================================
+# 3. Markdown Extensions
+# ==============================================================================
+[project.markdown_extensions]
+admonition = {}
+tables = {}
+"pymdownx.details" = {}
+"pymdownx.inlinehilite" = {}
+"pymdownx.snippets" = {}
+toc = { permalink = true }
+"pymdownx.highlight" = { anchor_linenums = true }
+"pymdownx.tasklist" = { custom_checkbox = true }        # Enables Task Lists (- [ ])
+"pymdownx.arithmatex" = { generic = true }             # Enables LaTeX Support
+"pymdownx.superfences" = { custom_fences = [            # Enables MermaidJS via superfences
+    { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+] }
+
+# ==============================================================================
+# 4. Third-Party Rendering Assets (JS)
+# ==============================================================================
+[[project.extra_javascript]]
+src = "https://polyfill.io/v3/polyfill.min.js?features=es6"
+
+[[project.extra_javascript]]
+src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+
+[[project.extra_javascript]]
+src = "https://unpkg.com/mermaid@10/dist/mermaid.min.js"
+
+# ==============================================================================
+# 5. Document Tree Navigation Topology
+# ==============================================================================
+[[project.nav]]
+Home = "index.md"
+
+[[project.nav]]
+"Concepts & Architecture" = [
+    { "Introduction" = "concepts/index.md" },
+    { "Vertical Slice Architecture" = "concepts/vertical_slice_architecture.md" },
+    { "Pixi Package Management" = "concepts/pixi.md" },
+    { "Open Knowledge Format (OKF)" = "concepts/open_knowledge_format.md" },
+    { "Linting & Type Safety" = "concepts/linting_and_types.md" },
+    { "Data Validation (Pydantic)" = "concepts/data_validation.md" },
+]
+
+[[project.nav]]
+"Guides" = [
+    { "Jupyter Notebooks" = "guides/notebooks.md" },
+]
+
+[[project.nav]]
+"API Metrics" = [
+    { "Reference Map" = "api_reference.md" },
+]
+
+
+# ==============================================================================
+# 6. Plugins (MkDocstrings & HTML Proofer)
+# ==============================================================================
+[project.plugins.htmlproofer]
+
+[project.plugins.mkdocstrings]
+default_handler = "python"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["."]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+show_root_heading = true
+show_source = true
+heading_level = 2
+show_signature_annotations = true
+
+# ==============================================================================
+# 7. Custom Infrastructure Mapping & Tracking (Zensical / OKF Layout)
+# ==============================================================================
+[tracking]
+config = ["pyproject.toml", "zensical.toml", ".pre-commit-config.yaml"]
+ci_cd = [".github/workflows/ci.yml"]
+
+[documentation]
+core = [
+    "docs/index.md",
+    "docs/api_reference.md",
+    "docs/concepts/index.md",
+    "docs/concepts/vertical_slice_architecture.md",
+    "docs/concepts/pixi.md",
+    "docs/concepts/open_knowledge_format.md",
+    "docs/concepts/linting_and_types.md",
+    "docs/concepts/data_validation.md",
+    "docs/guides/notebooks.md"
+]
