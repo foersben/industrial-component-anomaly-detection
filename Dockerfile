@@ -8,9 +8,9 @@ ENV PATH="/root/.pixi/bin:${PATH}"
 WORKDIR /app
 COPY pyproject.toml pixi.lock* README.md ./
 
-RUN pixi install -e default
+RUN pixi install -e ci
 
 COPY . .
 
 # Assume fastapi usage
-CMD ["pixi", "run", "-e", "default", "fastapi", "run", "app/main.py"]
+CMD ["pixi", "run", "-e", "ci", "fastapi", "run", "app/main.py"]
