@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.pixi/envs/dev/bin/python",
+  "python.venvFolders": [
+    ".pixi/envs"
+  ]
+}
