@@ -6,7 +6,7 @@ RUN curl -fsSL https://pixi.sh/install.sh > install.sh && /bin/bash install.sh &
 ENV PATH="/root/.pixi/bin:${PATH}"
 
 WORKDIR /app
-COPY pyproject.toml pixi.lock* ./
+COPY pyproject.toml pixi.lock* README.md ./
 
 RUN pixi install -e default
 
