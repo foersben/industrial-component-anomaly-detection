@@ -47,13 +47,13 @@ To allow team members and CI/CD pipelines to download the dataset on demand with
 2. Authenticate the CLI in your terminal:
 
    ```bash
-   pixi run -e dev huggingface-cli login
+   pixi run -e dev hf auth login
    ```
 
 3. Upload the extracted folder directly to your dataset repository:
 
    ```bash
-   pixi run -e dev huggingface-cli upload <your_hf_username>/mvtec-itodd /path/to/extracted/mvtec_itodd_raw/ . --repo-type=dataset
+   pixi run -e dev hf upload <your_hf_username>/mvtec-itodd /path/to/extracted/mvtec_itodd_raw/ . --repo-type dataset
    ```
 
 ---
