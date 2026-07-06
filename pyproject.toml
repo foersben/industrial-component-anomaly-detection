@@ -109,6 +109,9 @@ python = "3.12.*"
 pandas = "*"
 scikit-learn = "*"
 jupyter = "*"
+opencv = ">=5.0.0,<6"
+matplotlib = ">=3.11.0,<4"
+huggingface_hub = ">=1.22.0,<2"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 torch = { version = "==2.5.1" }

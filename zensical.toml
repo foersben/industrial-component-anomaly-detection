@@ -85,6 +85,7 @@ Roadmap = "project_roadmap.md"
 [[project.nav]]
 "Guides" = [
     { "Jupyter Notebooks" = "guides/notebooks.md" },
+    { "Dataset Setup" = "guides/dataset_setup.md" },
 ]
 
 [[project.nav]]
@@ -128,5 +129,6 @@ core = [
     "docs/concepts/open_knowledge_format.md",
     "docs/concepts/linting_and_types.md",
     "docs/concepts/data_validation.md",
-    "docs/guides/notebooks.md"
+    "docs/guides/notebooks.md",
+    "docs/guides/dataset_setup.md"
 ]

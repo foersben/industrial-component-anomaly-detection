@@ -173,7 +173,25 @@ just setup
 
 ```
 
-### 4. Initialize Your Security Baseline
+### 4. Download Dataset (MVTec ITODD)
+
+To retrieve the dataset, we host the ~7.5 GB Base Package and 3D range/image data on Hugging Face (avoiding heavy Git LFS commits). To fetch it to your local workspace, run:
+
+```bash
+just download-data
+```
+
+For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md).
+
+### 5. Extract Dataset
+
+After downloading the archives, extract them natively to your workspace:
+
+```bash
+just extract-data
+```
+
+### 6. Initialize Your Security Baseline
 
 To activate the secret scanner tripwire, create your local cryptographic tracking baseline and register it with git:
 
@@ -183,7 +201,7 @@ git add .secrets.baseline
 
 ```
 
-### 5. Link Visual Studio Code Interpreter
+### 7. Link Visual Studio Code Interpreter
 
 1. Open the VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
 2. Type **Python: Select Interpreter**.
@@ -198,8 +216,13 @@ Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`,
 | Command | Action Performed |
 | --- | --- |
 | `just default` | Lists every automated command recipe currently available. |
-| `just setup` | Installs isolated virtual environments and assigns background Git hooks. |
+| `just setup` | Installs isolated virtual environments, configures pre-commit hooks, creates the `.venv` symlink, and installs extensions. |
 | `just install` | Alias mapping directly to the `setup` macro. |
+| `just link-venv` | Recreates the local `.venv` symlink pointing to the active `.pixi/envs/dev` directory. |
+| `just download-data` | Downloads the raw MVTec ITODD dataset from Hugging Face Hub. |
+| `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally. |
+| `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
+| `just upload-data` | Uploads a local directory back to the Hugging Face Hub dataset repository. |
 | `just lint` | Sequentially auto-fixes lint errors, enforces layout formatting, evaluates strict types via Mypy, and runs the OKF compliance Python script. |
 | `just test` | Runs the asynchronous test suite via Pytest with code coverage matrix evaluation. |
 | `just format` | Safely forces code blocks to match global stylistic spacing layout parameters. |
@@ -262,3 +285,16 @@ Triggers **only** after Job 1 passes perfectly, and only upon direct pushes to t
 * Locks dependencies using the `ci-dev` environment setup via `pixi`.
 * Compiles your markdown guides and codebase docstrings via `zensical build`.
 * Safely packages the resulting `./site` directory and deploys it natively to **GitHub Pages**, providing a centralized, universally accessible OKF-compliant documentation site for your system.
+
+---
+
+## 📄 License & Attribution
+
+* **Codebase:** Distributed under the [MIT License](./LICENSE) (or your chosen code license).
+* **Dataset (MVTec ITODD):** Distributed strictly under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License ([CC BY-NC-SA 4.0](./LICENSE-DATA.md)). This project is compliant with non-commercial usage terms.
+
+### Academic Citation
+
+If you use this dataset or codebase in scientific or academic work, please cite the original authors:
+
+> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.
