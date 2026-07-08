@@ -3,9 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "python-project-template"
+name = "industrial-component-anomaly-detection"
+authors = [
+    { name = "Benjamin Förster", email = "mail@benjamin-foerster.de" },
+    { name = "Ali Abul Hawa", email = "ali_abulhawa@outlook.com" },
+    { name = "Mahboubeh Nadaf", email = "Mahboubeh.nadaf@gmail.com" },
+    { name = "Karim Khalifa", email = "karim.khalifa.de@gmail.com" },
+]
 version = "0.1.0"
-description = "Hardened Python Template optimized for Vertical Slice and Agentic Workflows"
+description = "Anomaly Detection in Industrial Components"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -28,7 +34,7 @@ dev = [
     "mkdocstrings[python]>=0.27.0",
     "mkdocs-htmlproofer-plugin>=1.5.0",
     "pyyaml>=6.0.2",
-    "types-PyYAML>=6.0.12.20240806", # Explicitly add type stubs for mypy
+    "types-PyYAML>=6.0.12.20240806",    # Explicitly add type stubs for mypy
     "nbstripout>=0.8.0",
     "hypothesis>=6.0.0",
 ]
@@ -36,7 +42,8 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-extend-exclude = ["notebooks/scratch"]
+force-exclude = true
+extend-exclude = [".pixi", "notebooks"]
 cache-dir = ".cache/ruff_cache"
 
 [tool.ruff.lint]
@@ -73,6 +80,9 @@ explicit_package_bases = true
 exclude = ["notebooks/"]
 cache_dir = ".cache/mypy_cache"
 
+[tool.pyright]
+typeCheckingMode = "basic"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
@@ -84,12 +94,6 @@ hypothesis_database_file = ".cache/hypothesis"
 packages = ["app"]
 
 
-
-
-
-
-
-
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
@@ -98,20 +102,22 @@ platforms = ["linux-64"]
 index-strategy = "unsafe-best-match"
 extra-index-urls = [
     "https://download.pytorch.org/whl/cu121",
-    "https://download.pytorch.org/whl/cpu"
+    "https://download.pytorch.org/whl/cpu",
 ]
 
 [tool.pixi.pypi-dependencies]
-python-project-template = { path = ".", editable = true }
+industrial-component-anomaly-detection = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = "3.12.*"
 pandas = "*"
 scikit-learn = "*"
 jupyter = "*"
+jupyterlab = "*"
 opencv = ">=5.0.0,<6"
 matplotlib = ">=3.11.0,<4"
 huggingface_hub = ">=1.22.0,<2"
+just = "*"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 torch = { version = "==2.5.1" }

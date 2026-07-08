@@ -1,6 +1,17 @@
 {
+  "python-envs.defaultEnvManager": "renan-r-santos.pixi-code:pixi",
+  "python-envs.defaultPackageManager": "renan-r-santos.pixi-code:pixi",
   "python.defaultInterpreterPath": "${workspaceFolder}/.pixi/envs/dev/bin/python",
   "python.venvFolders": [
     ".pixi/envs"
-  ]
+  ],
+  "jupyter.kernels.trusted": [
+    "${workspaceFolder}/.pixi/envs/dev/share/jupyter/kernels/python3/kernel.json"
+  ],
+  "ruff.nativeServer": "on",
+  "ruff.path": [
+    "${workspaceFolder}/.pixi/envs/dev/bin/ruff"
+  ],
+  "python.analysis.diagnosticMode": "workspace",
+  "errorLens.enabled": true
 }

@@ -2,16 +2,11 @@
 default:
     @just --list
 
-# Bootstrap the environment (install Pixi dependencies, pre-commit hooks, .venv symlink, and VS Code extensions)
+# Bootstrap the environment (install Pixi dependencies, pre-commit hooks, and VS Code extensions)
 setup:
     pixi install -e dev
     pixi run -e dev pre-commit install
-    rm -rf .venv && ln -s .pixi/envs/dev .venv
     @just install-extensions
-
-# Delete the local .venv folder and recreate it as a symbolic link pointing to .pixi/envs/dev
-link-venv:
-    rm -rf .venv && ln -s .pixi/envs/dev .venv
 
 # Alias target to run bootstrap setup
 install:

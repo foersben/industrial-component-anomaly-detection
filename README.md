@@ -150,8 +150,9 @@ tags: [agentic, development, workflow]
 Ensure the following tools are globally accessible on your host machine:
 
 * `pixi`
-* `just`
 * `git`
+
+*(Optional but recommended)* `just` (a local copy is also automatically installed into the local environment via Pixi).
 
 ### 2. IDE Setup (VS Code / Cursor)
 
@@ -203,9 +204,11 @@ git add .secrets.baseline
 
 ### 7. Link Visual Studio Code Interpreter
 
-1. Open the VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+If using VS Code, this is configured automatically via `.vscode/settings.json`. If you need to select it manually or use another IDE:
+
+1. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
 2. Type **Python: Select Interpreter**.
-3. Choose the path pointing directly to the locally generated `.venv/bin/python` folder.
+3. Choose the path pointing directly to the generated environment at `.pixi/envs/dev/bin/python`.
 
 ---
 
@@ -216,9 +219,8 @@ Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`,
 | Command | Action Performed |
 | --- | --- |
 | `just default` | Lists every automated command recipe currently available. |
-| `just setup` | Installs isolated virtual environments, configures pre-commit hooks, creates the `.venv` symlink, and installs extensions. |
+| `just setup` | Installs isolated virtual environments, configures pre-commit hooks, and installs extensions. |
 | `just install` | Alias mapping directly to the `setup` macro. |
-| `just link-venv` | Recreates the local `.venv` symlink pointing to the active `.pixi/envs/dev` directory. |
 | `just download-data` | Downloads the raw MVTec ITODD dataset from Hugging Face Hub. |
 | `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally. |
 | `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
@@ -238,9 +240,12 @@ A robust suite of checks runs automatically before any commit can seal.
 1. **Syntax & Whitespace:** Fixes trailing spaces and ensures single-newline EOF structures.
 2. **Security Tripwires:** Runs `detect-secrets` against the `.secrets.baseline` file.
 3. **Lexical Validation:** Executes `codespell` to catch typos in code, strings, and documentation via `tomli` parsing.
-4. **Code Quality:** Triggers `ruff-check`, `ruff-format`, and `mypy` locally targeting `app/` and `scripts/` with `pass_filenames: false` to ensure global context evaluation.
-5. **Knowledge Graph Integrity:** Triggers `validate_okf.py` to ensure all AI context boundaries remain parsable.
-6. **Author Identity:** A bash gate confirming `commit.gpgsign = true` is active locally, ensuring all commits are cryptographically verified to a human author.
+4. **Notebook Output Stripping (`nbstripout`):** Automatically runs `nbstripout` to clear execution states and keep git diffs clean.
+   > [!NOTE]
+   > By default, `notebooks/shared/` is excluded from `nbstripout` so teammates can share executed output states (plots, logs, and exploration results). To enforce output stripping on all notebooks, remove the `exclude: ^notebooks/shared/` rule from `.pre-commit-config.yaml`.
+5. **Code Quality:** Triggers `ruff-check`, `ruff-format`, and `mypy` locally targeting `app/` and `scripts/` with `pass_filenames: false` to ensure global context evaluation.
+6. **Knowledge Graph Integrity:** Triggers `validate_okf.py` to ensure all AI context boundaries remain parsable.
+7. **Author Identity:** A bash gate confirming `commit.gpgsign = true` is active locally, ensuring all commits are cryptographically verified to a human author.
 
 ---
 
