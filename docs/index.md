@@ -28,3 +28,11 @@ This repository currently hosts the production development track for **Anomaly D
 * *Deliverable 1 (Due 24/07): Data Exploration, Visualization & Pre-processing Report (Pending Execution)*
 * *Deliverable 2 (Due 04/09): Machine Learning & Deep Modeling Optimization Report (Pending Execution)*
 * *Final Synthesis (Due 15/09): Integrated Final Performance & Vision Blueprint (Pending Execution)*
+
+## 📊 Dataset & Citation
+
+This project utilizes the **MVTec ITODD (Industrial Three-Dimensional Object Detection)** dataset for anomaly detection research and development.
+
+If you use this project or dataset in scientific work, please cite the original paper:
+
+> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.

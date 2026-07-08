@@ -3,6 +3,9 @@ name: CI & Deployment Pipeline
 on:
   workflow_dispatch:
 
+env:
+  ACT: false
+
 jobs:
   quality-gate:
     name: Code & Context Quality
@@ -23,6 +26,7 @@ jobs:
         run: pixi run -e ci-dev pytest
 
       - name: Run Trivy vulnerability scanner in fs mode
+        if: ${{ !env.ACT }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'

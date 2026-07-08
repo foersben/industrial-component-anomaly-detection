@@ -24,12 +24,17 @@ repos:
         additional_dependencies:
           - tomli
         args: ["--skip", "*.lock"]
+        exclude: \.ipynb$
 
+  # Strip execution outputs from notebooks to maintain clean git histories.
+  # NOTE: We exclude 'notebooks/shared/' here so teammates can share executed
+  # outputs (plots/results). To enforce stripping all outputs, remove the exclude line.
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.0
     hooks:
       - id: nbstripout
         files: ^notebooks/
+        exclude: ^notebooks/shared/
 
   - repo: local
     hooks:
