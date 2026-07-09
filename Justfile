@@ -53,16 +53,25 @@ serve:
 # Start a local JupyterLab server inside the dev environment
 lab:
     pixi run -e dev jupyter lab --ip=127.0.0.1 --port=8888
-# Download the raw MVTec ITODD assets from the remote Hugging Face Hub repository
+# Download the raw MVTec AD assets from the remote Hugging Face Hub repository
 download-data:
-    pixi run -e dev python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='foersben/mvtec-itodd', repo_type='dataset', local_dir='data/raw/mvtec_itodd')"
+    pixi run -e dev python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='foersben/mvtec-ad', repo_type='dataset', local_dir='data/raw/mvtec_ad')"
 
-# Extract the downloaded MVTec ITODD tar.xz packages locally
+# Pull the MVTec AD dataset and benchmark files into the local data directory
+fetch-data: download-data
+    @echo "Downloading pre-computed AUPIMO curves..."
+    mkdir -p data/external
+    git clone --depth 1 https://github.com/jpcbertoldo/aupimo.git data/external/aupimo_repo
+    mkdir -p data/external/aupimo_benchmarks
+    mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
+    rm -rf data/external/aupimo_repo
+
+
+
+# Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
-    @echo "Extracting base package..."
-    tar -xf data/raw/mvtec_itodd/base_package.tar.xz -C data/raw/mvtec_itodd/
-    @echo "Extracting 3D short baseline data..."
-    tar -xf data/raw/mvtec_itodd/3d_short_baseline.tar.xz -C data/raw/mvtec_itodd/
+    @echo "Extracting MVTec AD package..."
+    tar -xf data/raw/mvtec_ad/mvtec_anomaly_detection.tar.xz -C data/raw/mvtec_ad/
 
 # Log in to Hugging Face Hub (queries KeePassXC Secret Service via D-Bus, falls back to interactive prompt)
 hf-login:
@@ -77,8 +86,8 @@ hf-login:
     fi
 
 # Upload a local directory to the Hugging Face Hub dataset repository (defaults to raw data dir)
-upload-data local_dir='data/raw/mvtec_itodd':
-    pixi run -e dev hf upload foersben/mvtec-itodd {{local_dir}} . --repo-type dataset
+upload-data local_dir='data/raw/mvtec_ad':
+    pixi run -e dev hf upload foersben/mvtec-ad {{local_dir}} . --repo-type dataset
 
 # Clean Jupyter notebook checkpoint caches under the notebooks directory
 clean-notebooks:

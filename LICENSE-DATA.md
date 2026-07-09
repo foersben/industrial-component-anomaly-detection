@@ -1,10 +1,10 @@
 # Dataset Licensing & Attribution
 
-The data utilized in this project includes the **MVTec ITODD (Industrial Three-Dimensional Object Detection)** dataset provided by MVTec Software GmbH.
+The data utilized in this project includes the **MVTec AD (Anomaly Detection)** dataset provided by MVTec Software GmbH.
 
 ## License Summary
 
-This dataset is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.
+This dataset is released under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.
 
 By consuming or interacting with the data management layers of this repository, you agree to comply with its terms:
 
@@ -16,6 +16,7 @@ By consuming or interacting with the data management layers of this repository, 
 
 If you use this dataset in scientific or academic work, please cite the original authors:
 
-> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.
+> Paul Bergmann, Kilian Batzner, Michael Fauser, David Sattlegger, Carsten Steger: *The MVTec Anomaly Detection Dataset: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. International Journal of Computer Vision 129(4):1038-1059, 2021.
+> Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD — A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.
 
 For the full legal text of the license, visit the [CC BY-NC-SA 4.0 Legal Code](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).

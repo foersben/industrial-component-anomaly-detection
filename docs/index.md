@@ -5,34 +5,74 @@ description: Main entry point for project technical, operational, and core data 
 tags: [documentation, index, overview, industrial-anomaly-detection]
 ---
 
-# App Documentation
+# Industrial Anomaly Detection Documentation Hub
 
-Welcome to the central engineering and data science documentation hub. This workspace houses both the immutable core framework layouts and the operational execution tracks for our specialized industrial intelligence pipelines.
+Welcome to the central engineering, architecture, and data science documentation hub. This workspace houses both the technical framework layouts and the theoretical data science tracks for our specialized industrial intelligence pipelines.
 
-## 📈 Core Project Track: Industrial Component Anomaly Detection
+---
 
-This repository currently hosts the production development track for **Anomaly Detection in Industrial Components** (Difficulty Level: 10/10; Cursus: Data Science). The project leverages deep learning, advanced computer vision, and structured optimization models to isolate and identify defects in industrial parts.
+## 📈 Project Track Overview
 
-### Operational Navigation Nodes
+This repository hosts the production development track for **Anomaly Detection in Industrial Components** (Difficulty Level: 10/10; Cursus: Data Science). The project leverages deep learning, advanced computer vision, and structured validation methods to isolate and segment defects in manufacturing components.
 
-* **[Project Roadmap & Detailed Plan](project_roadmap.md):** Track development timelines, milestones, weekly sync requirements, and structural software engineering integrations.
-* **Concepts & Architecture:**
-  * [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) — Bounded context management for pipelines.
-  * [Open Knowledge Format (OKF v0.1)](concepts/open_knowledge_format.md) — Node-based markdown specification guidelines.
-  * [Pixi Workspace Management](concepts/pixi.md) — Multi-platform binary and dependency synchronization.
-* **Operational Guides:**
-  * [Jupyter Notebook Workspace Protocol](guides/notebooks.md) — Guidelines for processing datasets using OpenCV and PyTorch safely within local memory.
+---
+
+## 📂 Documentation Structure & Modules
+
+The documentation is organized into clear operational tracks:
+
+```mermaid
+graph TD
+    Hub["Docs Hub"] --> Tech["Technical & Architecture"]
+    Hub --> DS["Data Science & Metrics"]
+    Hub --> Guides["Operational Guides"]
+
+    Tech --> VSA["Vertical Slice Architecture"]
+    Tech --> Pixi["Pixi Package Management"]
+    Tech --> OKF["Open Knowledge Format (OKF)"]
+    Tech --> Lint["Linting & Type Safety"]
+    Tech --> Validation["Data Validation (Pydantic)"]
+
+    DS --> MVTec["MVTec AD Dataset"]
+    DS --> Metrics["Anomaly Detection Metrics"]
+
+    Guides --> Setup["Dataset Setup Guide"]
+    Guides --> Notebooks["Jupyter Notebook Protocol"]
+```
+
+### 1. [Technical & Architecture Concepts](concepts/index.md)
+Detailed conceptual guides on software engineering foundations, environment containment, and quality gates:
+*   [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) — Structuring features into self-contained vertical slices.
+*   [Pixi Package Management](concepts/pixi.md) — Multi-platform dependency synchronization and multi-language toolchains.
+*   [Open Knowledge Format (OKF)](concepts/open_knowledge_format.md) — Node-based markdown specification guidelines for AI-human pair programming.
+*   [Linting & Type Safety](concepts/linting_and_types.md) — Enforcement of strict coding standards using Ruff and Mypy.
+*   [Data Validation (Pydantic)](concepts/data_validation.md) — Runtime data validation and configuration schemas.
+
+### 2. [Data Science & Metrics](data_science/index.md)
+The scientific core covering datasets, evaluation methodologies, and metrics:
+*   [MVTec AD Dataset](data_science/mvtec_ad.md) — Structure, complexity, threshold estimation, baselines, and experimental insights for the primary industrial dataset.
+*   [Anomaly Detection Metrics](data_science/anomaly_detection_metrics.md) — Deep mathematical walkthrough of AUROC, AUPRO, and the novel AUPIMO metric under low-false-positive constraints.
+
+### 3. Operational Guides & Planning
+Practical walkthroughs for setting up workspaces and tracking progress:
+*   [Jupyter Notebook Workspace Protocol](guides/notebooks.md) — Guidelines for running safe, automated, quality-gated notebooks.
+*   [Dataset Setup Guide](guides/dataset_setup.md) — Standardized dataset acquisition and path structures.
+*   [Project Roadmap & Detailed Plan](project_roadmap.md) — Development milestones, deliverables track, and synchronization schedules.
+
+---
 
 ## 📂 Deliverables Log
 
-* *Deliverable 1 (Due 24/07): Data Exploration, Visualization & Pre-processing Report (Pending Execution)*
-* *Deliverable 2 (Due 04/09): Machine Learning & Deep Modeling Optimization Report (Pending Execution)*
-* *Final Synthesis (Due 15/09): Integrated Final Performance & Vision Blueprint (Pending Execution)*
+*   **Deliverable 1 (Due 24/07):** Data Exploration, Visualization & Pre-processing Report *(Pending)*
+*   **Deliverable 2 (Due 04/09):** Machine Learning & Deep Modeling Optimization Report *(Pending)*
+*   **Final Synthesis (Due 15/09):** Integrated Final Performance & Vision Blueprint *(Pending)*
+
+---
 
 ## 📊 Dataset & Citation
 
-This project utilizes the **MVTec ITODD (Industrial Three-Dimensional Object Detection)** dataset for anomaly detection research and development.
+This project utilizes the **MVTec AD (Anomaly Detection)** dataset. Please cite the original papers if referenced in scientific work:
 
-If you use this project or dataset in scientific work, please cite the original paper:
-
-> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.
+> Paul Bergmann, Kilian Batzner, Michael Fauser, David Sattlegger, Carsten Steger: *The MVTec Anomaly Detection Dataset: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. International Journal of Computer Vision 129(4):1038-1059, 2021.
+>
+> Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD — A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.
