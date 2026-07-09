@@ -15,10 +15,10 @@ description = "Anomaly Detection in Industrial Components"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115.0",
+    "fastapi[standard]>=0.115.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    "uvicorn[standard]>=0.34.0",
+    "uvicorn>=0.50.0",
 ]
 
 [dependency-groups]
@@ -110,14 +110,18 @@ industrial-component-anomaly-detection = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 python = "3.12.*"
-pandas = "*"
-scikit-learn = "*"
+huggingface_hub = ">=1.22.0,<2"
+just = ">=1.55.1,<2"
 jupyter = "*"
 jupyterlab = "*"
-opencv = ">=5.0.0,<6"
 matplotlib = ">=3.11.0,<4"
-huggingface_hub = ">=1.22.0,<2"
-just = "*"
+opencv = ">=5.0.0,<6"
+pandas = ">=3.0.3,<4"
+pillow = ">=12.3.0,<13"
+scikit-learn = ">=1.9.0,<2"
+seaborn = ">=0.13.2,<0.14"
+statsmodels = ">=0.14.6,<0.15"
+streamlit = ">=1.59.1,<2"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 torch = { version = "==2.5.1" }
