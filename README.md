@@ -174,9 +174,9 @@ just setup
 
 ```
 
-### 4. Download Dataset (MVTec ITODD)
+### 4. Download Dataset (MVTec AD)
 
-To retrieve the dataset, we host the ~7.5 GB Base Package and 3D range/image data on Hugging Face (avoiding heavy Git LFS commits). To fetch it to your local workspace, run:
+To retrieve the dataset, we host the ~5 GB high-resolution images on Hugging Face (avoiding heavy Git LFS commits). To fetch it to your local workspace, run:
 
 ```bash
 just download-data
@@ -184,9 +184,9 @@ just download-data
 
 For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md).
 
-### 5. Extract Dataset
+### 5. Extract Dataset (Optional)
 
-After downloading the archives, extract them natively to your workspace:
+If you manually download the compressed dataset archive from the official MVTec website instead of Hugging Face, place the archive in `data/raw/mvtec_ad/` and extract it natively to your workspace:
 
 ```bash
 just extract-data
@@ -221,8 +221,8 @@ Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`,
 | `just default` | Lists every automated command recipe currently available. |
 | `just setup` | Installs isolated virtual environments, configures pre-commit hooks, and installs extensions. |
 | `just install` | Alias mapping directly to the `setup` macro. |
-| `just download-data` | Downloads the raw MVTec ITODD dataset from Hugging Face Hub. |
-| `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally. |
+| `just download-data` | Downloads the raw MVTec AD dataset from Hugging Face Hub. |
+| `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally (if downloaded manually). |
 | `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
 | `just upload-data` | Uploads a local directory back to the Hugging Face Hub dataset repository. |
 | `just lint` | Sequentially auto-fixes lint errors, enforces layout formatting, evaluates strict types via Mypy, and runs the OKF compliance Python script. |
@@ -296,10 +296,11 @@ Triggers **only** after Job 1 passes perfectly, and only upon direct pushes to t
 ## 📄 License & Attribution
 
 * **Codebase:** Distributed under the [MIT License](./LICENSE) (or your chosen code license).
-* **Dataset (MVTec ITODD):** Distributed strictly under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License ([CC BY-NC-SA 4.0](./LICENSE-DATA.md)). This project is compliant with non-commercial usage terms.
+* **Dataset (MVTec AD):** Distributed strictly under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License ([CC BY-NC-SA 4.0](./LICENSE-DATA.md)). This project is compliant with non-commercial usage terms.
 
 ### Academic Citation
 
 If you use this dataset or codebase in scientific or academic work, please cite the original authors:
 
-> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.
+> Paul Bergmann, Kilian Batzner, Michael Fauser, David Sattlegger, Carsten Steger: *The MVTec Anomaly Detection Dataset: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. International Journal of Computer Vision 129(4):1038-1059, 2021.
+> Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD — A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.

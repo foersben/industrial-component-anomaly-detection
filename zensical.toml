@@ -9,6 +9,14 @@ docs_dir = "docs"
 site_dir = "site"
 language = "en"
 
+extra_css = ["https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"]
+extra_javascript = [
+    "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js",
+    "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js",
+    "https://unpkg.com/mermaid@10/dist/mermaid.min.js",
+    "javascripts/katex.js"
+]
+
 # ==============================================================================
 # 2. UI Theme & Top Menu Layout
 # ==============================================================================
@@ -52,18 +60,6 @@ toc = { permalink = true }
 ] }
 
 # ==============================================================================
-# 4. Third-Party Rendering Assets (JS)
-# ==============================================================================
-[[project.extra_javascript]]
-src = "https://polyfill.io/v3/polyfill.min.js?features=es6"
-
-[[project.extra_javascript]]
-src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
-
-[[project.extra_javascript]]
-src = "https://unpkg.com/mermaid@10/dist/mermaid.min.js"
-
-# ==============================================================================
 # 5. Document Tree Navigation Topology
 # ==============================================================================
 [[project.nav]]
@@ -73,13 +69,21 @@ Home = "index.md"
 Roadmap = "project_roadmap.md"
 
 [[project.nav]]
-"Concepts & Architecture" = [
+"Technical & Architecture" = [
     { "Introduction" = "concepts/index.md" },
     { "Vertical Slice Architecture" = "concepts/vertical_slice_architecture.md" },
     { "Pixi Package Management" = "concepts/pixi.md" },
     { "Open Knowledge Format (OKF)" = "concepts/open_knowledge_format.md" },
     { "Linting & Type Safety" = "concepts/linting_and_types.md" },
     { "Data Validation (Pydantic)" = "concepts/data_validation.md" },
+]
+
+[[project.nav]]
+"Data Science & Metrics" = [
+    { "Introduction" = "data_science/index.md" },
+    { "MVTec AD Dataset" = "data_science/mvtec_ad.md" },
+    { "Anomaly Detection Metrics" = "data_science/anomaly_detection_metrics.md" },
+    { "Step 1 EDA Plan" = "data_science/eda_plan.md" },
 ]
 
 [[project.nav]]
@@ -127,6 +131,10 @@ core = [
     "docs/concepts/open_knowledge_format.md",
     "docs/concepts/linting_and_types.md",
     "docs/concepts/data_validation.md",
+    "docs/data_science/index.md",
+    "docs/data_science/mvtec_ad.md",
+    "docs/data_science/anomaly_detection_metrics.md",
+    "docs/data_science/eda_plan.md",
     "docs/guides/notebooks.md",
     "docs/guides/dataset_setup.md",
 ]

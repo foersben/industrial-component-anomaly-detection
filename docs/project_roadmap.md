@@ -42,7 +42,7 @@ This master roadmap establishes the engineering milestones, verification gates, 
 
 **Timeline:** 03/07 to 17/07
 
-**Core Objective:** Complete deep structural review of the dataset (MVTec AD, MVTec ITODD, or RAD) utilizing OpenCV and native plotting matrices. Identify data anomalies, class imbalances, and lighting variances.
+**Core Objective:** Complete deep structural review of the dataset (MVTec AD) utilizing OpenCV and native plotting matrices. Identify data anomalies, class imbalances, and lighting variances.
 
 * **Thursday Sync (July 9 @ 1:00 PM):** Group meeting to evaluate raw images together, flag format discrepancies, and outline specific data contamination risks.
 * **The 5-Graph Visual Gauntlet Requirements:**

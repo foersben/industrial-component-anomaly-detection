@@ -23,7 +23,9 @@ repos:
       - id: codespell
         additional_dependencies:
           - tomli
-        args: ["--skip", "*.lock"]
+        args: ["--skip", "*.lock,*.json,./build/*, ./docs/*", "-L", "fpr"]
+
+
         exclude: \.ipynb$
 
   # Strip execution outputs from notebooks to maintain clean git histories.
