@@ -80,6 +80,7 @@ Roadmap = "project_roadmap.md"
     { "Open Knowledge Format (OKF)" = "concepts/open_knowledge_format.md" },
     { "Linting & Type Safety" = "concepts/linting_and_types.md" },
     { "Data Validation (Pydantic)" = "concepts/data_validation.md" },
+    { "Anomaly Detection Metrics" = "concepts/anomaly_detection_metrics.md" },
 ]
 
 [[project.nav]]
@@ -127,6 +128,7 @@ core = [
     "docs/concepts/open_knowledge_format.md",
     "docs/concepts/linting_and_types.md",
     "docs/concepts/data_validation.md",
+    "docs/concepts/anomaly_detection_metrics.md",
     "docs/guides/notebooks.md",
     "docs/guides/dataset_setup.md",
 ]
