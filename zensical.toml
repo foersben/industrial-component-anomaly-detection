@@ -83,6 +83,7 @@ Roadmap = "project_roadmap.md"
     { "Introduction" = "data_science/index.md" },
     { "MVTec AD Dataset" = "data_science/mvtec_ad.md" },
     { "Anomaly Detection Metrics" = "data_science/anomaly_detection_metrics.md" },
+    { "Step 1 EDA Plan" = "data_science/eda_plan.md" },
 ]
 
 [[project.nav]]
@@ -133,6 +134,7 @@ core = [
     "docs/data_science/index.md",
     "docs/data_science/mvtec_ad.md",
     "docs/data_science/anomaly_detection_metrics.md",
+    "docs/data_science/eda_plan.md",
     "docs/guides/notebooks.md",
     "docs/guides/dataset_setup.md",
 ]
