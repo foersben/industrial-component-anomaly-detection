@@ -41,31 +41,37 @@ graph TD
 ```
 
 ### 1. [Technical & Architecture Concepts](concepts/index.md)
+
 Detailed conceptual guides on software engineering foundations, environment containment, and quality gates:
-*   [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) — Structuring features into self-contained vertical slices.
-*   [Pixi Package Management](concepts/pixi.md) — Multi-platform dependency synchronization and multi-language toolchains.
-*   [Open Knowledge Format (OKF)](concepts/open_knowledge_format.md) — Node-based markdown specification guidelines for AI-human pair programming.
-*   [Linting & Type Safety](concepts/linting_and_types.md) — Enforcement of strict coding standards using Ruff and Mypy.
-*   [Data Validation (Pydantic)](concepts/data_validation.md) — Runtime data validation and configuration schemas.
+
+* [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) — Structuring features into self-contained vertical slices.
+* [Pixi Package Management](concepts/pixi.md) — Multi-platform dependency synchronization and multi-language toolchains.
+* [Open Knowledge Format (OKF)](concepts/open_knowledge_format.md) — Node-based markdown specification guidelines for AI-human pair programming.
+* [Linting & Type Safety](concepts/linting_and_types.md) — Enforcement of strict coding standards using Ruff and Mypy.
+* [Data Validation (Pydantic)](concepts/data_validation.md) — Runtime data validation and configuration schemas.
 
 ### 2. [Data Science & Metrics](data_science/index.md)
+
 The scientific core covering datasets, evaluation methodologies, and metrics:
-*   [MVTec AD Dataset](data_science/mvtec_ad.md) — Structure, complexity, threshold estimation, baselines, and experimental insights for the primary industrial dataset.
-*   [Anomaly Detection Metrics](data_science/anomaly_detection_metrics.md) — Deep mathematical walkthrough of AUROC, AUPRO, and the novel AUPIMO metric under low-false-positive constraints.
+
+* [MVTec AD Dataset](data_science/mvtec_ad.md) — Structure, complexity, threshold estimation, baselines, and experimental insights for the primary industrial dataset.
+* [Anomaly Detection Metrics](data_science/anomaly_detection_metrics.md) — Deep mathematical walkthrough of AUROC, AUPRO, and the novel AUPIMO metric under low-false-positive constraints.
 
 ### 3. Operational Guides & Planning
+
 Practical walkthroughs for setting up workspaces and tracking progress:
-*   [Jupyter Notebook Workspace Protocol](guides/notebooks.md) — Guidelines for running safe, automated, quality-gated notebooks.
-*   [Dataset Setup Guide](guides/dataset_setup.md) — Standardized dataset acquisition and path structures.
-*   [Project Roadmap & Detailed Plan](project_roadmap.md) — Development milestones, deliverables track, and synchronization schedules.
+
+* [Jupyter Notebook Workspace Protocol](guides/notebooks.md) — Guidelines for running safe, automated, quality-gated notebooks.
+* [Dataset Setup Guide](guides/dataset_setup.md) — Standardized dataset acquisition and path structures.
+* [Project Roadmap & Detailed Plan](project_roadmap.md) — Development milestones, deliverables track, and synchronization schedules.
 
 ---
 
 ## 📂 Deliverables Log
 
-*   **Deliverable 1 (Due 24/07):** Data Exploration, Visualization & Pre-processing Report *(Pending)*
-*   **Deliverable 2 (Due 04/09):** Machine Learning & Deep Modeling Optimization Report *(Pending)*
-*   **Final Synthesis (Due 15/09):** Integrated Final Performance & Vision Blueprint *(Pending)*
+* **Deliverable 1 (Due 24/07):** Data Exploration, Visualization & Pre-processing Report *(Pending)*
+* **Deliverable 2 (Due 04/09):** Machine Learning & Deep Modeling Optimization Report *(Pending)*
+* **Final Synthesis (Due 15/09):** Integrated Final Performance & Vision Blueprint *(Pending)*
 
 ---
 
