@@ -31,8 +31,9 @@ This repository currently hosts the production development track for **Anomaly D
 
 ## 📊 Dataset & Citation
 
-This project utilizes the **MVTec ITODD (Industrial Three-Dimensional Object Detection)** dataset for anomaly detection research and development.
+This project utilizes the **MVTec AD (Anomaly Detection)** dataset for anomaly detection research and development.
 
-If you use this project or dataset in scientific work, please cite the original paper:
+If you use this project or dataset in scientific work, please cite the original papers:
 
-> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.
+> Paul Bergmann, Kilian Batzner, Michael Fauser, David Sattlegger, Carsten Steger: *The MVTec Anomaly Detection Dataset: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. International Journal of Computer Vision 129(4):1038-1059, 2021.
+> Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD — A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.
