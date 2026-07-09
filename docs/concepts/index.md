@@ -1,22 +1,22 @@
 ---
 type: Guide
-title: Concepts & Architecture
-description: Comprehensive overview of the core technologies and philosophies used in this project template.
-tags: [architecture, concepts, introduction]
+title: Technical & Architecture Concepts
+description: Comprehensive overview of the core technologies, tools, and repository engineering philosophies used in this project.
+tags: [architecture, concepts, technical, index]
 ---
 
-# Core Concepts & Architecture
+# Technical & Architecture Concepts
 
-Welcome to the detailed conceptual guide for this project template. This section is designed for both beginners and experts to deeply understand *what* tools we use, *why* we chose them over traditional alternatives, and *how* to think about the architecture of this repository.
+Welcome to the technical conceptual guide for this project template. This section is designed to explain the software engineering foundations, package management, developer workflow tools, and architecture principles that govern this repository.
 
-This project is not just a standard Python template; it is a hardened, high-performance foundation built specifically for **Vertical Slice Architecture**, zero-bypass quality enforcement, and seamless **Multi-Agent AI Collaboration**.
+This project is built as a hardened, production-ready foundation designed for modularity, clean vertical slice separation, strict developer quality gates, and AI-assisted development.
 
-## Explore the Concepts
+## Core Technical Chapters
 
-In the following chapters, we will break down each critical component of the stack:
+In this section, you will learn about:
 
-1. **[Vertical Slice Architecture](vertical_slice_architecture.md):** Understand how we organize code by features rather than technical layers.
-2. **[Pixi Package Management](pixi.md):** Learn why we use Pixi instead of pip/poetry for lightning-fast, deterministic, and cross-platform dependency resolution, especially for ML workloads.
-3. **[Open Knowledge Format (OKF)](open_knowledge_format.md):** Discover how we structure our documentation as an AI-readable Knowledge Graph.
-4. **[Linting & Type Safety (Ruff & Mypy)](linting_and_types.md):** See how we enforce strict quality gates using modern Rust-backed tooling and total type safety.
-5. **[Data Validation (Pydantic)](data_validation.md):** Learn how we guarantee data integrity and manage complex configurations.
+1. **[Vertical Slice Architecture](vertical_slice_architecture.md):** How we structure our codebase around cohesive features and business use-cases instead of traditional technical layers.
+2. **[Pixi Package Management](pixi.md):** Why we use Pixi for fast, deterministic, cross-platform dependency management and multi-language toolchains.
+3. **[Open Knowledge Format (OKF)](open_knowledge_format.md):** How we structure repository documentation to serve as a machine-readable knowledge base.
+4. **[Linting & Type Safety (Ruff & Mypy)](linting_and_types.md):** How we use modern, high-performance static analysis tools to maintain a bug-free code environment.
+5. **[Data Validation (Pydantic)](data_validation.md):** How we enforce robust runtime type checking, schema parsing, and configuration validation.
