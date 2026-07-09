@@ -224,3 +224,4 @@ __marimo__/
 # Data storage boundaries
 data/raw/
 data/processed/
+data/external/

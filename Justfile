@@ -57,6 +57,17 @@ lab:
 download-data:
     pixi run -e dev python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='foersben/mvtec-ad', repo_type='dataset', local_dir='data/raw/mvtec_ad')"
 
+# Pull the MVTec AD dataset and benchmark files into the local data directory
+fetch-data: download-data
+    @echo "Downloading pre-computed AUPIMO curves..."
+    mkdir -p data/external
+    git clone --depth 1 https://github.com/jpcbertoldo/aupimo.git data/external/aupimo_repo
+    mkdir -p data/external/aupimo_benchmarks
+    mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
+    rm -rf data/external/aupimo_repo
+
+
+
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
     @echo "Extracting MVTec AD package..."
