@@ -150,8 +150,9 @@ tags: [agentic, development, workflow]
 Ensure the following tools are globally accessible on your host machine:
 
 * `pixi`
-* `just`
 * `git`
+
+*(Optional but recommended)* `just` (a local copy is also automatically installed into the local environment via Pixi).
 
 ### 2. IDE Setup (VS Code / Cursor)
 
@@ -173,7 +174,25 @@ just setup
 
 ```
 
-### 4. Initialize Your Security Baseline
+### 4. Download Dataset (MVTec ITODD)
+
+To retrieve the dataset, we host the ~7.5 GB Base Package and 3D range/image data on Hugging Face (avoiding heavy Git LFS commits). To fetch it to your local workspace, run:
+
+```bash
+just download-data
+```
+
+For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md).
+
+### 5. Extract Dataset
+
+After downloading the archives, extract them natively to your workspace:
+
+```bash
+just extract-data
+```
+
+### 6. Initialize Your Security Baseline
 
 To activate the secret scanner tripwire, create your local cryptographic tracking baseline and register it with git:
 
@@ -183,11 +202,13 @@ git add .secrets.baseline
 
 ```
 
-### 5. Link Visual Studio Code Interpreter
+### 7. Link Visual Studio Code Interpreter
 
-1. Open the VS Code Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+If using VS Code, this is configured automatically via `.vscode/settings.json`. If you need to select it manually or use another IDE:
+
+1. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
 2. Type **Python: Select Interpreter**.
-3. Choose the path pointing directly to the locally generated `.venv/bin/python` folder.
+3. Choose the path pointing directly to the generated environment at `.pixi/envs/dev/bin/python`.
 
 ---
 
@@ -198,8 +219,12 @@ Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`,
 | Command | Action Performed |
 | --- | --- |
 | `just default` | Lists every automated command recipe currently available. |
-| `just setup` | Installs isolated virtual environments and assigns background Git hooks. |
+| `just setup` | Installs isolated virtual environments, configures pre-commit hooks, and installs extensions. |
 | `just install` | Alias mapping directly to the `setup` macro. |
+| `just download-data` | Downloads the raw MVTec ITODD dataset from Hugging Face Hub. |
+| `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally. |
+| `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
+| `just upload-data` | Uploads a local directory back to the Hugging Face Hub dataset repository. |
 | `just lint` | Sequentially auto-fixes lint errors, enforces layout formatting, evaluates strict types via Mypy, and runs the OKF compliance Python script. |
 | `just test` | Runs the asynchronous test suite via Pytest with code coverage matrix evaluation. |
 | `just format` | Safely forces code blocks to match global stylistic spacing layout parameters. |
@@ -215,9 +240,12 @@ A robust suite of checks runs automatically before any commit can seal.
 1. **Syntax & Whitespace:** Fixes trailing spaces and ensures single-newline EOF structures.
 2. **Security Tripwires:** Runs `detect-secrets` against the `.secrets.baseline` file.
 3. **Lexical Validation:** Executes `codespell` to catch typos in code, strings, and documentation via `tomli` parsing.
-4. **Code Quality:** Triggers `ruff-check`, `ruff-format`, and `mypy` locally targeting `app/` and `scripts/` with `pass_filenames: false` to ensure global context evaluation.
-5. **Knowledge Graph Integrity:** Triggers `validate_okf.py` to ensure all AI context boundaries remain parsable.
-6. **Author Identity:** A bash gate confirming `commit.gpgsign = true` is active locally, ensuring all commits are cryptographically verified to a human author.
+4. **Notebook Output Stripping (`nbstripout`):** Automatically runs `nbstripout` to clear execution states and keep git diffs clean.
+   > [!NOTE]
+   > By default, `notebooks/shared/` is excluded from `nbstripout` so teammates can share executed output states (plots, logs, and exploration results). To enforce output stripping on all notebooks, remove the `exclude: ^notebooks/shared/` rule from `.pre-commit-config.yaml`.
+5. **Code Quality:** Triggers `ruff-check`, `ruff-format`, and `mypy` locally targeting `app/` and `scripts/` with `pass_filenames: false` to ensure global context evaluation.
+6. **Knowledge Graph Integrity:** Triggers `validate_okf.py` to ensure all AI context boundaries remain parsable.
+7. **Author Identity:** A bash gate confirming `commit.gpgsign = true` is active locally, ensuring all commits are cryptographically verified to a human author.
 
 ---
 
@@ -262,3 +290,16 @@ Triggers **only** after Job 1 passes perfectly, and only upon direct pushes to t
 * Locks dependencies using the `ci-dev` environment setup via `pixi`.
 * Compiles your markdown guides and codebase docstrings via `zensical build`.
 * Safely packages the resulting `./site` directory and deploys it natively to **GitHub Pages**, providing a centralized, universally accessible OKF-compliant documentation site for your system.
+
+---
+
+## 📄 License & Attribution
+
+* **Codebase:** Distributed under the [MIT License](./LICENSE) (or your chosen code license).
+* **Dataset (MVTec ITODD):** Distributed strictly under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License ([CC BY-NC-SA 4.0](./LICENSE-DATA.md)). This project is compliant with non-commercial usage terms.
+
+### Academic Citation
+
+If you use this dataset or codebase in scientific or academic work, please cite the original authors:
+
+> Bertram Drost, Markus Ulrich, Paul Bergmann, Philipp Härtinger, and Carsten Steger. *Introducing MVTec ITODD — A Dataset for 3D Object Recognition in Industry*; in: IEEE International Conference on Computer Vision (ICCV), 2200-2208, October 2017.

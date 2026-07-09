@@ -28,7 +28,7 @@ features = [
 
 palette = [
     { media = "(prefers-color-scheme: dark)", scheme = "slate", primary = "black", accent = "deep-orange" },
-    { media = "(prefers-color-scheme: light)", scheme = "default", primary = "black", accent = "deep-orange" },
+    # { media = "(prefers-color-scheme: light)", scheme = "default", primary = "black", accent = "deep-orange" },
 ]
 
 [project.theme.icon]
@@ -45,9 +45,9 @@ tables = {}
 "pymdownx.snippets" = {}
 toc = { permalink = true }
 "pymdownx.highlight" = { anchor_linenums = true }
-"pymdownx.tasklist" = { custom_checkbox = true }        # Enables Task Lists (- [ ])
-"pymdownx.arithmatex" = { generic = true }             # Enables LaTeX Support
-"pymdownx.superfences" = { custom_fences = [            # Enables MermaidJS via superfences
+"pymdownx.tasklist" = { custom_checkbox = true } # Enables Task Lists (- [ ])
+"pymdownx.arithmatex" = { generic = true } # Enables LaTeX Support
+"pymdownx.superfences" = { custom_fences = [ # Enables MermaidJS via superfences
     { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ] }
 
@@ -85,12 +85,11 @@ Roadmap = "project_roadmap.md"
 [[project.nav]]
 "Guides" = [
     { "Jupyter Notebooks" = "guides/notebooks.md" },
+    { "Dataset Setup" = "guides/dataset_setup.md" },
 ]
 
 [[project.nav]]
-"API Metrics" = [
-    { "Reference Map" = "api_reference.md" },
-]
+"API Metrics" = [{ "Reference Map" = "api_reference.md" }]
 
 
 # ==============================================================================
@@ -128,5 +127,6 @@ core = [
     "docs/concepts/open_knowledge_format.md",
     "docs/concepts/linting_and_types.md",
     "docs/concepts/data_validation.md",
-    "docs/guides/notebooks.md"
+    "docs/guides/notebooks.md",
+    "docs/guides/dataset_setup.md",
 ]
