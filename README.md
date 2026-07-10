@@ -26,7 +26,7 @@ We evaluate our pipelines against the **MVTec AD** dataset, the industry standar
 Standard classification metrics (like aggregate Accuracy or global AUROC) fail to capture the extreme class imbalance ($>99\%$ normal pixels) in highly localized industrial defects. We validate using:
 
 * **AUPIMO (Area Under Per-Image Measurement Objective):** A state-of-the-art framework emphasizing normal-only validation and stringent low-false-positive constraints.
-* **AU-PRO (Area Under the Per-Region Overlap):** Evaluates how well connected defect regions are segmented.
+* **AUPRO (Area Under the Per-Region Overlap):** Evaluates how well connected defect regions are segmented.
 * **Benchmarking:** We leverage the rigorous baseline evaluation frameworks from the [jpcbertoldo/aupimo](https://github.com/jpcbertoldo/aupimo) repository to chart and map the mathematical boundaries of the dataset before building custom models.
 
 ---
@@ -101,7 +101,7 @@ For a comprehensive, beginner-friendly deep dive into all the concepts, scientif
 The generated documentation (`zensical.toml` driven via MkDocs) includes detailed guides on:
 
 * **Concepts & Architecture:** Deep dives into Vertical Slice Architecture (VSA), Pixi environments, strict Linting & Type Safety, and Pydantic Data Validation.
-* **Data Science & Metrics:** Exploratory Data Analysis (EDA) plans, MVTec AD properties, and AUPIMO/AU-PRO statistical breakdowns.
+* **Data Science & Metrics:** Exploratory Data Analysis (EDA) plans, MVTec AD properties, and AUPIMO/AUPRO statistical breakdowns.
 * **Guides:** How to properly use the Jupyter Notebooks workspace securely.
 * **Project Roadmap:** Strategic engineering milestones, deliverables logging, and Phase 1-5 operational breakdowns.
 

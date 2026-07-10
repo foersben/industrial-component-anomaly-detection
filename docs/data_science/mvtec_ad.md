@@ -1,8 +1,8 @@
 ---
 type: Data Science
 title: MVTec AD Dataset
-description: A comprehensive theoretical and practical reference guide for the MVTec AD dataset, covering dataset details, metrics (PRO, AU-PRO), threshold estimation, baselines, and experimental insights.
-tags: [dataset, mvtec-ad, metrics, pro, au-pro, threshold-estimation, baselines]
+description: A comprehensive theoretical and practical reference guide for the MVTec AD dataset, covering dataset details, metrics (PRO, AUPRO), threshold estimation, baselines, and experimental insights.
+tags: [dataset, mvtec-ad, metrics, pro, aupro, threshold-estimation, baselines]
 ---
 
 # MVTec AD: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection
@@ -151,16 +151,16 @@ $$PRO(t) = \frac{1}{N} \sum_i \sum_{k \in \mathcal{K}_i} \frac{|P_i(t) \cap C_{i
 
 To avoid choosing an arbitrary threshold $t$ during benchmarking, performance is evaluated as the Area Under the Curve (AUC) across all possible thresholds:
 
-* **AU-ROC (Area Under the Receiver Operating Characteristic):**
+* **AUROC (Area Under the Receiver Operating Characteristic):**
     Plots $FPR(t)$ on the x-axis against $TPR(t)$ on the y-axis.
-* **AU-PR (Area Under the Precision-Recall Curve):**
+* **AUPR (Area Under the Precision-Recall Curve):**
     Plots $TPR(t)$ (Recall) on the x-axis against $PRC(t)$ (Precision) on the y-axis. It is highly sensitive to class imbalance, making it a strict measure of false-positive containment.
-* **AU-PRO (Area Under the Per-Region Overlap Curve - Crucial Contribution):**
+* **AUPRO (Area Under the Per-Region Overlap Curve - Crucial Contribution):**
     Plots the Set $FPR(t)$ on the x-axis against $PRO(t)$ on the y-axis.
 
-    * **Logistical Integration Bound:** In a real factory, triggering a false positive rate above $30\%$ is unacceptable (it would mean rejecting nearly a third of all normal products). Therefore, the AU-PRO is integrated only up to a strict False Positive Rate threshold (typically $FPR \le 0.3$) and normalized back to $[0, 1]$:
+    * **Logistical Integration Bound:** In a real factory, triggering a false positive rate above $30\%$ is unacceptable (it would mean rejecting nearly a third of all normal products). Therefore, the AUPRO is integrated only up to a strict False Positive Rate threshold (typically $FPR \le 0.3$) and normalized back to $[0, 1]$:
 
-        $$AU\text{-}PRO = \frac{1}{0.3} \int_0^{0.3} PRO(FPR^{-1}(f)) \, df$$
+        $$\text{AUPRO} = \frac{1}{0.3} \int_0^{0.3} PRO(FPR^{-1}(f)) \, df$$
 
         where $FPR^{-1}(f)$ maps the target FPR value $f$ to the corresponding binarization threshold $t$.
 
@@ -318,12 +318,12 @@ where $\epsilon$ is a small constant to prevent division by zero.
 
 ## 6. Key Experimental Findings
 
-1. **Transfer Learning Dominates:** The Student-Teacher framework and the CNN Feature Dictionary outperformed deep generative models across almost all metrics (AU-ROC, AU-PRO, AU-PR). Features pre-trained on ImageNet are highly robust and sensitive to localized deviations that generative models miss.
+1. **Transfer Learning Dominates:** The Student-Teacher framework and the CNN Feature Dictionary outperformed deep generative models across almost all metrics (AUROC, AUPRO, AUPR). Features pre-trained on ImageNet are highly robust and sensitive to localized deviations that generative models miss.
 2. **Generative Models Struggle (Blurriness & Mode Collapse):**
     * **f-AnoGAN** suffered from mode collapse on complex object classes, failing to capture the full variety of normal patterns.
     * Both **CAE architectures ($l_2$ and SSIM)** produced blurry reconstructions. They failed to recreate high-frequency details (such as fine wood grains or toothbrush bristles), resulting in high reconstruction errors on normal regions, which triggered false positive blobs.
 3. **Classical Models Remain Competitive:** On rigid, perfectly aligned objects, the classical **Variation Model** frequently outperformed deep generative models. However, it fails completely on unaligned or deformable objects (like Cable). Similarly, **GMMs** performed exceptionally well on pure textures but struggled on structured objects.
-4. **The AUC Limit Effect:** When models were evaluated using the AU-PRO metric integrated up to a relaxed limit ($FPR \le 0.3$), many models appeared to perform acceptably. However, when the integration limit was strictly restricted to $FPR \le 0.01$ ($AU\text{-}PRO_{0.01}$), performance plummeted. This indicates that many models can only detect anomalies if they are allowed to simultaneously trigger a high number of false alarms.
+4. **The AUC Limit Effect:** When models were evaluated using the AUPRO metric integrated up to a relaxed limit ($FPR \le 0.3$), many models appeared to perform acceptably. However, when the integration limit was strictly restricted to $FPR \le 0.01$ ($\text{AUPRO}_{0.01}$), performance plummeted. This indicates that many models can only detect anomalies if they are allowed to simultaneously trigger a high number of false alarms.
 5. **Execution Time & Memory Trade-offs:**
 
 | Method | Inference Speed | Accuracy (Localization) | Key Bottleneck |
