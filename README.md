@@ -1,9 +1,3 @@
----
-type: Overview
-title: README
-description: Main entry point for the Industrial Component Anomaly Detection repository.
-tags: [readme, index, overview, industrial-anomaly-detection]
----
 # Industrial Component Anomaly Detection
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
