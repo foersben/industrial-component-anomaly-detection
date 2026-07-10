@@ -4,8 +4,6 @@
 [![Dataset License: CC BY-NC-SA 4.0](https://img.shields.io/badge/Dataset-CC_BY--NC--SA_4.0-blue.svg)](./LICENSE-DATA.md)
 [![Docs Validation Gate & Deployment](https://github.com/foersben/industrial-component-anomaly-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/foersben/industrial-component-anomaly-detection/actions/workflows/ci.yml)
 
-## 📌 Executive Summary
-
 This repository houses a production-grade Data Science and Machine Learning framework focused on **Unsupervised Anomaly Detection in Industrial Components**. Positioned at the intersection of applied R&D and advanced manufacturing quality assurance, this system aims to detect, isolate, and segment subtle, highly localized structural defects (e.g., scratches, dents, contaminations) on industrial items that are otherwise structurally identical to a "normal" baseline.
 
 Our approach abandons traditional, semantic novelty detection (e.g., separating images of cars from airplanes) in favor of **pixel-level anomaly localization**, leveraging the constraints of purely normal data manifolds to identify deviations.
