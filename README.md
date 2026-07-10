@@ -1,306 +1,165 @@
+---
+type: Overview
+title: README
+description: Main entry point for the Industrial Component Anomaly Detection repository.
+tags: [readme, index, overview, industrial-anomaly-detection]
+---
 # Industrial Component Anomaly Detection
 
-A high-performance, deep-learning-powered industrial computer vision system engineered explicitly for **Vertical Slice Architecture (VSA)**, zero-bypass quality enforcement, and native **Multi-Agent AI Collaboration** (optimized for autonomous assistants like Antigravity).
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Dataset License: CC BY-NC-SA 4.0](https://img.shields.io/badge/Dataset-CC_BY--NC--SA_4.0-blue.svg)](./LICENSE-DATA.md)
+[![Docs Validation Gate & Deployment](https://github.com/foersben/industrial-component-anomaly-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/foersben/industrial-component-anomaly-detection/actions/workflows/ci.yml)
 
-This repository contains the production code, research notebooks, and operational pipelines designed to identify, isolate, and classify defects in industrial components. The architecture isolates complex CUDA-enabled graphics and deep learning dependencies using **Pixi** and separates detection features into decoupled vertical feature slices.
+## 📌 Executive Summary
 
----
+This repository houses a production-grade Data Science and Machine Learning framework focused on **Unsupervised Anomaly Detection in Industrial Components**. Positioned at the intersection of applied R&D and advanced manufacturing quality assurance, this system aims to detect, isolate, and segment subtle, highly localized structural defects (e.g., scratches, dents, contaminations) on industrial items that are otherwise structurally identical to a "normal" baseline.
 
-## 📚 Detailed Documentation
-
-For a comprehensive, beginner-friendly deep dive into all the concepts and tools used in this repository, run `just serve` and open http://localhost:9000/ (local preview), or view the GitHub Pages site deployed from `main` (see `.github/workflows/docs.yml`).
-
-The generated documentation includes detailed guides on:
-* **Concepts & Architecture:** Deep dives into Vertical Slice Architecture, Pixi, OKF, Linting & Type Safety, and Data Validation.
-* **Guides:** How to properly use the Jupyter Notebooks workspace.
-* **Project Roadmap:** Strategic engineering milestones, deliverables log, and Phase 1-5 operational breakdowns.
+Our approach abandons traditional, semantic novelty detection (e.g., separating images of cars from airplanes) in favor of **pixel-level anomaly localization**, leveraging the constraints of purely normal data manifolds to identify deviations.
 
 ---
 
-## 🏛️ System Philosophy & Architecture
+## 🔬 Scientific Background & Data Science Track
 
-### 1. Vertical Slice Architecture (VSA)
+The core challenge of this project lies in the inherent lack of anomalous data in industrial settings. Deep learning models must be trained exclusively on "good" (normal) components, learning to reconstruct or embed the manifold of normal structural patterns, and flagging deviations during inference.
 
-Unlike traditional horizontal layered architectures (Three-Tier, Onion, Hexagonal) that split code by technical concerns (controllers in one folder, services in another), this project organizes code into completely self-contained, vertical features.
+### 1. The Dataset: MVTec AD
 
-* Each slice within `app/pipelines/` contains all components required to fulfill a specific business capability.
-* **Slices Implemented:**
-  * `app/pipelines/anomaly_binary/`: Focuses exclusively on binary segregation (Normal vs. Anomalous).
-  * `app/pipelines/anomaly_classification/`: Multi-class vertical slice triggered upon anomaly detection to classify defect types.
-* **The AI Advantage:** Horizontal architectures force an AI agent to hop across multiple directories to implement a single feature, dramatically increasing token consumption, context window fragmentation, and the risk of context drift. Under VSA, an agent operates within a strictly bounded, discrete folder structure without leaking logic across distant parts of the application tree.
+We evaluate our pipelines against the **MVTec AD** dataset, the industry standard for real-world unsupervised anomaly detection.
 
-### 2. The Zero-Bypass Quality Gate
+* **Characteristics:** High-resolution industrial images spanning multiple object categories (e.g., capsules, transistors, metal nuts) and textures (e.g., leather, wood).
+* **Ground Truth:** Provides pixel-precise ground truth masks for exact evaluation of defect localization.
+* **Further Reading:** For an extensive breakdown of dataset structures, thresholds, and baseline insights, consult our [MVTec AD Guide](./docs/data_science/mvtec_ad.md).
 
-This repository operates on a strict "fail-fast" principle. Code cannot be committed, pushed, or deployed unless it passes a localized gauntlet of formatting, strict type-checking, cryptographic secret scanning, and documentation compliance validation.
+### 2. Specialized Metrics
 
-### 3. Open Knowledge Format (OKF v0.1)
+Standard classification metrics (like aggregate Accuracy or global AUROC) often fail to capture the nuance of highly localized industrial defects. We utilize specialized validation frameworks:
 
-To ensure that all internal repository knowledge stays completely portable and optimal for secondary AI ingestion loops, this repository follows **Google Cloud's OKF v0.1 spec**. All Markdown documentation files inside `docs/` and `.agents/` are treated as structured nodes in an interlinked Knowledge Graph, strictly verified by a custom local Python gatekeeper script.
-
-### 4. Why Pixi for Data Science & ML?
-
-Unlike traditional Python package managers (like `pip`, `poetry`, or `uv`) that focus strictly on Python packages, this repository utilizes **Pixi** to natively support complex machine learning and data science workloads:
-
-* **Non-Python / Binary Dependency Management:** Machine learning projects often depend heavily on complex binary libraries (such as CUDA, OpenBLAS, or C++ wrappers). Pixi is built on the Conda ecosystem, enabling it to install system-level binary dependencies directly into the local environment without relying on system package managers.
-* **Deterministic GPU/CPU Environments:** Using Pixi's native `environments` and `features` systems (defined in `pyproject.toml`), this template dynamically manages separate solve groups for GPU-enabled environments (e.g., PyTorch with CUDA 12.1) and lightweight CPU-only environments (e.g., for CI/CD runs).
-* **Multi-Platform Consistency:** Pixi generates a unified `pixi.lock` file that maps dependencies across multiple target architectures (Linux, macOS, Windows) and environments, eliminating the "works on my machine" class of environment problems when deploying ML pipelines.
+* **AU-PRO (Area Under the Per-Region Overlap):** Evaluates how well connected defect regions are segmented, rather than weighting large defects higher than small ones.
+* **AUPIMO (Area Under Per-Image Measurement Objective):** A state-of-the-art framework emphasizing normal-only validation and stringent low-false-positive constraints.
+* **Further Reading:** Dive into the mathematical derivations of our evaluation strategies in the [Anomaly Detection Metrics Guide](./docs/data_science/anomaly_detection_metrics.md).
 
 ---
 
-## 🛠️ Core Technology Stack & Tool Matrix
+## 🚀 Getting Started (Guided Installation)
 
-This ecosystem relies on modern, lightning-fast Rust-backed and asynchronous Python tooling to maintain a bulletproof environment.
+This project is built to accommodate teammates with diverse backgrounds, from data scientists focusing on model exploration to DevOps engineers handling CI/CD. The environment is fully containerized locally using modern Python tooling.
 
-| Tool | Component | Explicit Operational Task |
-| --- | --- | --- |
-| **Python 3.12+** | Runtime Environment | The core target engine. Fully locked into type checkers and compiler layers. |
-| **pixi** | Package Manager | Resolves dependencies in milliseconds and forces absolute workspace isolation via a deterministic lock engine (`pixi.lock`). Completely replaces `pip`, `poetry`, `virtualenv`, and `conda`. |
-| **Hatchling** | Build Backend | Modern PEP 621 compliant build backend managing pure source target mappings. |
-| **FastAPI** | Core Framework | Asynchronous, high-performance web framework providing foundational API routing and dependency injection layers. |
-| **Pydantic v2** | Data Validation | Strict data parsing, schema enforcement, and environment variable settings management (`pydantic-settings`). |
-| **Ruff** | Linter & Formatter | Written in Rust, replacing `flake8`, `black`, and `isort`. Enforces a 120-character line limit and strict adherence to Google Python Style Guide docstring rules. |
-| **Mypy** | Type Enforcement | Configured in `strict = true` mode with `explicit_package_bases = true` to guarantee total type safety across isolated packages without duplicate tracking overlaps. |
-| **Pytest** | Test Engine | Runs asynchronous unit, integration, and E2E validation passes (`pytest-asyncio`) with strict coverage metrics tracking (`pytest-cov`). |
-| **Zensical** | Docs Engine | Compiles technical code documentation via `mkdocstrings[python]` and validates graph link structural integrity using `mkdocs-htmlproofer-plugin`. |
-| **Just** | Task Automation | A local recipe runner (`Justfile`) that orchestrates all workspace commands, replacing complex bash scripts or overloaded `Makefile` syntax. |
+### 1. System Requirements
 
----
+You only need two tools globally installed on your machine to start working:
 
-## 📂 Architecture & Directory Layout
+* **Git**: For version control.
+* **Pixi**: A fast, cross-platform package manager built on the Conda ecosystem. It handles Python versions, C-libraries, and dependency locking transparently. [Install Pixi here](https://pixi.sh/).
 
-```text
-├── .agents/                # Autonomous Agent Operational Rules & Workflows
-│   ├── roles/              # Explicit Multi-Agent persona state constraints
-│   ├── rules/              # Global framework and behavioral guidelines
-│   └── workflows/          # Task-specific execution paths (e.g., implement.md)
-├── .vscode/                # Isolated workspace configurations & extension requirements
-├── app/                    # Application Source Tree
-│   ├── api/                # Global API routing and middleware definitions
-│   ├── core/               # Immutable core configs (Pydantic Settings) and exceptions
-│   ├── domain/             # Pure domain logic and models (zero external dependencies)
-│   └── pipelines/          # Isolated, self-contained feature slices
-│       ├── anomaly_binary/ # Binary anomaly detection (Normal vs Anomalous)
-│       └── anomaly_classification/ # Defect class sorting engine
-├── docs/                   # Markdown architecture guides, references, and system logs
-├── scripts/                # Local automated continuous integration tools
-│   └── validate_okf.py     # Script verifying documentation complies with Google OKF
-├── tests/                  # Deterministic testing suite
-│   ├── unit/               # Localized module verification logic
-│   ├── integration/        # External adapter and pipeline interaction logic
-│   └── conftest.py         # Session-scoped asynchronous loop management configuration
-├── .clineignore            # Context protection limits for IDE coding assistants
-├── .clinerules             # Absolute behavioral guardrails for AI agents
-├── .pre-commit-config.yaml # Background git hook validation engine
-├── Justfile                # Canonical task configuration registry
-├── pyproject.toml          # Monolithic tool parameters (Ruff, Mypy, Pytest)
-└── zensical.toml           # Technical documentation and site generation configuration
+*Optional but highly recommended: `just` (a modern `make` alternative). Note that Pixi will automatically provide a local copy of `just` within the environment.*
 
-```
+### 2. IDE Configuration (VS Code / Cursor)
 
----
-
-## 🔐 Enterprise Security Model
-
-To prevent catastrophic credential leaks, this repository explicitly bans the storage of raw API keys or passwords in `.env` files.
-
-**The Security Posture:**
-
-1. **Local Vaulting:** All environment secrets must be stored externally using **KeePassXC** integrated with the OS **Secret Service API (D-Bus)** and an **SSH Agent**.
-2. **Explicit Confirmation:** SSH keys must be loaded with explicit confirmation flags (`ssh-add -c`). This guarantees that if an autonomous IDE agent attempts to authenticate via Git or SSH in the background, a physical GUI prompt will block execution until a human clicks "Allow."
-3. **Cryptographic Baseline:** The workspace uses `detect-secrets` via a `pre-commit` hook to scan every changed line for high-entropy strings.
-
-* *Note:* The security baseline (`.secrets.baseline`) is **intentionally generated manually** during setup. Automating this generation would risk silently whitelisting real production secrets.
-
----
-
-## 🤖 Multi-Agent Governance Network
-
-This repository is designed to host a "Role-Playing State Machine" for single-thread AI IDE assistants (like Roo Code). Rather than relying on a complex external multi-agent framework, the agent shifts its own context constraints, skill sets, and write-permissions step-by-step using OKF-compliant Markdown profiles.
-
-### The Persona Registry (`.agents/roles/`)
-
-* **`01-orchestrator.md`:** The Lead. Analyzes user requests, generates technical OKF specs, and delegates state transitions. *Forbidden from writing functional code.*
-* **`02-architect.md`:** The System Designer. Defines pure domain entities and core Pydantic configurations. *Forbidden from writing tests.*
-* **`03-engineer.md`:** The Implementer. Scaffolds OpenCV and PyTorch logic strictly inside `app/pipelines/anomaly_binary/` and `app/pipelines/anomaly_classification/` to turn red tests green. Enforces Google-style docstrings. *Forbidden from touching core configs.*
-* **`04-qa-automator.md`:** The Gatekeeper. Scaffolds failing TDD tests based on specs and verifies edge cases in `tests/`. *Forbidden from modifying `app/` logic.*
-
-### OKF Graph Compliance
-
-Every Markdown file in the system acts as a node in the agentic knowledge graph. Every file **must** begin with standard YAML frontmatter explicitly declaring a `type`, and must exclusively use relative paths for linking.
-
-```markdown
----
-type: SOP
-title: Complex Feature Multi-Agent Lifecycle
-description: Sequential multi-role pipeline for complex system feature generations.
-tags: [agentic, development, workflow]
----
-# Lifecycle Implementation...
-
-```
-
-*If a human or agent attempts to commit an unstructured text file lacking this metadata, the `validate_okf.py` pre-commit hook will instantly reject the commit.*
-
----
-
-## 🚀 Getting Started (Human & Machine Initialization)
-
-### 1. Prerequisites
-
-Ensure the following tools are globally accessible on your host machine:
-
-* `pixi`
-* `git`
-
-*(Optional but recommended)* `just` (a local copy is also automatically installed into the local environment via Pixi).
-
-### 2. IDE Setup (VS Code / Cursor)
-
-Open the repository folder directly inside your editor:
+To ensure your local editor highlights syntax correctly and respects the project's strict typing rules, open the folder in your IDE:
 
 ```bash
 code .
-
 ```
 
-The workspace reads `.vscode/extensions.json` and will automatically prompt you to install the optimized extension bundle (including `Ruff`, `Strict Mypy`, `Error Lens`, and `nefrob.vscode-just-syntax`). **Accept and install all recommendations to ensure live editor highlighting matches the CI quality gates.**
+* **Extensions:** The workspace will prompt you to install recommended extensions (Ruff, Strict Mypy, Error Lens, etc.). Please accept these to align your local environment with our automated Continuous Integration (CI) gates.
+* **Interpreter:** Set your Python interpreter to the one generated by Pixi (usually found at `.pixi/envs/dev/bin/python`).
 
-### 3. Bootstrap Environment
+### 3. Bootstrap the Environment
 
-Run the single wrapper recipe to automatically configure your localized virtual environment, synchronize all dev/runtime dependency channels, and securely map git hooks:
+Instead of manually creating virtual environments or running `pip install`, use our unified setup command. This synchronizes dependencies, configures Git hooks, and sets up your local workspace:
 
 ```bash
+pixi run setup
+# Or if you have 'just' installed globally:
 just setup
-
 ```
 
-### 4. Download Dataset (MVTec AD)
+### 4. Fetching the Data
 
-To retrieve the dataset, we host the ~5 GB high-resolution images on Hugging Face (avoiding heavy Git LFS commits). To fetch it to your local workspace, run:
+We host the ~5 GB MVTec AD dataset securely on the Hugging Face Hub to prevent Git repository bloat. To download it directly into the expected `data/raw/` directory:
 
 ```bash
 just download-data
 ```
+*(For detailed dataset structures or manual extraction options, see the [Dataset Setup Guide](./docs/guides/dataset_setup.md)).*
 
-For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md).
+### 5. Security Baseline Configuration
 
-### 5. Extract Dataset (Optional)
-
-If you manually download the compressed dataset archive from the official MVTec website instead of Hugging Face, place the archive in `data/raw/mvtec_ad/` and extract it natively to your workspace:
-
-```bash
-just extract-data
-```
-
-### 6. Initialize Your Security Baseline
-
-To activate the secret scanner tripwire, create your local cryptographic tracking baseline and register it with git:
+We enforce strict secret-scanning to prevent API keys or tokens from leaking into the codebase. Initialize your local cryptographic baseline:
 
 ```bash
 pixi run -e dev detect-secrets scan > .secrets.baseline
 git add .secrets.baseline
-
 ```
 
-### 7. Link Visual Studio Code Interpreter
-
-If using VS Code, this is configured automatically via `.vscode/settings.json`. If you need to select it manually or use another IDE:
-
-1. Open the command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
-2. Type **Python: Select Interpreter**.
-3. Choose the path pointing directly to the generated environment at `.pixi/envs/dev/bin/python`.
-
 ---
 
-## ⚙️ Development Task Matrix
+## 💻 Development Workflow & Commands
 
-Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`, or global environment commands.**
+We utilize `just` (via Pixi) as our central command runner. **Please avoid calling bare `pip`, `poetry`, or global python commands** to prevent environment corruption.
 
 | Command | Action Performed |
-| --- | --- |
-| `just default` | Lists every automated command recipe currently available. |
-| `just setup` | Installs isolated virtual environments, configures pre-commit hooks, and installs extensions. |
-| `just install` | Alias mapping directly to the `setup` macro. |
-| `just download-data` | Downloads the raw MVTec AD dataset from Hugging Face Hub. |
-| `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally (if downloaded manually). |
-| `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
-| `just upload-data` | Uploads a local directory back to the Hugging Face Hub dataset repository. |
-| `just lint` | Sequentially auto-fixes lint errors, enforces layout formatting, evaluates strict types via Mypy, and runs the OKF compliance Python script. |
-| `just test` | Runs the asynchronous test suite via Pytest with code coverage matrix evaluation. |
-| `just format` | Safely forces code blocks to match global stylistic spacing layout parameters. |
-| `just docs` | Compiles your docstrings and Markdown graph into a live local documentation page reflecting structural source modifications. |
-| `just clean` | Purges localized compiler cache states, artifact allocations (`__pycache__`, `.mypy_cache`), and lock remnants. |
+| :--- | :--- |
+| `just setup` | Installs virtual environments, pre-commit hooks, and IDE extensions. |
+| `just lint` | Auto-fixes linting errors (Ruff), formatting, and evaluates strict types (Mypy). |
+| `just test` | Runs the Pytest suite, checking unit/integration tests and coverage matrices. |
+| `just format` | Enforces global layout and spacing rules across the codebase. |
+| `just docs` | Compiles Python docstrings and Markdown into a live documentation website locally. |
+| `just clean` | Removes compiled artifacts (`__pycache__`), cache files, and lock remnants. |
+| `just default` | Lists all available commands with short descriptions. |
 
 ---
 
-## 🛡️ Pre-Commit Integrity Framework
+## 🏗️ Architecture & Agentic Workflow (Advanced)
 
-A robust suite of checks runs automatically before any commit can seal.
+For engineering teams working on core system architecture or AI agent coordination, this project utilizes specialized design patterns.
 
-1. **Syntax & Whitespace:** Fixes trailing spaces and ensures single-newline EOF structures.
-2. **Security Tripwires:** Runs `detect-secrets` against the `.secrets.baseline` file.
-3. **Lexical Validation:** Executes `codespell` to catch typos in code, strings, and documentation via `tomli` parsing.
-4. **Notebook Output Stripping (`nbstripout`):** Automatically runs `nbstripout` to clear execution states and keep git diffs clean.
-   > [!NOTE]
-   > By default, `notebooks/shared/` is excluded from `nbstripout` so teammates can share executed output states (plots, logs, and exploration results). To enforce output stripping on all notebooks, remove the `exclude: ^notebooks/shared/` rule from `.pre-commit-config.yaml`.
-5. **Code Quality:** Triggers `ruff-check`, `ruff-format`, and `mypy` locally targeting `app/` and `scripts/` with `pass_filenames: false` to ensure global context evaluation.
-6. **Knowledge Graph Integrity:** Triggers `validate_okf.py` to ensure all AI context boundaries remain parsable.
-7. **Author Identity:** A bash gate confirming `commit.gpgsign = true` is active locally, ensuring all commits are cryptographically verified to a human author.
+### Vertical Slice Architecture (VSA)
 
----
+Unlike traditional horizontally-layered architectures (where models, controllers, and services are separated globally), we organize code around specific **features**. For example, everything related to `anomaly_classification` lives exclusively inside `app/pipelines/anomaly_classification/`. This ensures high cohesion and makes AI-assisted coding significantly more reliable. Read more in the [VSA Guide](./docs/concepts/vertical_slice_architecture.md).
 
-## ⚙️ CI/CD Pipeline Automation & Dependency Management
+### The Agentic Multi-Persona Framework
 
-The continuous integration and documentation deployment pipelines are managed via GitHub Actions. All workflows are optimized for speed, reliability, and security.
+To handle complex feature generation, we enforce an Open Knowledge Format (OKF) workflow utilizing specialized markdown personas located in `.agents/roles/`.
 
-### Node.js 24 & Modern Runner Compliance
+* **Orchestrator (`01-orchestrator.md`):** Analyzes specs and routes tasks.
+* **Architect (`02-architect.md`):** Defines domain boundaries.
+* **Engineer (`03-engineer.md`):** Implements vertical slice logic.
+* **QA Automator (`04-qa-automator.md`):** Scaffolds test-driven regression suites.
 
-To comply with GitHub's runner upgrades and deprecation of older Node.js runtimes, all workflow files use modern action versions:
-
-* **`actions/checkout@v6`**: Used for repository checkout, providing improved credential security, stability fixes, and native Node.js 24 compatibility.
-* **`prefix-dev/setup-pixi@v0.10.0`**: Used to bootstrap the Pixi package environment, complying with Node.js 24 upgrade paths.
-
-### Automated Updates with Dependabot
-
-To prevent version drift and runtime deprecation issues, this repository includes a Dependabot configuration (`.github/dependabot.yml`). Dependabot is configured to:
-
-* Monitor all GitHub Actions dependencies.
-* Scan for updates on a weekly schedule.
-* Automatically open Pull Requests when new versions (like future major action releases) are published.
+*Note: Any unstructured text committed without OKF YAML frontmatter will be rejected by pre-commit hooks. See the [OKF Concept Guide](./docs/concepts/open_knowledge_format.md) for details.*
 
 ---
 
-## ⚙️ CI/CD Pipeline Phases
+## 🛡️ Pre-Commit Integrity & CI/CD
 
-The repository’s continuous integration workflow is managed via `.github/workflows/ci.yml` and is split into two highly optimized, cache-enabled automated phases.
+To maintain production standards, the repository runs a robust gauntlet of checks:
 
-### Job 1: Code & Context Quality Gate
+1. **Pre-Commit Hooks:** Triggered on every commit, executing whitespace fixes, secret scanning (`detect-secrets`), lexical spellchecking (`codespell`), notebook output stripping (`nbstripout`), and strict code quality evaluations (`ruff`, `mypy`).
+2. **GitHub Actions (CI/CD):**
+   * **Phase 1 (Quality Gate):** Runs isolated ubuntu environments to test the codebase against the `pytest` matrix without requiring local GPG identities.
+   * **Phase 2 (Docs Deployment):** Compiles and deploys the Zensical/MkDocs documentation natively to GitHub Pages.
 
-Runs automatically on every `push` and `pull_request` targeting the `main` branch.
+---
 
-* Spawns an isolated `ubuntu-latest` runner equipped with Python 3.12 and `pixi` dependency environment.
-* Triggers all pre-commit hooks globally across all workspace assets.
-* *Automation Rule:* Environment-specific identity hooks (`check-identity`, `enforce-author-identity`) are **explicitly bypassed (`SKIP`)** inside the cloud execution layer, as virtual machine runners lack local human GPG credentials.
-* Executes the complete `pytest` matrix to ensure all functional components remain verified.
+## 📚 Comprehensive Documentation
 
-### Job 2: Build & Deploy Documentation
+For a deeper dive into the methodology, API references, and project roadmap, please visit our fully compiled documentation:
 
-Triggers **only** after Job 1 passes perfectly, and only upon direct pushes to the `main` branch.
-
-* Locks dependencies using the `ci-dev` environment setup via `pixi`.
-* Compiles your markdown guides and codebase docstrings via `zensical build`.
-* Safely packages the resulting `./site` directory and deploys it natively to **GitHub Pages**, providing a centralized, universally accessible OKF-compliant documentation site for your system.
+* **[Live Documentation Site](https://foersben.github.io/industrial-component-anomaly-detection)** (Deployed via GitHub Pages)
+* **Local Docs:** Run `just docs` to spin up a local copy.
 
 ---
 
 ## 📄 License & Attribution
 
-* **Codebase:** Distributed under the [MIT License](./LICENSE) (or your chosen code license).
-* **Dataset (MVTec AD):** Distributed strictly under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License ([CC BY-NC-SA 4.0](./LICENSE-DATA.md)). This project is compliant with non-commercial usage terms.
+* **Codebase:** Distributed under the [MIT License](./LICENSE).
+* **Dataset (MVTec AD):** Distributed strictly under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License ([CC BY-NC-SA 4.0](./LICENSE-DATA.md)). Compliant with non-commercial usage terms.
 
 ### Academic Citation
 
 If you use this dataset or codebase in scientific or academic work, please cite the original authors:
 
 > Paul Bergmann, Kilian Batzner, Michael Fauser, David Sattlegger, Carsten Steger: *The MVTec Anomaly Detection Dataset: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. International Journal of Computer Vision 129(4):1038-1059, 2021.
+>
 > Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD — A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.
