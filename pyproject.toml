@@ -18,7 +18,7 @@ dependencies = [
     "fastapi[standard]>=0.115.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    "uvicorn>=0.50.0",
+    "uvicorn>=0.50.0", "anomalib>=2.5.0,<3",
 ]
 
 [dependency-groups]
