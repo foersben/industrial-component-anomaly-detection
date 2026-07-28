@@ -42,6 +42,7 @@ graph TD
 
 ### 1. [Technical & Architecture Concepts](concepts/index.md)
 
+
 Detailed conceptual guides on software engineering foundations, environment containment, and quality gates:
 
 * [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) — Structuring features into self-contained vertical slices.

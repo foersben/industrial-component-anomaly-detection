@@ -70,8 +70,8 @@ fetch-data: download-data
 
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
-	@echo "Extracting MVTec AD package..."
-	tar -xf data/raw/mvtec_ad/mvtec_anomaly_detection.tar.xz -C data/raw/mvtec_ad/
+        @echo "Extracting MVTec AD package..."
+        tar -xf data/raw/mvtec_ad/mvtec_anomaly_detection.tar.xz -C data/raw/mvtec_ad/
 
 # Log in to Hugging Face Hub (queries KeePassXC Secret Service via D-Bus, falls back to interactive prompt)
 hf-login:
@@ -87,7 +87,7 @@ hf-login:
 
 # Upload a local directory to the Hugging Face Hub dataset repository (defaults to raw data dir)
 upload-data local_dir='data/raw/mvtec_ad':
-	pixi run --frozen -e dev hf upload foersben/mvtec-ad {{local_dir}} . --repo-type dataset
+        pixi run --frozen -e dev hf upload foersben/mvtec-ad {{local_dir}} . --repo-type dataset
 
 # Clean Jupyter notebook checkpoint caches under the notebooks directory
 clean-notebooks:
