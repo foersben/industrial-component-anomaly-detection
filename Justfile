@@ -65,8 +65,13 @@ fetch-data: download-data
     mkdir -p data/external/aupimo_benchmarks
     mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
     rm -rf data/external/aupimo_repo
+# Run the dummy classifier evaluation to demonstrate the accuracy paradox (supports theoretical or real mode)
+run-dummy *args:
+    pixi run -e dev python -m app.main dummy {{args}}
 
-
+# Run the Patchcore baseline on the MVTec AD dataset
+run-baseline *args:
+    pixi run -e dev python -m app.main baseline {{args}}
 
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
