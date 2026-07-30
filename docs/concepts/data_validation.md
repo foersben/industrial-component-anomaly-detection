@@ -36,6 +36,7 @@ In Vertical Slice Architecture, Pydantic models (schemas) should be placed as cl
    ```python
    from pydantic import BaseModel, EmailStr
 
+
    class UserCreateRequest(BaseModel):
        username: str
        email: EmailStr

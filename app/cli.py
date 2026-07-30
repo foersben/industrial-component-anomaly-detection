@@ -52,11 +52,14 @@ def main() -> None:
         "--data-root", type=str, default="data/raw/mvtec_ad", help="Path to MVTec AD dataset root"
     )
     baseline_parser.add_argument("--category", type=str, default="bottle", help="MVTec AD category")
+    baseline_parser.add_argument(
+        "--fpr-limit", type=float, default=1e-4, help="Max False Positive Rate limit for AUPIMO threshold"
+    )
 
     args = parser.parse_args()
 
     if args.command == "dummy":
-        from app.pipelines.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
+        from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
 
         mode = args.mode.lower()
         if mode == "real":
@@ -67,9 +70,9 @@ def main() -> None:
             print(f"Error: Invalid mode '{args.mode}'. Choose from 'theoretical' or 'real'.")
             sys.exit(1)
     elif args.command == "baseline":
-        from app.pipelines.baseline import run_baseline
+        from app.pipelines.modelling.baseline import run_baseline
 
-        run_baseline(data_root=args.data_root, category=args.category)
+        run_baseline(data_root=args.data_root, category=args.category, fpr_limit=args.fpr_limit)
     else:
         parser.print_help()
         sys.exit(1)
