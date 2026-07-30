@@ -18,7 +18,7 @@ dependencies = [
     "fastapi[standard]>=0.115.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    "uvicorn>=0.50.0",
+    "uvicorn>=0.50.0", "anomalib>=2.5.0,<3",
 ]
 
 [dependency-groups]
@@ -118,6 +118,7 @@ matplotlib = ">=3.11.0,<4"
 opencv = ">=5.0.0,<6"
 pandas = ">=3.0.3,<4"
 pillow = ">=12.3.0,<13"
+requests = ">=2.32.0,<3"
 scikit-learn = ">=1.9.0,<2"
 seaborn = ">=0.13.2,<0.14"
 statsmodels = ">=0.14.6,<0.15"
@@ -140,3 +141,5 @@ ci = { features = ["cpu"], solve-group = "ci" }
 ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
 
 [tool.pixi.tasks]
+api = "uvicorn app.api.main:app --reload --port 8000"
+ui = "streamlit run app/ui.py --server.port 8501"

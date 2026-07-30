@@ -30,9 +30,24 @@ check:
 format:
 	pixi run --frozen -e dev ruff format .
 
-# Start the production FastAPI web server
+# Start FastAPI (uvicorn) and Streamlit frontend concurrently
 run:
-	pixi run --frozen fastapi run app/main.py
+    #!/usr/bin/env python3
+    import subprocess
+
+    print("Starting FastAPI and Streamlit...", flush=True)
+    api = subprocess.Popen(["pixi", "run", "--frozen", "-e", "dev", "api"])
+    ui = subprocess.Popen(["pixi", "run", "--frozen", "-e", "dev", "ui"])
+
+    try:
+        api.wait()
+        ui.wait()
+    except KeyboardInterrupt:
+        print("\nShutting down gracefully...", flush=True)
+        # The child processes also receive the SIGINT from the terminal automatically.
+        # We just need to wait for them to finish their graceful shutdown.
+        api.wait()
+        ui.wait()
 
 # Clean all temporary files, cache folders, compilation files, and local environments
 clean:
@@ -66,7 +81,15 @@ fetch-data: download-data
 	mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
 	rm -rf data/external/aupimo_repo
 
+# Run the dummy classifier evaluation to demonstrate the accuracy paradox (supports theoretical or real mode)
+# Example: just run-dummy mode=real data_root=data/raw/mvtec_ad category=bottle
+run-dummy *args:
+	pixi run --frozen -e dev python -m app.main dummy {{args}}
 
+# Run the Patchcore baseline on the MVTec AD dataset
+# Example: just run-baseline category="bottle"
+run-baseline *args:
+	pixi run --frozen -e dev python -m app.main baseline {{args}}
 
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
