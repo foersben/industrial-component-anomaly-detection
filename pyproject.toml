@@ -141,5 +141,5 @@ ci = { features = ["cpu"], solve-group = "ci" }
 ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
 
 [tool.pixi.tasks]
-api = "uvicorn app.api.main:app --reload --port 8000"
-ui = "streamlit run app/ui.py --server.port 8501"
+api = { cmd = "uvicorn app.api.main:app --reload --port 8000", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }
+ui = { cmd = "streamlit run app/ui.py --server.port 8501", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }

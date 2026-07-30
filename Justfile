@@ -30,24 +30,33 @@ check:
 format:
 	pixi run --frozen -e dev ruff format .
 
+# Kill any running FastAPI/Streamlit instances (frees ports 8000 and 8501)
+stop:
+    @echo "Stopping FastAPI and Streamlit..."
+    @fuser -k 8000/tcp 2>/dev/null || true
+    @fuser -k 8501/tcp 2>/dev/null || true
+    @echo "Done."
+
 # Start FastAPI (uvicorn) and Streamlit frontend concurrently
 run:
-    #!/usr/bin/env python3
-    import subprocess
+    #!/usr/bin/env bash
+    set -euo pipefail
 
-    print("Starting FastAPI and Streamlit...", flush=True)
-    api = subprocess.Popen(["pixi", "run", "--frozen", "-e", "dev", "api"])
-    ui = subprocess.Popen(["pixi", "run", "--frozen", "-e", "dev", "ui"])
+    # Release ports if previous run was killed uncleanly
+    fuser -k 8000/tcp 2>/dev/null || true
+    fuser -k 8501/tcp 2>/dev/null || true
+    sleep 0.3
 
-    try:
-        api.wait()
-        ui.wait()
-    except KeyboardInterrupt:
-        print("\nShutting down gracefully...", flush=True)
-        # The child processes also receive the SIGINT from the terminal automatically.
-        # We just need to wait for them to finish their graceful shutdown.
-        api.wait()
-        ui.wait()
+    echo "Starting FastAPI and Streamlit..."
+    pixi run --frozen -e dev api &
+    API_PID=$!
+    pixi run --frozen -e dev ui &
+    UI_PID=$!
+
+    # Propagate SIGINT/SIGTERM to both child processes and wait cleanly
+    trap 'echo; echo "Shutting down gracefully..."; kill "$API_PID" "$UI_PID" 2>/dev/null; wait "$API_PID" "$UI_PID" 2>/dev/null; exit 0' INT TERM
+
+    wait
 
 # Clean all temporary files, cache folders, compilation files, and local environments
 clean:

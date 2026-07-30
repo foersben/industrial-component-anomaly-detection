@@ -6,8 +6,8 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from app.pipelines.baseline import run_baseline
-from app.pipelines.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
+from app.pipelines.modelling.baseline import run_baseline
+from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
 
 # Suppress timm deprecation warnings emitted by downstream libraries
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*timm.*")
@@ -40,10 +40,12 @@ class BaselineEvaluationRequest(BaseModel):
     Attributes:
         data_root: Path to the root directory of the MVTec AD dataset.
         category: The specific category to evaluate (e.g., 'bottle').
+        fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
     """
 
     data_root: str = "data/raw/mvtec_ad"
     category: str = "bottle"
+    fpr_limit: float = 1e-4
 
 
 @app.get("/")
@@ -97,7 +99,7 @@ def run_dummy_pipeline(req: DummyEvaluationRequest) -> dict[str, Any]:
 
 
 @app.post("/api/pipelines/baseline")
-def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, str]:
+def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
     """Run Patchcore baseline evaluation endpoint.
 
     Args:
@@ -106,10 +108,10 @@ def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, str]:
     Returns:
         Dictionary containing evaluation metrics and summary lines.
     """
-    results = run_baseline(data_root=req.data_root, category=req.category)
+    results = run_baseline(data_root=req.data_root, category=req.category, fpr_limit=req.fpr_limit)
     return {
         "status": "success",
         "category": req.category,
         "message": f"Baseline Patchcore execution finished for category '{req.category}'.",
-        "results": str(results),
+        "results": results,
     }
