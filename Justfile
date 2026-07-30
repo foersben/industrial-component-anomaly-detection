@@ -30,9 +30,25 @@ check:
 format:
     pixi run -e dev ruff format .
 
-# Start the production FastAPI web server
+# Start FastAPI (uvicorn) and Streamlit frontend concurrently
 run:
-    pixi run fastapi run app/main.py
+    #!/usr/bin/env python3
+    import subprocess
+
+    print("Starting FastAPI and Streamlit...", flush=True)
+    api = subprocess.Popen(["pixi", "run", "-e", "dev", "api"])
+    ui = subprocess.Popen(["pixi", "run", "-e", "dev", "ui"])
+
+    try:
+        api.wait()
+        ui.wait()
+    except KeyboardInterrupt:
+        print("\nShutting down gracefully...", flush=True)
+        # The child processes also receive the SIGINT from the terminal automatically.
+        # We just need to wait for them to finish their graceful shutdown.
+        api.wait()
+        ui.wait()
+
 
 # Clean all temporary files, cache folders, compilation files, and local environments
 clean:

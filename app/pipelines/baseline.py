@@ -10,6 +10,8 @@ from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import Patchcore
 
+from app.core.logger import logger
+
 # Suppress the timm deprecation warning caused by anomalib
 warnings.filterwarnings("ignore", category=FutureWarning, module="timm.*")
 
@@ -36,10 +38,10 @@ def run_baseline(data_root: str = "data/raw/mvtec_ad", category: str = "bottle")
     engine = Engine(accelerator="gpu", devices=1)
 
     # 3. Fit and Test
-    print(f"Fitting Patchcore model on {category} category...")
+    logger.info("Fitting Patchcore model on %s category...", category)
     engine.fit(model, datamodule)
 
-    print("Testing Patchcore model...")
+    logger.info("Testing Patchcore model...")
     test_results = engine.test(model=model, datamodule=datamodule)
 
     return test_results
