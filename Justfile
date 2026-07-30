@@ -82,10 +82,12 @@ fetch-data: download-data
     mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
     rm -rf data/external/aupimo_repo
 # Run the dummy classifier evaluation to demonstrate the accuracy paradox (supports theoretical or real mode)
+# Example: just run-dummy mode=real data_root=data/raw/mvtec_ad category=bottle
 run-dummy *args:
     pixi run -e dev python -m app.main dummy {{args}}
 
 # Run the Patchcore baseline on the MVTec AD dataset
+# Example: just run-baseline category="bottle"
 run-baseline *args:
     pixi run -e dev python -m app.main baseline {{args}}
 
