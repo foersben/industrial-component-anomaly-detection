@@ -16,6 +16,8 @@ from anomalib.models import Patchcore
 
 from app.core.logger import logger
 from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
+from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
+from app.pipelines.preprocessing.factory import build_pipeline_from_configs
 
 # Suppress the timm deprecation warning caused by anomalib
 warnings.filterwarnings("ignore", category=FutureWarning, module="timm.*")
@@ -228,7 +230,8 @@ def format_results(
 def run_baseline(
     data_root: str = "data/raw/mvtec_ad",
     category: str = "bottle",
-    fpr_limit: float = 1e-4,  # <-- Configurable FPR limit
+    fpr_limit: float = 1e-4,
+    preprocessing_steps: list[dict[str, Any]] | None = None,
 ) -> BaselineResult:
     """Run the baseline Patchcore model on the MVTec AD dataset.
 
@@ -236,16 +239,42 @@ def run_baseline(
         data_root: Path to the root directory of the MVTec AD dataset.
         category: The specific category to evaluate (e.g., 'bottle').
         fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
+        preprocessing_steps: List of preprocessing step configurations.
 
     Returns:
         Structured dictionary containing test metrics and artifact paths.
     """
+    pipeline = build_pipeline_from_configs(preprocessing_steps)
+
+    logger.info("Configured preprocessing pipeline with %d steps.", len(pipeline))
+
     base_dir = Path("results") / "Patchcore" / category
 
+    transform_adapter = PreprocessingTransformAdapter(pipeline)
+
     # 1. Initialize dataset, model, and engine
-    datamodule = MVTecAD(root=data_root, category=category)
+    datamodule = MVTecAD(
+        root=data_root,
+        category=category,
+        train_batch_size=16,
+        eval_batch_size=16,
+    )
+
+    if len(pipeline) > 0:
+        # Setup the datamodule datasets so train_data and test_data are instantiated
+        datamodule.setup()
+
+        # Assign the adapter transform to the underlying datasets
+        train_data = getattr(datamodule, "train_data", None)
+        if train_data is not None:
+            train_data.transform = transform_adapter
+
+        test_data = getattr(datamodule, "test_data", None)
+        if test_data is not None:
+            test_data.transform = transform_adapter
+
     model = Patchcore(backbone="resnet18")
-    engine = Engine(accelerator="gpu", devices=1)
+    engine = Engine(accelerator="gpu", devices=1, precision="16-mixed")
 
     # 2. Fit and Test
     logger.info("Fitting Patchcore model on %s category...", category)
