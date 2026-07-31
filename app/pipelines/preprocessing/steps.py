@@ -1,4 +1,8 @@
-"""Preprocessing steps module."""
+"""Preprocessing steps module.
+
+This module provides a collection of preprocessing steps that can be used to
+preprocess images before they are fed into the anomaly detection model.
+"""
 
 from typing import Any
 

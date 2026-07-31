@@ -88,7 +88,12 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing --cov-report=html"
 cache_dir = ".cache/pytest_cache"
-hypothesis_database_file = ".cache/hypothesis"
+filterwarnings = [
+    "ignore::FutureWarning",
+    "ignore::DeprecationWarning",
+    "ignore:Importing from timm.models.layers is deprecated:FutureWarning",
+    "ignore:The anomalib.models.components.dinov2 package is deprecated:FutureWarning",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

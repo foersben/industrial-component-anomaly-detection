@@ -274,7 +274,7 @@ def run_baseline(
             test_data.transform = transform_adapter
 
     model = Patchcore(backbone="resnet18")
-    engine = Engine(accelerator="gpu", devices=1, precision="16-mixed")
+    engine = Engine(accelerator="gpu", devices=1)
 
     # 2. Fit and Test
     logger.info("Fitting Patchcore model on %s category...", category)
