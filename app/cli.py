@@ -3,6 +3,8 @@
 This module provides a CLI for running different anomaly detection pipelines.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
