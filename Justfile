@@ -12,6 +12,9 @@ setup:
 install:
 	@just setup
 
+init:
+	pixi shell --manifest-path ./pyproject.toml -e dev
+
 # Run the pytest test suite in the dev environment
 test:
 	pixi run --frozen -e dev pytest

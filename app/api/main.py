@@ -46,6 +46,7 @@ class BaselineEvaluationRequest(BaseModel):
     data_root: str = "data/raw/mvtec_ad"
     category: str = "bottle"
     fpr_limit: float = 1e-4
+    preprocessing_steps: list[dict[str, Any]] | None = None
 
 
 @app.get("/")
@@ -108,7 +109,12 @@ def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
     Returns:
         Dictionary containing evaluation metrics and summary lines.
     """
-    results = run_baseline(data_root=req.data_root, category=req.category, fpr_limit=req.fpr_limit)
+    results = run_baseline(
+        data_root=req.data_root,
+        category=req.category,
+        fpr_limit=req.fpr_limit,
+        preprocessing_steps=req.preprocessing_steps,
+    )
     return {
         "status": "success",
         "category": req.category,

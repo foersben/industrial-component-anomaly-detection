@@ -139,11 +139,25 @@ def render_baseline_patchcore_tab() -> None:
     data_root = st.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="b_root")
     category = st.text_input("Category Name", value="bottle", key="b_cat")
 
+    st.subheader("Preprocessing Options")
+    use_clahe = st.checkbox("Apply CLAHE", value=False)
+    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False)
+
+    preprocessing_steps = []
+    if use_clahe:
+        preprocessing_steps.append({"name": "clahe", "params": {}})
+    if use_gaussian:
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+
     if not st.button("Run Patchcore Evaluation Pipeline"):
         return
 
     with st.spinner("Fitting model and evaluating Image & Pixel level metrics..."):
-        payload = {"data_root": data_root, "category": category}
+        payload = {
+            "data_root": data_root,
+            "category": category,
+            "preprocessing_steps": preprocessing_steps,
+        }
         data = make_api_request("/api/pipelines/baseline", payload, timeout=300)
 
         if not data:
