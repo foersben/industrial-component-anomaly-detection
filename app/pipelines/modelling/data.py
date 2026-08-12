@@ -69,9 +69,7 @@ def build_mvtec_manifest(root: str | Path) -> pd.DataFrame:
             for defect_dir in sorted(path for path in split_dir.iterdir() if path.is_dir()):
                 is_anomaly = defect_dir.name != "good"
                 image_paths = sorted(
-                    path
-                    for path in defect_dir.iterdir()
-                    if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+                    path for path in defect_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
                 )
                 for image_path in image_paths:
                     width, height, mode = _read_image_metadata(image_path)
