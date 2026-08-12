@@ -227,4 +227,7 @@ data/raw/
 data/processed/
 data/external/
 
+# Locally trained notebook checkpoints (directory or local symlink)
+/models
+
 results/
