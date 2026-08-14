@@ -71,7 +71,7 @@ def build_mvtec_manifest(root: str | Path) -> pd.DataFrame:
 
     rows: list[dict[str, object]] = []
 
-    all_images = sorted(
+    all_images = (
         path for path in dataset_root.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
     )
 
@@ -100,6 +100,16 @@ def build_mvtec_manifest(root: str | Path) -> pd.DataFrame:
                 "mask_path": str(mask_path.resolve()) if mask_path.is_file() else None,
             }
         )
+
+    # Sort rows to adhere to your test assertion (train before test, etc.):
+    rows.sort(
+        key=lambda row: (
+            row["product"],
+            0 if row["split"] == "train" else 1,
+            row["defect_type"],
+            row["path"],
+        )
+    )
 
     if not rows:
         raise ValueError(f"No MVTec images were found below: {dataset_root}")
