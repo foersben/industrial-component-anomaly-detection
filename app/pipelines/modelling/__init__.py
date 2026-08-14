@@ -1,5 +1,5 @@
-"""Modelling pipelines and their shared dataset helpers."""
+"""Modelling pipelines."""
 
-from app.pipelines.modelling.data import MVTecImageDataset, build_mvtec_manifest
+from app.domain.data import MVTecImageDataset, build_mvtec_manifest
 
 __all__ = ["MVTecImageDataset", "build_mvtec_manifest"]
