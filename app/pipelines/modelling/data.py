@@ -24,7 +24,17 @@ MANIFEST_COLUMNS = [
 
 
 def _read_image_metadata(path: Path) -> tuple[int, int, str]:
-    """Read image dimensions and colour mode without decoding all pixels."""
+    """Read image dimensions and colour mode without decoding all pixels.
+
+    Args:
+        path: The path to the image.
+
+    Returns:
+        A tuple containing the width, height, and colour mode of the image.
+
+    Raises:
+        ValueError: If the image cannot be read.
+    """
     try:
         with Image.open(path) as image:
             width, height = image.size
@@ -60,34 +70,36 @@ def build_mvtec_manifest(root: str | Path) -> pd.DataFrame:
     dataset_root = dataset_root.resolve()
 
     rows: list[dict[str, object]] = []
-    for product_dir in sorted(path for path in dataset_root.iterdir() if path.is_dir()):
-        for split in ("train", "test"):
-            split_dir = product_dir / split
-            if not split_dir.is_dir():
-                continue
 
-            for defect_dir in sorted(path for path in split_dir.iterdir() if path.is_dir()):
-                is_anomaly = defect_dir.name != "good"
-                image_paths = sorted(
-                    path for path in defect_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
-                )
-                for image_path in image_paths:
-                    width, height, mode = _read_image_metadata(image_path)
-                    mask_path = product_dir / "ground_truth" / defect_dir.name / f"{image_path.stem}_mask.png"
-                    rows.append(
-                        {
-                            "path": str(image_path.resolve()),
-                            "image_id": image_path.stem,
-                            "product": product_dir.name,
-                            "split": split,
-                            "defect_type": defect_dir.name,
-                            "is_anomaly": is_anomaly,
-                            "width": width,
-                            "height": height,
-                            "mode": mode,
-                            "mask_path": str(mask_path.resolve()) if mask_path.is_file() else None,
-                        }
-                    )
+    all_images = sorted(
+        path for path in dataset_root.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+    )
+
+    for image_path in all_images:
+        split = image_path.parent.parent.name
+        if split not in ("train", "test"):
+            continue
+
+        product_dir = image_path.parent.parent.parent
+        defect_dir = image_path.parent
+
+        is_anomaly = defect_dir.name != "good"
+        width, height, mode = _read_image_metadata(image_path)
+        mask_path = product_dir / "ground_truth" / defect_dir.name / f"{image_path.stem}_mask.png"
+        rows.append(
+            {
+                "path": str(image_path.resolve()),
+                "image_id": image_path.stem,
+                "product": product_dir.name,
+                "split": split,
+                "defect_type": defect_dir.name,
+                "is_anomaly": is_anomaly,
+                "width": width,
+                "height": height,
+                "mode": mode,
+                "mask_path": str(mask_path.resolve()) if mask_path.is_file() else None,
+            }
+        )
 
     if not rows:
         raise ValueError(f"No MVTec images were found below: {dataset_root}")
@@ -96,7 +108,12 @@ def build_mvtec_manifest(root: str | Path) -> pd.DataFrame:
 
 
 class MVTecImageDataset(Dataset[tuple[Tensor, int, str]]):
-    """Load manifest images as ``(tensor, anomaly label, path)`` tuples."""
+    """Load manifest images as ``(tensor, anomaly label, path)`` tuples.
+
+    Attributes:
+        frame: Manifest rows containing ``path`` and ``is_anomaly``.
+        transform: Callable converting an RGB PIL image to a tensor.
+    """
 
     def __init__(self, frame: pd.DataFrame, transform: Callable[[Image.Image], Tensor]) -> None:
         """Initialize the dataset from a manifest subset and image transform.
@@ -121,7 +138,14 @@ class MVTecImageDataset(Dataset[tuple[Tensor, int, str]]):
         return len(self.frame)
 
     def __getitem__(self, index: int) -> tuple[Tensor, int, str]:
-        """Load and transform one image."""
+        """Load and transform one image.
+
+        Args:
+            index: The index of the image to load.
+
+        Returns:
+            A tuple containing the transformed image tensor, the anomaly label, and the path to the image.
+        """
         row = self.frame.iloc[index]
         path = str(row["path"])
         with Image.open(path) as image:
