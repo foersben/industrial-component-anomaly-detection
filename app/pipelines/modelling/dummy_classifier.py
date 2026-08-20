@@ -5,7 +5,6 @@ detection.
 """
 
 import warnings
-from pathlib import Path
 from typing import Any
 
 import cv2
@@ -13,6 +12,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score
 
 from app.core.logger import logger
+from app.domain import build_mvtec_manifest
 
 # Suppress the timm deprecation warning caused by anomalib
 warnings.filterwarnings("ignore", category=FutureWarning, module="timm.*")
@@ -28,17 +28,22 @@ def run_real_data_dummy(data_root: str = "data/raw/mvtec_ad", category: str = "b
     Returns:
         Dictionary containing evaluation metrics and summary lines.
     """
-    gt_dir = Path(data_root) / category / "ground_truth"
+    try:
+        manifest = build_mvtec_manifest(data_root)
+    except ValueError as error:
+        return {"error": str(error)}
 
-    if not gt_dir.exists():
-        msg = f"Error: Ground truth directory not found at {gt_dir}"
-        logger.error(msg)
+    category_masks = manifest[(manifest["product"] == category) & manifest["mask_path"].notna()]["mask_path"].unique()
+
+    if len(category_masks) == 0:
+        msg = f"No ground truth masks found for category: {category}"
+        logger.warning(msg)
         return {"error": msg}
 
     all_true_pixels = []
 
     # Load all masks for the given category
-    for mask_path in gt_dir.rglob("*.png"):
+    for mask_path in category_masks:
         mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
         if mask is not None:
             # Flatten the 2D mask into a 1D array of pixels

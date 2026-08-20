@@ -1,4 +1,4 @@
-"""Unit tests for modelling dataset helpers."""
+"""Unit tests for domain dataset helpers."""
 
 from pathlib import Path
 
@@ -8,11 +8,15 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from app.pipelines.modelling import MVTecImageDataset, build_mvtec_manifest
+from app.domain import MVTecImageDataset, build_mvtec_manifest
 
 
 def test_build_mvtec_manifest_links_images_and_masks(tmp_path: Path) -> None:
-    """Build manifest rows for normal training and anomalous test images."""
+    """Build manifest rows for normal training and anomalous test images.
+
+    Args:
+        tmp_path: Temporary directory for test data.
+    """
     good_path = tmp_path / "bottle" / "train" / "good" / "001.png"
     defect_path = tmp_path / "bottle" / "test" / "broken" / "002.png"
     mask_path = tmp_path / "bottle" / "ground_truth" / "broken" / "002_mask.png"
@@ -30,13 +34,21 @@ def test_build_mvtec_manifest_links_images_and_masks(tmp_path: Path) -> None:
 
 
 def test_build_mvtec_manifest_rejects_missing_root(tmp_path: Path) -> None:
-    """Report a clear error for a missing dataset directory."""
+    """Report a clear error for a missing dataset directory.
+
+    Args:
+        tmp_path: Temporary directory for test data.
+    """
     with pytest.raises(FileNotFoundError, match="does not exist"):
         build_mvtec_manifest(tmp_path / "missing")
 
 
 def test_mvtec_image_dataset_returns_tensor_label_and_path(tmp_path: Path) -> None:
-    """Load manifest images using the notebook-facing tuple contract."""
+    """Load manifest images using the notebook-facing tuple contract.
+
+    Args:
+        tmp_path: Temporary directory for test data.
+    """
     image_path = tmp_path / "grayscale.png"
     Image.new("L", (6, 4)).save(image_path)
     frame = pd.DataFrame({"path": [str(image_path)], "is_anomaly": [True]})

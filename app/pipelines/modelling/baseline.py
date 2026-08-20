@@ -13,9 +13,11 @@ import torch
 from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import Patchcore
+from sklearn.metrics import f1_score
 
 from app.core.logger import logger
 from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
+from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.factory import build_pipeline_from_configs
 
@@ -144,7 +146,7 @@ def extract_and_save_pr_metrics(
     datamodule: MVTecAD,
     base_dir: Path,
     fpr_limit: float = 1e-4,
-) -> None:
+) -> tuple[float, float]:
     """Extract model predictions and persist Precision-Recall metrics for visual analysis.
 
     Args:
@@ -158,7 +160,7 @@ def extract_and_save_pr_metrics(
         logger.info("Extracting predictions for PR curve metrics...")
         predictions = engine.predict(model=model, datamodule=datamodule)
         if not predictions:
-            return
+            return 0.0, 0.0
 
         pixel_scores, pixel_labels = [], []
         image_scores, image_labels = [], []
@@ -179,24 +181,54 @@ def extract_and_save_pr_metrics(
             image_scores, image_labels, base_dir / "image_metrics.npz", level="image", fpr_limit=fpr_limit
         )
 
+        # Compute manual thresholds and F1 scores strictly on normal data
+        image_scores_np = np.concatenate(image_scores)
+        image_labels_np = np.concatenate(image_labels)
+        normal_image_scores = image_scores_np[image_labels_np == 0]
+
+        if len(normal_image_scores) > 0:
+            img_threshold = compute_adaptive_threshold(normal_image_scores, method="quantile", quantile=0.95)
+            img_preds = (image_scores_np > img_threshold).astype(int)
+            manual_image_f1 = float(f1_score(image_labels_np, img_preds))
+        else:
+            manual_image_f1 = 0.0
+
+        pixel_scores_np = np.concatenate(pixel_scores)
+        pixel_labels_np = np.concatenate(pixel_labels)
+        normal_pixel_scores = pixel_scores_np[pixel_labels_np == 0]
+
+        if len(normal_pixel_scores) > 0:
+            pix_threshold = compute_adaptive_threshold(normal_pixel_scores, method="quantile", quantile=0.95)
+            pix_preds = (pixel_scores_np > pix_threshold).astype(int)
+            manual_pixel_f1 = float(f1_score(pixel_labels_np.flatten(), pix_preds.flatten()))
+        else:
+            manual_pixel_f1 = 0.0
+
+        return manual_image_f1, manual_pixel_f1
+
     except Exception as e:
         logger.warning("Could not auto-save evaluation metrics.npz: %s", e)
+        return 0.0, 0.0
 
 
 def format_results(
     test_results: list[Mapping[str, float]] | None,
     category: str,
     base_dir: Path,
+    manual_image_f1: float,
+    manual_pixel_f1: float,
 ) -> BaselineResult:
     """Format anomalib engine evaluation output into a structured response schema.
 
     Args:
-        test_results: Evaluation results from anomalib engine.
-        category: The specific category being evaluated.
+        test_results: A list of metric mappings from Anomalib.
+        category: The component category name.
         base_dir: Base directory to save metrics to.
+        manual_image_f1: Manually calculated image-level F1 score.
+        manual_pixel_f1: Manually calculated pixel-level F1 score.
 
     Returns:
-        Structured dictionary containing test metrics and artifact paths.
+        A dictionary containing structured image_level and pixel_level results.
     """
     res_dict: Mapping[str, float] = test_results[0] if test_results else {}
 
@@ -214,12 +246,12 @@ def format_results(
         "category": category,
         "image_level": {
             "auroc": _to_float(res_dict.get("image_AUROC", 0.0)),
-            "f1_score": _to_float(res_dict.get("image_F1Score", 0.0)),
+            "f1_score": manual_image_f1,
             "metrics_path": str(base_dir / "image_metrics.npz"),
         },
         "pixel_level": {
             "auroc": _to_float(res_dict.get("pixel_AUROC", 0.0)),
-            "f1_score": _to_float(res_dict.get("pixel_F1Score", 0.0)),
+            "f1_score": manual_pixel_f1,
             "t_aupimo_min": t_aupimo_min,
             "metrics_path": str(base_dir / "pixel_metrics.npz"),
         },
@@ -284,9 +316,9 @@ def run_baseline(
     test_results = engine.test(model=model, datamodule=datamodule)
 
     # 3. Extract PR metrics and build summary
-    extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit)
+    manual_image_f1, manual_pixel_f1 = extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit)
 
-    return format_results(test_results, category, base_dir)
+    return format_results(test_results, category, base_dir, manual_image_f1, manual_pixel_f1)
 
 
 if __name__ == "__main__":
