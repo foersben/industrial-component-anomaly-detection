@@ -293,7 +293,8 @@ def render_keras_cae_tab() -> None:
         df_models = pd.DataFrame(cached_models)
         st.dataframe(df_models, width="stretch", hide_index=True)
         st.info(
-            "If you run the pipeline with hyperparameters matching a cached model, it will instantly load without retraining."
+            "If you run the pipeline with hyperparameters matching a cached model, "
+            "it will instantly load without retraining."
         )
     else:
         st.caption("No cached models found in registry.")
@@ -389,7 +390,7 @@ def render_keras_cae_tab() -> None:
     _render_heatmap_explorer(results)
 
 
-def _render_heatmap_explorer(results: dict) -> None:
+def _render_heatmap_explorer(results: dict[str, Any]) -> None:
     """Render the Reconstruction Error Heatmap explorer below the evaluation results.
 
     Shows a gallery of error heatmap overlays for every detected anomalous image.
@@ -416,7 +417,7 @@ def _render_heatmap_explorer(results: dict) -> None:
         """)
 
         # Check if we have Heatmap results from the pipeline run
-        existing_overlays: dict = results.get("heatmap_overlays", {})
+        existing_overlays: dict[Any, Any] = results.get("heatmap_overlays", {})
 
         if existing_overlays:
             _render_heatmap_gallery(existing_overlays, anomalous_indices)
@@ -424,7 +425,7 @@ def _render_heatmap_explorer(results: dict) -> None:
             st.info("No heatmaps were computed.")
 
 
-def _render_heatmap_gallery(overlays: dict, anomalous_indices: list[int]) -> None:
+def _render_heatmap_gallery(overlays: dict[Any, Any], anomalous_indices: list[int]) -> None:
     """Render a grid of Error heatmap overlays for all anomalous images.
 
     Displays images in rows of 3 columns for a clean gallery layout.

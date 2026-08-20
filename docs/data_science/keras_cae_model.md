@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "Keras CAE: Model Architecture & Training"
+description: "Technical documentation for Keras CAE: Model Architecture & Training."
+tags: [keras, autoencoder, documentation]
+---
+
 # Keras CAE: Model Architecture & Training
 
 > **Part of the Keras CAE documentation series.** Start at the [Architecture Overview](keras_cae_architecture.md) if you are new to this pipeline.

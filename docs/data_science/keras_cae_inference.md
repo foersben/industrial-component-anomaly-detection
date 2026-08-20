@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "Keras CAE: Inference & Evaluation"
+description: "Technical documentation for Keras CAE: Inference & Evaluation."
+tags: [keras, autoencoder, documentation]
+---
+
 # Keras CAE: Inference & Evaluation
 
 > **Part of the Keras CAE documentation series.** Start at the

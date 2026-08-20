@@ -40,7 +40,7 @@ all Intel Haswell (2013+) and AMD Zen (2017+) processors.
 Benefits for convolution and matrix multiplication:
 - **float32**: Processes 8 values per AVX2 register simultaneously (256 / 32 = 8).
 - **float16**: Processes 16 values simultaneously.
-- Result: 4–8× throughput improvement over scalar code for conv2d and dense layers.
+- Result: 4-8x throughput improvement over scalar code for conv2d and dense layers.
 
 To fully activate AVX2 in TensorFlow-CPU, we set:
 - ``TF_ENABLE_ONEDNN_OPTS=1``: Enables Intel oneDNN (formerly MKL-DNN), which provides
@@ -338,7 +338,7 @@ def configure_tensorflow(min_vram_mib: int = DEFAULT_MIN_VRAM_MIB) -> HardwarePr
     """
     # Fast path: return cached result if already configured
     if configure_tensorflow._cached_profile is not None:  # type: ignore[attr-defined]
-        return configure_tensorflow._cached_profile  # type: ignore[attr-defined]
+        return configure_tensorflow._cached_profile  # type: ignore[no-any-return,attr-defined]
 
     profile = detect_hardware()
 

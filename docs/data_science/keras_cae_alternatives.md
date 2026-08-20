@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "Classical Alternatives & Design Decisions"
+description: "Technical documentation for Classical Alternatives & Design Decisions."
+tags: [keras, autoencoder, documentation]
+---
+
 # Classical Alternatives & Design Decisions
 
 This page explains the rationale behind the architectural choices made in the Keras Convolutional Autoencoder (CAE) for anomaly detection, specifically comparing them to popular alternatives.

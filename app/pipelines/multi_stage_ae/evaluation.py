@@ -34,7 +34,7 @@ For pixel-level evaluation (localising *where* the defect is), two metrics exist
 
     2. **Logarithmic FPR Bounds**: Integration happens only between FPR = 10⁻⁵ and
        FPR = 10⁻⁴. This extremely tight range corresponds to real industrial reject
-       rates (maximum 1 false alarm per 10,000–100,000 inspected parts).
+       rates (maximum 1 false alarm per 10,000-100,000 inspected parts).
 
     The result is a metric that honestly reflects real industrial performance, not
     laboratory performance under lenient conditions.
@@ -117,7 +117,7 @@ def compute_aupimo(
     try:
         import torch
         from anomalib.data import ImageBatch
-        from anomalib.metrics import AUPIMO  # type: ignore[import-untyped]
+        from anomalib.metrics import AUPIMO
     except ImportError:
         logger.warning("anomalib or torch not available for AUPIMO. Returning 0.0.")
         return 0.0
@@ -179,7 +179,7 @@ def generate_heatmap_overlay(
 ) -> np.ndarray:
     """Generate a colour heatmap overlay of the reconstruction error on the original image.
 
-    The error map is normalised using robust quantile clamping (1st–99th percentile)
+    The error map is normalised using robust quantile clamping (1st-99th percentile)
     to prevent outlier pixels from dominating the colour scale. The heatmap is then
     blended with the original image.
 

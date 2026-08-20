@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "Keras CAE: Architecture Overview"
+description: "Technical documentation for Keras CAE: Architecture Overview."
+tags: [keras, autoencoder, documentation]
+---
+
 # Keras CAE: Architecture Overview
 
 > **Audience**: This document series is written for beginners through intermediate practitioners.

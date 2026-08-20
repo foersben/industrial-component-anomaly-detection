@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "Keras CAE: Explainability (Reconstruction Error)"
+description: "Technical documentation for Keras CAE: Explainability (Reconstruction Error)."
+tags: [keras, autoencoder, documentation]
+---
+
 # Keras CAE: Explainability (Reconstruction Error)
 
 > **Part of the Keras CAE documentation series.**

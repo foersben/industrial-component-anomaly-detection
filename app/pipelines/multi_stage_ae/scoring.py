@@ -25,7 +25,7 @@ The Better Approach: Top-K Pooling
     reliably high scores.
 
     A commonly effective value is K = 0.2% of total pixels.
-    For a 128×128 image = 16,384 pixels → K ≈ 33 pixels.
+    For a 128x128 image = 16,384 pixels -> K ~= 33 pixels.
 
 Why Adaptive Thresholds Are Essential
 ======================================
@@ -43,7 +43,7 @@ Adaptive approaches calibrate the threshold on the normal training/validation da
 
 ``mahalanobis`` method:
     Models the normal score distribution as a Gaussian. The threshold is set at
-    mean + n_sigma × std. This is more principled than a percentile and is closer to
+    mean + n_sigma * std. This is more principled than a percentile and is closer to
     a proper statistical test (rejecting the null hypothesis that the image is normal).
 
 Module Contents
@@ -55,7 +55,7 @@ Module Contents
 """
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
@@ -94,7 +94,7 @@ def top_k_pooling(error_map: np.ndarray, k: int | None = None, k_fraction: float
         error_map: 2D pixel error map, shape (H, W), values ≥ 0.
         k: Explicit number of top pixels to average. If None, derived from ``k_fraction``.
         k_fraction: Fraction of total pixels to use as K when ``k`` is not specified.
-            Default 0.002 = 0.2% of pixels. For 128×128 → K ≈ 33 pixels.
+            Default 0.002 = 0.2% of pixels. For 128x128 → K ~= 33 pixels.
 
     Returns:
         Single float representing the image-level anomaly score. Higher = more anomalous.
@@ -111,7 +111,7 @@ def top_k_pooling(error_map: np.ndarray, k: int | None = None, k_fraction: float
 
 
 def compute_image_scores(
-    model: object,
+    model: Any,
     images: np.ndarray,
     k_fraction: float = 0.002,
 ) -> tuple[np.ndarray, list[np.ndarray]]:
@@ -131,7 +131,7 @@ def compute_image_scores(
             - error_maps: List of N 2D error maps, each shape (H, W).
     """
     # Run all images through the CAE in a single batched predict call
-    reconstructions = model.predict(images, verbose=0)  # type: ignore[union-attr]
+    reconstructions = model.predict(images, verbose=0)
 
     scores: list[float] = []
     error_maps: list[np.ndarray] = []
@@ -164,7 +164,7 @@ def compute_adaptive_threshold(
               Intuitive and non-parametric. Works well when the score distribution is
               non-Gaussian or has outliers.
             - ``"mahalanobis"``: Fit a Gaussian to normal scores (mean + std), then set
-              threshold at ``mean + n_sigma × std``. More statistically principled.
+              threshold at ``mean + n_sigma * std``. More statistically principled.
               Assumes the normal score distribution is approximately Gaussian.
         quantile: Percentile to use for the quantile method (0 < quantile < 1).
             Default 0.95 → 95th percentile of normal scores becomes the threshold.
@@ -192,7 +192,13 @@ def compute_adaptive_threshold(
             threshold = mu
         else:
             threshold = mu + n_sigma * sigma
-        logger.info("Mahalanobis threshold (μ + %.1fσ): %.6f  (μ=%.6f, σ=%.6f)", n_sigma, threshold, mu, sigma)
+        logger.info(
+            "Mahalanobis threshold (mu + %.1f*sigma): %.6f  (mu=%.6f, sigma=%.6f)",
+            n_sigma,
+            threshold,
+            mu,
+            sigma,
+        )
 
     else:
         raise ValueError(f"Unknown threshold method '{method}'. Choose 'quantile' or 'mahalanobis'.")

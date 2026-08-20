@@ -140,11 +140,11 @@ class TextureAugmenter:
 
         # 2. Random horizontal flip (50% probability)
         if random.random() < 0.5:
-            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+            image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
         # 3. Random vertical flip (50% probability)
         if random.random() < 0.5:
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
 
         # 4. Random scale jitter (crop a random sub-region and resize back)
         crop_fraction = random.uniform(*self.scale_range)
@@ -155,7 +155,7 @@ class TextureAugmenter:
             left = random.randint(0, w - crop_w)
             top = random.randint(0, h - crop_h)
             image = image.crop((left, top, left + crop_w, top + crop_h))
-            image = image.resize(original_size, Image.BILINEAR)
+            image = image.resize(original_size, Image.Resampling.BILINEAR)
 
         # 5. Random brightness jitter
         brightness_factor = random.uniform(*self.brightness_range)

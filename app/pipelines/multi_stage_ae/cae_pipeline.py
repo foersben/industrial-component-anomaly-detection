@@ -246,7 +246,7 @@ def run_keras_cae_pipeline(
     model_path = registry_dir / "model.keras"
     meta_path = registry_dir / "metadata.json"
 
-    loss_history = {"train": [], "val_good": [], "val_anomalous": []}
+    loss_history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
 
     if not force_retrain and model_path.exists():
         logger.info("Found cached model with identical hyperparameters (Hash: %s). Loading from disk...", model_hash)
@@ -332,7 +332,7 @@ def run_keras_cae_pipeline(
         logger.info("Computing Reconstruction Error Heatmap for %d anomalous images...", len(anomalous_indices))
         from app.pipelines.multi_stage_ae.error_heatmap import compute_error_heatmap, overlay_heatmap
 
-        heatmap_overlays: dict[int, list] = {}
+        heatmap_overlays: dict[int, list[Any]] = {}
         for idx in anomalous_indices:
             img_float = test_images[idx]
             img_uint8 = (img_float * 255).astype(np.uint8)

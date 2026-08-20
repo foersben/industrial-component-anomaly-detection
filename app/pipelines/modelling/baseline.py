@@ -221,12 +221,14 @@ def format_results(
     """Format anomalib engine evaluation output into a structured response schema.
 
     Args:
-        test_results: Evaluation results from anomalib engine.
-        category: The specific category being evaluated.
+        test_results: A list of metric mappings from Anomalib.
+        category: The component category name.
         base_dir: Base directory to save metrics to.
+        manual_image_f1: Manually calculated image-level F1 score.
+        manual_pixel_f1: Manually calculated pixel-level F1 score.
 
     Returns:
-        Structured dictionary containing test metrics and artifact paths.
+        A dictionary containing structured image_level and pixel_level results.
     """
     res_dict: Mapping[str, float] = test_results[0] if test_results else {}
 

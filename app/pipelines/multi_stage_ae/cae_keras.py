@@ -242,9 +242,9 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
     bottleneck_flat = bottleneck_spatial * bottleneck_spatial * 256
 
     layers = tf.keras.layers
-    Sequential = tf.keras.Sequential
+    sequential = tf.keras.Sequential
 
-    model = Sequential(
+    model = sequential(
         [
             # ENCODER
             tf.keras.Input(shape=(img_size, img_size, 3), name="encoder_input"),
@@ -329,7 +329,7 @@ def apply_patch_masking(
         With mask_ratio=0.25: 16 patches are zeroed (selected randomly each batch).
     """
     images_np = np.array(images)  # Ensure numpy for easy indexing
-    batch_size, img_h, img_w, channels = images_np.shape
+    batch_size, img_h, img_w, _ = images_np.shape
 
     num_patches_h = img_h // patch_size
     num_patches_w = img_w // patch_size

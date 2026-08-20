@@ -161,8 +161,8 @@ class OtsuCannySegmentor:
 
         # Step 3: Adaptive Canny edge detection
         # Derive thresholds from the image's median pixel intensity:
-        # - low  threshold = (1 - sigma) × median
-        # - high threshold = (1 + sigma) × median
+        # - low  threshold = (1 - sigma) * median
+        # - high threshold = (1 + sigma) * median
         median_val = float(np.median(grey))
         low_thresh = max(0.0, (1.0 - self.canny_sigma) * median_val)
         high_thresh = min(255.0, (1.0 + self.canny_sigma) * median_val)

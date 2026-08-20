@@ -30,14 +30,12 @@ Module Contents
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
 import scipy.ndimage
 
 logger = logging.getLogger(__name__)
-
-
-from typing import Any
 
 
 def compute_error_heatmap(
@@ -94,7 +92,7 @@ def overlay_heatmap(
     heatmap: np.ndarray,
     alpha: float = 0.35,  # Reduced from 0.55 for more transparency (better visibility of the original part)
     colormap: str = "jet",
-) -> np.ndarray:
+) -> np.ndarray[Any, Any]:
     """Blend a heatmap onto the original image using a perceptual colourmap.
 
     The heatmap is converted from greyscale → RGB via a colourmap (jet by default),
@@ -125,4 +123,4 @@ def overlay_heatmap(
     blended = pixel_alpha * heatmap_rgb + (1.0 - pixel_alpha) * orig_norm
     blended = np.clip(blended, 0.0, 1.0)
 
-    return (blended * 255).astype(np.uint8)
+    return (blended * 255).astype(np.uint8)  # type: ignore[no-any-return]

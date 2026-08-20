@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "Keras CAE: Preprocessing - Augmentation, Loading, and BGRP-G"
+description: "Technical documentation for Keras CAE: Preprocessing - Augmentation, Loading, and BGRP-G."
+tags: [keras, autoencoder, documentation]
+---
+
 # Keras CAE: Preprocessing - Augmentation, Loading, and BGRP-G
 
 > **Part of the Keras CAE documentation series.** Start at the [Architecture Overview](keras_cae_architecture.md) if you are new to this pipeline.
