@@ -44,26 +44,26 @@ graph TD
 
 Detailed conceptual guides on software engineering foundations, environment containment, and quality gates:
 
-* [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) — Structuring features into self-contained vertical slices.
-* [Pixi Package Management](concepts/pixi.md) — Multi-platform dependency synchronization and multi-language toolchains.
-* [Open Knowledge Format (OKF)](concepts/open_knowledge_format.md) — Node-based markdown specification guidelines for AI-human pair programming.
-* [Linting & Type Safety](concepts/linting_and_types.md) — Enforcement of strict coding standards using Ruff and Mypy.
-* [Data Validation (Pydantic)](concepts/data_validation.md) — Runtime data validation and configuration schemas.
+* [Vertical Slice Architecture (VSA)](concepts/vertical_slice_architecture.md) - Structuring features into self-contained vertical slices.
+* [Pixi Package Management](concepts/pixi.md) - Multi-platform dependency synchronization and multi-language toolchains.
+* [Open Knowledge Format (OKF)](concepts/open_knowledge_format.md) - Node-based markdown specification guidelines for AI-human pair programming.
+* [Linting & Type Safety](concepts/linting_and_types.md) - Enforcement of strict coding standards using Ruff and Mypy.
+* [Data Validation (Pydantic)](concepts/data_validation.md) - Runtime data validation and configuration schemas.
 
 ### 2. [Data Science & Metrics](data_science/index.md)
 
 The scientific core covering datasets, evaluation methodologies, and metrics:
 
-* [MVTec AD Dataset](data_science/mvtec_ad.md) — Structure, complexity, threshold estimation, baselines, and experimental insights for the primary industrial dataset.
-* [Anomaly Detection Metrics](data_science/anomaly_detection_metrics.md) — Deep mathematical walkthrough of AUROC, AUPRO, and the novel AUPIMO metric under low-false-positive constraints.
+* [MVTec AD Dataset](data_science/mvtec_ad.md) - Structure, complexity, threshold estimation, baselines, and experimental insights for the primary industrial dataset.
+* [Anomaly Detection Metrics](data_science/anomaly_detection_metrics.md) - Deep mathematical walkthrough of AUROC, AUPRO, and the novel AUPIMO metric under low-false-positive constraints.
 
 ### 3. Operational Guides & Planning
 
 Practical walkthroughs for setting up workspaces and tracking progress:
 
-* [Jupyter Notebook Workspace Protocol](guides/notebooks.md) — Guidelines for running safe, automated, quality-gated notebooks.
-* [Dataset Setup Guide](guides/dataset_setup.md) — Standardized dataset acquisition and path structures.
-* [Project Roadmap & Detailed Plan](project_roadmap.md) — Development milestones, deliverables track, and synchronization schedules.
+* [Jupyter Notebook Workspace Protocol](guides/notebooks.md) - Guidelines for running safe, automated, quality-gated notebooks.
+* [Dataset Setup Guide](guides/dataset_setup.md) - Standardized dataset acquisition and path structures.
+* [Project Roadmap & Detailed Plan](project_roadmap.md) - Development milestones, deliverables track, and synchronization schedules.
 
 ---
 
@@ -81,4 +81,4 @@ This project utilizes the **MVTec AD (Anomaly Detection)** dataset. Please cite 
 
 > Paul Bergmann, Kilian Batzner, Michael Fauser, David Sattlegger, Carsten Steger: *The MVTec Anomaly Detection Dataset: A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. International Journal of Computer Vision 129(4):1038-1059, 2021.
 >
-> Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD — A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.
+> Paul Bergmann, Michael Fauser, David Sattlegger, Carsten Steger: *MVTec AD - A Comprehensive Real-World Dataset for Unsupervised Anomaly Detection*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 9584-9592, 2019.

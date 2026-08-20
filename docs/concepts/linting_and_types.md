@@ -20,7 +20,7 @@ Python is dynamically typed and notoriously flexible. While this makes it fast t
 
 ### 1. Speed & Consistency with Ruff
 
-Before Ruff, developers had to wait for multiple slow Python-based tools to check their code. Ruff executes in milliseconds. We use it to enforce a single, objective style across the entire repository (120-character line limits, sorted imports, Google-style docstrings). This ends debates about code style during code reviews—the machine decides, and the machine is always right.
+Before Ruff, developers had to wait for multiple slow Python-based tools to check their code. Ruff executes in milliseconds. We use it to enforce a single, objective style across the entire repository (120-character line limits, sorted imports, Google-style docstrings). This ends debates about code style during code reviews-the machine decides, and the machine is always right.
 
 ### 2. Bulletproof Interfaces with Strict Mypy
 

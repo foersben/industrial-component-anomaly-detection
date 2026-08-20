@@ -12,6 +12,9 @@ setup:
 install:
 	@just setup
 
+init:
+	pixi shell --manifest-path ./pyproject.toml -e dev
+
 # Run the pytest test suite in the dev environment
 test:
 	pixi run --frozen -e dev pytest
@@ -30,9 +33,33 @@ check:
 format:
 	pixi run --frozen -e dev ruff format .
 
-# Start the production FastAPI web server
+# Kill any running FastAPI/Streamlit instances (frees ports 8000 and 8501)
+stop:
+    @echo "Stopping FastAPI and Streamlit..."
+    @fuser -k 8000/tcp 2>/dev/null || true
+    @fuser -k 8501/tcp 2>/dev/null || true
+    @echo "Done."
+
+# Start FastAPI (uvicorn) and Streamlit frontend concurrently
 run:
-	pixi run --frozen fastapi run app/main.py
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Release ports if previous run was killed uncleanly
+    fuser -k 8000/tcp 2>/dev/null || true
+    fuser -k 8501/tcp 2>/dev/null || true
+    sleep 0.3
+
+    echo "Starting FastAPI and Streamlit..."
+    pixi run --frozen -e dev api &
+    API_PID=$!
+    pixi run --frozen -e dev ui &
+    UI_PID=$!
+
+    # Propagate SIGINT/SIGTERM to both child processes and wait cleanly
+    trap 'echo; echo "Shutting down gracefully..."; kill "$API_PID" "$UI_PID" 2>/dev/null; wait "$API_PID" "$UI_PID" 2>/dev/null; exit 0' INT TERM
+
+    wait
 
 # Clean all temporary files, cache folders, compilation files, and local environments
 clean:
@@ -66,7 +93,15 @@ fetch-data: download-data
 	mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
 	rm -rf data/external/aupimo_repo
 
+# Run the dummy classifier evaluation to demonstrate the accuracy paradox (supports theoretical or real mode)
+# Example: just run-dummy mode=real data_root=data/raw/mvtec_ad category=bottle
+run-dummy *args:
+	pixi run --frozen -e dev python -m app.main dummy {{args}}
 
+# Run the Patchcore baseline on the MVTec AD dataset
+# Example: just run-baseline category="bottle"
+run-baseline *args:
+	pixi run --frozen -e dev python -m app.main baseline {{args}}
 
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:

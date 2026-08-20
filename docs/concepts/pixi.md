@@ -41,7 +41,7 @@ Python's standard package managers (like `pip` or `poetry`) are excellent for pu
 
 ### 1. Non-Python & Binary Dependencies
 
-Machine Learning frameworks (like PyTorch or TensorFlow) rely heavily on system-level libraries like CUDA, cuDNN, OpenBLAS, or native compiler toolchains. `pip` cannot install system libraries. Pixi, leveraging the Conda-Forge ecosystem, can install **everything**—not just Python packages, but C++ libraries, compilers, and even tools like `just` or `git`, ensuring a 100% reproducible environment.
+Machine Learning frameworks (like PyTorch or TensorFlow) rely heavily on system-level libraries like CUDA, cuDNN, OpenBLAS, or native compiler toolchains. `pip` cannot install system libraries. Pixi, leveraging the Conda-Forge ecosystem, can install **everything**-not just Python packages, but C++ libraries, compilers, and even tools like `just` or `git`, ensuring a 100% reproducible environment.
 
 ### 2. Deterministic Environments & Lockfiles
 
