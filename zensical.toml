@@ -14,7 +14,7 @@ extra_javascript = [
     "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js",
     "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js",
     "https://unpkg.com/mermaid@10/dist/mermaid.min.js",
-    "javascripts/katex.js"
+    "javascripts/katex.js",
 ]
 
 # ==============================================================================
@@ -33,11 +33,10 @@ features = [
     "search.highlight",
     "content.code.copy",
 ]
-
-palette = [
-    { media = "(prefers-color-scheme: dark)", scheme = "slate", primary = "black", accent = "deep-orange" },
-    # { media = "(prefers-color-scheme: light)", scheme = "default", primary = "black", accent = "deep-orange" },
-]
+[project.theme.palette]
+scheme = "slate"
+primary = "black"
+accent = "deep-orange"
 
 [project.theme.icon]
 repo = "fontawesome/brands/github"
@@ -84,6 +83,12 @@ Roadmap = "project_roadmap.md"
     { "MVTec AD Dataset" = "data_science/mvtec_ad.md" },
     { "Anomaly Detection Metrics" = "data_science/anomaly_detection_metrics.md" },
     { "Step 1 EDA Plan" = "data_science/eda_plan.md" },
+    { "Keras CAE Architecture" = "data_science/keras_cae_architecture.md" },
+    { "Keras CAE Preprocessing" = "data_science/keras_cae_preprocessing.md" },
+    { "Keras CAE Model Setup" = "data_science/keras_cae_model.md" },
+    { "Keras CAE Inference" = "data_science/keras_cae_inference.md" },
+    { "Explainability (Reconstruction Error)" = "data_science/keras_cae_explainability.md" },
+    { "TF Device Selection (GPU vs CPU)" = "data_science/tf_device_selection.md" },
 ]
 
 [[project.nav]]
@@ -135,6 +140,9 @@ core = [
     "docs/data_science/mvtec_ad.md",
     "docs/data_science/anomaly_detection_metrics.md",
     "docs/data_science/eda_plan.md",
+    "docs/data_science/keras_cae_architecture.md",
+    "docs/data_science/tf_device_selection.md",
+    "docs/data_science/keras_cae_explainability.md",
     "docs/guides/notebooks.md",
     "docs/guides/dataset_setup.md",
 ]

@@ -18,7 +18,11 @@ dependencies = [
     "fastapi[standard]>=0.115.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-    "uvicorn>=0.50.0", "anomalib>=2.5.0,<3",
+    "uvicorn>=0.50.0",
+    "anomalib>=2.5.0,<3",
+    "opencv-python>=4.9.0",
+    "tensorflow>=2.16,<3",
+    "scikit-image>=0.24.0,<1",
 ]
 
 [dependency-groups]
@@ -120,7 +124,6 @@ just = ">=1.55.1,<2"
 jupyter = "*"
 jupyterlab = "*"
 matplotlib = ">=3.11.0,<4"
-opencv = ">=5.0.0,<6"
 pandas = ">=3.0.3,<4"
 pillow = ">=12.3.0,<13"
 requests = ">=2.32.0,<3"
@@ -128,16 +131,24 @@ scikit-learn = ">=1.9.0,<2"
 seaborn = ">=0.13.2,<0.14"
 statsmodels = ">=0.14.6,<0.15"
 streamlit = ">=1.59.1,<2"
+pynvml = ">=11.5.0,<12"    # Runtime CUDA/VRAM detection for TF device selection
+scikit-image = "*"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
-torch = { version = "==2.5.1" }
-torchvision = { version = "==0.20.1" }
-torchaudio = { version = "==2.5.1" }
+# ── PyTorch (GPU / CUDA) ────────────────────────────────────────────────────
+torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cu121" }
+torchvision = { version = "==0.20.1", index = "https://download.pytorch.org/whl/cu121" }
+torchaudio = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cu121" }
+
+
 
 [tool.pixi.feature.cpu.pypi-dependencies]
+# ── PyTorch (CPU / x86-64 SIMD) ─────────────────────────────────────────────
 torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cpu" }
 torchvision = { version = "==0.20.1", index = "https://download.pytorch.org/whl/cpu" }
 torchaudio = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cpu" }
+
+
 
 [tool.pixi.environments]
 default = { features = ["gpu"], solve-group = "default" }

@@ -6,8 +6,10 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from app.pipelines.modelling.autoencoder import run_autoencoder_pipeline
 from app.pipelines.modelling.baseline import run_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
+from app.pipelines.multi_stage_ae.cae_pipeline import run_keras_cae_pipeline
 
 # Suppress timm deprecation warnings emitted by downstream libraries
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*timm.*")
@@ -47,6 +49,28 @@ class BaselineEvaluationRequest(BaseModel):
     category: str = "bottle"
     fpr_limit: float = 1e-4
     preprocessing_steps: list[dict[str, Any]] | None = None
+
+
+class AutoencoderEvaluationRequest(BaseModel):
+    """Request schema for Convolutional Autoencoder baseline evaluation.
+
+    Attributes:
+        data_root: Path to the root directory of the MVTec AD dataset.
+        category: The specific category to evaluate (e.g., 'bottle').
+        epochs: Number of training epochs.
+        batch_size: Batch size for training and evaluation.
+        latent_dim: Latent space bottleneck dimension.
+        img_size: Image size for resizing.
+        lr: Learning rate.
+    """
+
+    data_root: str = "data/raw/mvtec_ad"
+    category: str = "bottle"
+    epochs: int = 5
+    batch_size: int = 16
+    latent_dim: int = 64
+    img_size: int = 64
+    lr: float = 1e-3
 
 
 @app.get("/")
@@ -119,5 +143,99 @@ def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
         "status": "success",
         "category": req.category,
         "message": f"Baseline Patchcore execution finished for category '{req.category}'.",
+        "results": results,
+    }
+
+
+@app.post("/api/pipelines/autoencoder")
+def run_autoencoder_endpoint(req: AutoencoderEvaluationRequest) -> dict[str, Any]:
+    """Run Convolutional Autoencoder evaluation endpoint.
+
+    Args:
+        req: Request schema for Convolutional Autoencoder evaluation.
+
+    Returns:
+        Dictionary containing evaluation metrics and classification report.
+    """
+    results = run_autoencoder_pipeline(
+        data_root=req.data_root,
+        category=req.category,
+        epochs=req.epochs,
+        batch_size=req.batch_size,
+        lr=req.lr,
+        latent_dim=req.latent_dim,
+        img_size=req.img_size,
+    )
+    return {
+        "status": "success",
+        "category": req.category,
+        "message": f"Convolutional Autoencoder evaluation finished for category '{req.category}'.",
+        "results": results,
+    }
+
+
+class KerasCAERequest(BaseModel):
+    """Request schema for the state-of-the-art Keras Convolutional Autoencoder pipeline.
+
+    Attributes:
+        data_root: Path to the MVTec AD dataset root directory.
+        category: Component category to train/evaluate on (e.g., 'bottle', 'wood').
+        img_size: Spatial size (H=W) for image resizing. Must be divisible by 16.
+        latent_dim: Bottleneck dimension of the CAE.
+        epochs: Number of training epochs.
+        batch_size: Number of images per gradient step.
+        mask_ratio: Fraction of image patches to mask for Masked Image Modeling.
+        threshold_method: Adaptive threshold method: 'quantile' or 'mahalanobis'.
+        k_fraction: Top-K fraction for image-level anomaly scoring.
+        use_segmentation: Whether to apply Otsu+Canny foreground extraction.
+        run_heatmap: Whether to compute Reconstruction Error heatmap overlays for anomalous images.
+        force_retrain: If True, bypasses model cache and forces training of a new model.
+    """
+
+    data_root: str = "data/raw/mvtec_ad"
+    category: str = "bottle"
+    img_size: int = 128
+    latent_dim: int = 128
+    epochs: int = 20
+    batch_size: int = 16
+    mask_ratio: float = 0.25
+    threshold_method: str = "quantile"
+    k_fraction: float = 0.002
+    use_segmentation: bool = True
+    run_heatmap: bool = False
+    force_retrain: bool = False
+
+
+@app.post("/api/pipelines/keras_cae")
+def run_keras_cae_endpoint(req: KerasCAERequest) -> dict[str, Any]:
+    """Run the state-of-the-art Keras CAE anomaly detection pipeline.
+
+    This pipeline incorporates: ELU activations, Masked Image Modeling (MIM),
+    combined SSIM+MSE loss, AdamW optimiser, Top-K pooling, adaptive thresholds,
+    AUPIMO pixel-level evaluation, and optional Reconstruction Error explainability.
+
+    Args:
+        req: Request schema with all pipeline hyperparameters.
+
+    Returns:
+        Dictionary with AUROC, AUPIMO, accuracy, precision, recall, and optional Heatmap overlays.
+    """
+    results = run_keras_cae_pipeline(
+        data_root=req.data_root,
+        category=req.category,
+        img_size=req.img_size,
+        latent_dim=req.latent_dim,
+        epochs=req.epochs,
+        batch_size=req.batch_size,
+        mask_ratio=req.mask_ratio,
+        threshold_method=req.threshold_method,
+        k_fraction=req.k_fraction,
+        use_segmentation=req.use_segmentation,
+        run_heatmap=req.run_heatmap,
+        force_retrain=req.force_retrain,
+    )
+    return {
+        "status": "success",
+        "category": req.category,
         "results": results,
     }

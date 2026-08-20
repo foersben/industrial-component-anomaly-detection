@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from app.core.logger import logger
+from app.pipelines.preprocessing import PreprocessingTransformAdapter, build_pipeline_from_configs
 
 IMAGE_EXTENSIONS = frozenset({".bmp", ".jpeg", ".jpg", ".png"})
 MANIFEST_COLUMNS = [
@@ -69,8 +70,7 @@ class MVTecImageDataset(Dataset[tuple[Tensor, int, str]]):
             ValueError: If a required manifest column is missing.
         """
         required_columns = {"path", "is_anomaly"}
-        missing_columns = required_columns.difference(frame.columns)
-        if missing_columns:
+        if missing_columns := required_columns.difference(frame.columns):
             logger.error("frame is missing required columns: %s", sorted(missing_columns))
             raise ValueError(f"frame is missing required columns: {sorted(missing_columns)}")
 
@@ -79,7 +79,11 @@ class MVTecImageDataset(Dataset[tuple[Tensor, int, str]]):
         logger.info("Initialized dataset with %d images", len(self.frame))
 
     def __len__(self) -> int:
-        """Return the number of manifest rows."""
+        """Return the number of manifest rows.
+
+        Returns:
+            Number of manifest rows.
+        """
         return len(self.frame)
 
     def __getitem__(self, index: int) -> tuple[Tensor, int, str]:
@@ -191,8 +195,6 @@ def create_mvtec_dataset(
     Returns:
         An MVTecImageDataset.
     """
-    from app.pipelines.preprocessing import PreprocessingTransformAdapter, build_pipeline_from_configs
-
     pipeline = build_pipeline_from_configs(preprocessing_steps)
     adapter = PreprocessingTransformAdapter(pipeline)
 
