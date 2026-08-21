@@ -42,6 +42,7 @@ def compute_error_heatmap(
     model: Any,
     image: np.ndarray,
     sigma: float = 3.0,
+    reconstruction: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     """Compute a smoothed reconstruction error heatmap for a single image.
 
@@ -49,6 +50,7 @@ def compute_error_heatmap(
         model: A compiled ``tf.keras.Model`` produced by ``build_cae()``.
         image: Single normalised image, shape (H, W, 3), float32 values in [0, 1].
         sigma: Standard deviation for the Gaussian blur (smoothness).
+        reconstruction: Optional precomputed reconstructed image, shape (H, W, 3).
 
     Returns:
         Dictionary containing:
@@ -57,12 +59,12 @@ def compute_error_heatmap(
     """
     from app.pipelines.multi_stage_ae.scoring import compute_pixel_error_map
 
-    image_batch = np.expand_dims(image, 0)  # (1, H, W, 3)
+    # 1. Obtain reconstruction
+    if reconstruction is None:
+        image_batch = np.expand_dims(image, 0)  # (1, H, W, 3)
+        reconstruction = model.predict(image_batch, verbose=0)[0]
 
-    # 1. Forward pass to get reconstruction
-    reconstruction = model.predict(image_batch, verbose=0)[0]
-
-    # 2. Pixel-wise MAE error (matching the exact scoring logic)
+    # 2. Pixel-wise error (matching the exact scoring logic)
     pixel_error = compute_pixel_error_map(image, reconstruction)
 
     # 3. Smooth with Gaussian filter for visual appeal
@@ -121,6 +123,40 @@ def overlay_heatmap(
 
     orig_norm = original_image.astype(np.float32) / 255.0
     blended = pixel_alpha * heatmap_rgb + (1.0 - pixel_alpha) * orig_norm
+    blended = np.clip(blended, 0.0, 1.0)
+
+    return (blended * 255).astype(np.uint8)  # type: ignore[no-any-return]
+
+
+def overlay_ground_truth(
+    original_image: np.ndarray,
+    gt_mask: np.ndarray | None,
+    color: tuple[int, int, int] = (0, 255, 0),  # Default to Green
+    alpha: float = 0.4,
+) -> np.ndarray[Any, Any]:
+    """Blend a binary ground truth mask onto the original image.
+
+    Args:
+        original_image: RGB image, shape (H, W, 3), uint8.
+        gt_mask: Binary mask, shape (H, W), uint8 (0 or 1). Can be None.
+        color: RGB color tuple to draw the mask (e.g. Red=(255,0,0), Green=(0,255,0)).
+        alpha: Opacity of the mask overlay.
+
+    Returns:
+        RGB overlay image, shape (H, W, 3), uint8.
+    """
+    if gt_mask is None:
+        return original_image.copy()
+
+    orig_norm = original_image.astype(np.float32) / 255.0
+    color_norm = np.array(color, dtype=np.float32).reshape(1, 1, 3) / 255.0
+
+    mask_3d = gt_mask[..., np.newaxis].astype(np.float32)  # (H, W, 1)
+
+    # Where mask is 1, blend with color. Where 0, keep original.
+    pixel_alpha = mask_3d * alpha
+
+    blended = pixel_alpha * color_norm + (1.0 - pixel_alpha) * orig_norm
     blended = np.clip(blended, 0.0, 1.0)
 
     return (blended * 255).astype(np.uint8)  # type: ignore[no-any-return]

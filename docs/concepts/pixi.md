@@ -75,7 +75,7 @@ GitHub Actions runners are continuously upgraded to secure, modern runtimes. To 
 
 ### Automated Dependency Management via Dependabot
 
-Maintaining updated GitHub Action versions manually is prone to oversight. To automate version upgrades, a [Dependabot configuration](file:///.github/dependabot.yml) is situated in the `.github/` folder:
+Maintaining updated GitHub Action versions manually is prone to oversight. To automate version upgrades, a [Dependabot configuration](https://github.com/foersben/industrial-component-anomaly-detection/tree/main/.github/dependabot.yml) is situated in the `.github/` folder:
 
 - **Ecosystem**: `github-actions`
 - **Schedule**: Weekly checks for new versions of checkout, setup-pixi, and other Actions.

@@ -3,12 +3,13 @@
 from typing import Any
 
 from app.pipelines.preprocessing.base import BasePreprocessingStep, PreprocessingPipeline
-from app.pipelines.preprocessing.steps import CLAHEStep, GaussianBlurStep
+from app.pipelines.preprocessing.steps import CLAHEStep, ForegroundMaskStep, GaussianBlurStep
 
 # Registry mapping configuration keys to classes
 STEP_REGISTRY: dict[str, type[BasePreprocessingStep]] = {
     CLAHEStep.name: CLAHEStep,
     GaussianBlurStep.name: GaussianBlurStep,
+    ForegroundMaskStep.name: ForegroundMaskStep,
 }
 
 

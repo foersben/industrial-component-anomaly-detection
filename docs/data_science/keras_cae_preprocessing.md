@@ -55,7 +55,7 @@ graph LR
     style OA fill:#a84,color:#fff
 ```
 
-**Implementation**: [`augmentation.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/augmentation.py)
+**Implementation**: [`augmentation.py`](../../app/pipelines/multi_stage_ae/augmentation.py)
 
 ---
 
@@ -63,7 +63,7 @@ graph LR
 
 ### Part A - The Image Loading Pipeline
 
-Before any segmentation or training, every image passes through a precise loading pipeline implemented in [`cae_pipeline.py: _load_images_as_numpy`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/cae_pipeline.py#L90-L121). The choices made here are invisible but have downstream consequences on everything the network learns. Getting them wrong silently corrupts the entire detector.
+Before any segmentation or training, every image passes through a precise loading pipeline implemented in [`cae_pipeline.py: _load_images_as_numpy`](../../app/pipelines/multi_stage_ae/cae_pipeline.py#L90-L121). The choices made here are invisible but have downstream consequences on everything the network learns. Getting them wrong silently corrupts the entire detector.
 
 #### `pil_img.convert("RGB")` - Why force three channels?
 
@@ -122,7 +122,7 @@ You might ask: if we are zeroing out the background anyway, why not reduce to a 
 **BGRP-G** = **B**ack**G**round **R**e**P**lacement to **G**reyscale/Black.
 It refers to the strategy of segmenting the component from the background and replacing the background with a solid, guaranteed out-of-distribution colour - solid black (all channels zero) in our case.
 
-**Implementation**: [`segmentation.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/segmentation.py)
+**Implementation**: [`segmentation.py`](../../app/pipelines/multi_stage_ae/segmentation.py)
 
 ### Why Industrial Images Need Background Removal
 
@@ -175,7 +175,7 @@ _, otsu_mask = cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
 ```python
 median_val = float(np.median(grey))
-low_thresh  = max(0.0,   (1.0 - self.canny_sigma) * median_val)  # canny_sigma=0.33
+low_thresh = max(0.0, (1.0 - self.canny_sigma) * median_val)  # canny_sigma=0.33
 high_thresh = min(255.0, (1.0 + self.canny_sigma) * median_val)
 ```
 
@@ -199,6 +199,34 @@ flowchart TD
 **Morphological closing** = dilate the mask (expand foreground outward by the kernel radius) then erode it back (shrink inward by the same amount). Net effect: any hole in the mask smaller than the 5x5 structuring element is permanently filled. This bridges small gaps between Otsu regions and Canny edges - for example, where a component surface happens to have the same intensity as the background in a small patch.
 
 **Largest connected component**: After combining Otsu and Canny, the mask may contain multiple disconnected blobs (the component, dust particles, image artefacts). We use `cv2.connectedComponentsWithStats` to identify all regions and keep only the largest one - which is almost always the actual component under inspection.
+
+---
+
+### Part D - Optional Preprocessing Enhancements (CLAHE & Gaussian Blur)
+
+In addition to background removal, the pipeline exposes two classical computer vision enhancements that can be toggled depending on the component's surface properties.
+
+#### Contrast Limited Adaptive Histogram Equalization (CLAHE)
+
+**Why?** Standard histogram equalization stretches the contrast globally across the entire image. This often over-amplifies noise in flat regions (like a smooth metal surface) and washes out bright areas. **CLAHE** solves this by operating on small local tiles (default 8x8) and applying a **contrast limit** (clip limit = 2.0). If any histogram bin exceeds this limit, the excess pixels are redistributed.
+
+- **What to expect**: Significantly enhanced visibility of faint surface textures, scratches, or subtle stains that are otherwise hidden in dark or low-contrast regions.
+- **Risks**: CLAHE fundamentally alters the statistical distribution of pixel intensities. It can amplify microscopic, normal surface variations into what the network perceives as major structural features. If the component has heavy, naturally occurring surface noise, CLAHE might cause false positives.
+
+#### Gaussian Blur
+
+**Why?** High-frequency sensor noise, dust, or microscopic surface variations can cause a sensitive model to flag normal regions as defective. A Gaussian Blur (default kernel size = 5x5) acts as a low-pass filter, smoothing out these high-frequency details while preserving the macro-structure of the object.
+
+- **What to expect**: A cleaner, smoother image representation. This forces the model (or Patchcore) to focus on structural anomalies rather than pixel-level noise, often reducing the false positive rate on noisy datasets.
+- **Risks**: Blurring destroys fine detail. If the anomalies you are trying to detect are microscopic (e.g. hairline cracks, tiny pinholes, fine scratches), applying Gaussian blur will effectively erase the defect from the image before the model ever sees it, drastically increasing false negatives.
+
+#### Combination Risks (The "Enhance and Destroy" Anti-Pattern)
+
+Be incredibly careful when combining **CLAHE** and **Gaussian Blur**.
+
+- Applying CLAHE *amplifies* local high-frequency details and noise to make them visible.
+- Applying Gaussian Blur *suppresses* high-frequency details and noise.
+If you apply both, they directly fight each other. Depending on the order of operations, you may end up amplifying noise only to blur it into a larger, unnatural smudge, which the model will almost certainly flag as an anomaly. **We recommend using only one or the other, never both.**
 
 ---
 

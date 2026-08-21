@@ -13,12 +13,13 @@ import torch
 from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import Patchcore
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 from app.core.logger import logger
 from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
 from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
+from app.pipelines.preprocessing.base import PreprocessingPipeline
 from app.pipelines.preprocessing.factory import build_pipeline_from_configs
 
 # Suppress the timm deprecation warning caused by anomalib
@@ -37,11 +38,14 @@ class MetricLevelResult(TypedDict, total=False):
 
     auroc: float
     f1_score: float
+    precision: float
+    recall: float
     t_aupimo_min: float
+    aupimo: float
     metrics_path: str
 
 
-class BaselineResult(TypedDict):
+class BaselineResult(TypedDict, total=False):
     """Schema for overall baseline execution results.
 
     Attributes:
@@ -49,12 +53,16 @@ class BaselineResult(TypedDict):
         image_level: Image-level evaluation metrics.
         pixel_level: Pixel-level evaluation metrics.
         raw_results: Raw evaluation results from the anomalib engine.
+        heatmap_overlays: Dictionary of generated heatmap overlays.
+        anomalous_indices: List of test dataset indices that are anomalous.
     """
 
     category: str
     image_level: MetricLevelResult
     pixel_level: MetricLevelResult
     raw_results: dict[str, float]
+    heatmap_overlays: dict[int, dict[str, list[Any]]]
+    anomalous_indices: list[int]
 
 
 def _to_float(val: Any) -> float:
@@ -146,7 +154,8 @@ def extract_and_save_pr_metrics(
     datamodule: MVTecAD,
     base_dir: Path,
     fpr_limit: float = 1e-4,
-) -> tuple[float, float]:
+    run_heatmap: bool = False,
+) -> tuple[float, float, float, float, dict[int, dict[str, list[Any]]], list[int]]:
     """Extract model predictions and persist Precision-Recall metrics for visual analysis.
 
     Args:
@@ -155,12 +164,14 @@ def extract_and_save_pr_metrics(
         datamodule: Dataset object.
         base_dir: Output directory for metrics.
         fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
+        run_heatmap: Whether to compute heatmap overlays.
     """
     try:
         logger.info("Extracting predictions for PR curve metrics...")
-        predictions = engine.predict(model=model, datamodule=datamodule)
-        if not predictions:
-            return 0.0, 0.0
+        raw_predictions = engine.predict(model=model, dataloaders=datamodule.test_dataloader())
+        if not raw_predictions:
+            return 0.0, 0.0, 0.0, 0.0, {}, []
+        predictions = raw_predictions
 
         pixel_scores, pixel_labels = [], []
         image_scores, image_labels = [], []
@@ -190,8 +201,12 @@ def extract_and_save_pr_metrics(
             img_threshold = compute_adaptive_threshold(normal_image_scores, method="quantile", quantile=0.95)
             img_preds = (image_scores_np > img_threshold).astype(int)
             manual_image_f1 = float(f1_score(image_labels_np, img_preds))
+            manual_image_prec = float(precision_score(image_labels_np, img_preds, zero_division=0))
+            manual_image_rec = float(recall_score(image_labels_np, img_preds, zero_division=0))
         else:
             manual_image_f1 = 0.0
+            manual_image_prec = 0.0
+            manual_image_rec = 0.0
 
         pixel_scores_np = np.concatenate(pixel_scores)
         pixel_labels_np = np.concatenate(pixel_labels)
@@ -204,11 +219,101 @@ def extract_and_save_pr_metrics(
         else:
             manual_pixel_f1 = 0.0
 
-        return manual_image_f1, manual_pixel_f1
+        heatmap_overlays: dict[int, dict[str, list[Any]]] = {}
+        anomalous_indices: list[int] = []
+
+        if run_heatmap:
+            try:
+                import cv2
+
+                from app.pipelines.multi_stage_ae.error_heatmap import overlay_ground_truth, overlay_heatmap
+
+                global_idx = 0
+                for batch in predictions:
+                    images_t = getattr(batch, "image", None)
+                    anomaly_maps_t = getattr(batch, "anomaly_map", None)
+                    gt_masks_t = getattr(batch, "gt_mask", None)
+                    gt_labels_t = getattr(batch, "gt_label", None)
+
+                    if images_t is None or anomaly_maps_t is None or gt_labels_t is None:
+                        continue
+
+                    images_np = images_t.detach().cpu().numpy()
+                    anomaly_maps_np = anomaly_maps_t.detach().cpu().numpy()
+                    gt_masks_np = gt_masks_t.detach().cpu().numpy() if gt_masks_t is not None else None
+                    gt_labels_np = gt_labels_t.detach().cpu().numpy()
+
+                    for i in range(len(gt_labels_np)):
+                        if int(gt_labels_np[i]) == 1:
+                            img = images_np[i]
+                            if img.ndim == 3 and img.shape[0] in (1, 3):
+                                img = np.transpose(img, (1, 2, 0))
+
+                            if img.dtype != np.uint8:
+                                if img.max() <= 1.0:
+                                    orig_img = (img * 255).astype(np.uint8)
+                                else:
+                                    orig_img = img.astype(np.uint8)
+                            else:
+                                orig_img = img
+
+                            amap = anomaly_maps_np[i].squeeze()
+                            p_low = float(np.percentile(amap, 1))
+                            p_high = float(np.percentile(amap, 99))
+                            if abs(p_high - p_low) > 1e-8:
+                                amap_norm = np.clip((amap - p_low) / (p_high - p_low), 0.0, 1.0)
+                            else:
+                                amap_norm = np.zeros_like(amap)
+
+                            hm_overlay = overlay_heatmap(orig_img, amap_norm.astype(np.float32), alpha=0.4)
+
+                            gt_mask_img = None
+                            if gt_masks_np is not None and gt_masks_np[i] is not None:
+                                gt_mask_arr = gt_masks_np[i]
+                                if hasattr(gt_mask_arr, "squeeze"):
+                                    gt_mask_img = gt_mask_arr.squeeze()
+                                    if gt_mask_img.shape[:2] != orig_img.shape[:2]:
+                                        gt_mask_img = cv2.resize(
+                                            gt_mask_img.astype(np.float32),
+                                            (orig_img.shape[1], orig_img.shape[0]),
+                                            interpolation=cv2.INTER_NEAREST,
+                                        )
+
+                            gt_and_heatmap = overlay_ground_truth(hm_overlay, gt_mask_img)
+
+                            max_dim = 256
+                            if hm_overlay.shape[0] > max_dim or hm_overlay.shape[1] > max_dim:
+                                scale = max_dim / max(hm_overlay.shape[0], hm_overlay.shape[1])
+                                new_size = (int(hm_overlay.shape[1] * scale), int(hm_overlay.shape[0] * scale))
+                                hm_overlay_small = cv2.resize(hm_overlay, new_size, interpolation=cv2.INTER_AREA)
+                                gt_and_heatmap_small = cv2.resize(
+                                    gt_and_heatmap, new_size, interpolation=cv2.INTER_AREA
+                                )
+                            else:
+                                hm_overlay_small = hm_overlay
+                                gt_and_heatmap_small = gt_and_heatmap
+
+                            anomalous_indices.append(global_idx)
+                            heatmap_overlays[global_idx] = {
+                                "heatmap": hm_overlay_small.tolist(),
+                                "gt_and_heatmap": gt_and_heatmap_small.tolist(),
+                            }
+                        global_idx += 1
+            except Exception as e:
+                logger.warning("Failed to compute heatmap overlays: %s", e)
+
+        return (
+            manual_image_f1,
+            manual_pixel_f1,
+            manual_image_prec,
+            manual_image_rec,
+            heatmap_overlays,
+            anomalous_indices,
+        )
 
     except Exception as e:
         logger.warning("Could not auto-save evaluation metrics.npz: %s", e)
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, {}, []
 
 
 def format_results(
@@ -217,6 +322,10 @@ def format_results(
     base_dir: Path,
     manual_image_f1: float,
     manual_pixel_f1: float,
+    manual_image_prec: float,
+    manual_image_rec: float,
+    heatmap_overlays: dict[int, dict[str, list[Any]]],
+    anomalous_indices: list[int],
 ) -> BaselineResult:
     """Format anomalib engine evaluation output into a structured response schema.
 
@@ -226,19 +335,26 @@ def format_results(
         base_dir: Base directory to save metrics to.
         manual_image_f1: Manually calculated image-level F1 score.
         manual_pixel_f1: Manually calculated pixel-level F1 score.
+        manual_image_prec: Manually calculated image-level Precision score.
+        manual_image_rec: Manually calculated image-level Recall score.
+        heatmap_overlays: Dictionary of precomputed heatmap overlays.
+        anomalous_indices: List of image indices corresponding to anomalies.
 
     Returns:
         A dictionary containing structured image_level and pixel_level results.
     """
     res_dict: Mapping[str, float] = test_results[0] if test_results else {}
-
     t_aupimo_min = 0.0
+    aupimo = 0.0
+
     pixel_file = base_dir / "pixel_metrics.npz"
     if pixel_file.exists():
         try:
             data = np.load(pixel_file)
             if "t_aupimo_min" in data:
                 t_aupimo_min = float(data["t_aupimo_min"])
+            if "aupimo" in data:
+                aupimo = float(data["aupimo"])
         except Exception:
             pass
 
@@ -247,42 +363,58 @@ def format_results(
         "image_level": {
             "auroc": _to_float(res_dict.get("image_AUROC", 0.0)),
             "f1_score": manual_image_f1,
+            "precision": manual_image_prec,
+            "recall": manual_image_rec,
             "metrics_path": str(base_dir / "image_metrics.npz"),
         },
         "pixel_level": {
             "auroc": _to_float(res_dict.get("pixel_AUROC", 0.0)),
             "f1_score": manual_pixel_f1,
             "t_aupimo_min": t_aupimo_min,
+            "aupimo": aupimo,
             "metrics_path": str(base_dir / "pixel_metrics.npz"),
         },
         "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
+        "heatmap_overlays": heatmap_overlays,
+        "anomalous_indices": anomalous_indices,
     }
 
 
 def run_baseline(
-    data_root: str = "data/raw/mvtec_ad",
+    data_root: Path | str = "data/mvtec",
     category: str = "bottle",
+    pipeline: list[dict[str, Any]] | PreprocessingPipeline | None = None,
     fpr_limit: float = 1e-4,
+    backbone: str = "resnet18",
+    coreset_sampling_ratio: float = 0.1,
+    run_heatmap: bool = False,
     preprocessing_steps: list[dict[str, Any]] | None = None,
 ) -> BaselineResult:
     """Run the baseline Patchcore model on the MVTec AD dataset.
 
     Args:
-        data_root: Path to the root directory of the MVTec AD dataset.
-        category: The specific category to evaluate (e.g., 'bottle').
-        fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
-        preprocessing_steps: List of preprocessing step configurations.
+        data_root: Root directory of MVTec AD.
+        category: Category to evaluate.
+        pipeline: Optional list of preprocessing step configurations or pipeline.
+        fpr_limit: Maximum allowable False Positive Rate.
+        backbone: Feature extractor backbone (e.g. 'resnet18', 'wide_resnet50_2').
+        coreset_sampling_ratio: Ratio for coreset subsampling.
+        run_heatmap: Whether to compute heatmap overlays.
+        preprocessing_steps: Deprecated alias for pipeline configuration list.
 
     Returns:
-        Structured dictionary containing test metrics and artifact paths.
+        Structured evaluation metrics.
     """
-    pipeline = build_pipeline_from_configs(preprocessing_steps)
+    steps_config = pipeline if pipeline is not None else preprocessing_steps
+    if isinstance(steps_config, PreprocessingPipeline):
+        proc_pipeline = steps_config
+    else:
+        proc_pipeline = build_pipeline_from_configs(steps_config)
 
-    logger.info("Configured preprocessing pipeline with %d steps.", len(pipeline))
+    logger.info("Configured preprocessing pipeline with %d steps.", len(proc_pipeline))
 
     base_dir = Path("results") / "Patchcore" / category
-
-    transform_adapter = PreprocessingTransformAdapter(pipeline)
+    transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
 
     # 1. Initialize dataset, model, and engine
     datamodule = MVTecAD(
@@ -292,7 +424,7 @@ def run_baseline(
         eval_batch_size=16,
     )
 
-    if len(pipeline) > 0:
+    if len(proc_pipeline) > 0:
         # Setup the datamodule datasets so train_data and test_data are instantiated
         datamodule.setup()
 
@@ -305,7 +437,7 @@ def run_baseline(
         if test_data is not None:
             test_data.transform = transform_adapter
 
-    model = Patchcore(backbone="resnet18")
+    model = Patchcore(backbone=backbone, coreset_sampling_ratio=coreset_sampling_ratio)
     engine = Engine(accelerator="gpu", devices=1)
 
     # 2. Fit and Test
@@ -316,9 +448,26 @@ def run_baseline(
     test_results = engine.test(model=model, datamodule=datamodule)
 
     # 3. Extract PR metrics and build summary
-    manual_image_f1, manual_pixel_f1 = extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit)
+    (
+        manual_image_f1,
+        manual_pixel_f1,
+        manual_image_prec,
+        manual_image_rec,
+        heatmap_overlays,
+        anomalous_indices,
+    ) = extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit, run_heatmap)
 
-    return format_results(test_results, category, base_dir, manual_image_f1, manual_pixel_f1)
+    return format_results(
+        test_results,
+        category,
+        base_dir,
+        manual_image_f1,
+        manual_pixel_f1,
+        manual_image_prec,
+        manual_image_rec,
+        heatmap_overlays,
+        anomalous_indices,
+    )
 
 
 if __name__ == "__main__":

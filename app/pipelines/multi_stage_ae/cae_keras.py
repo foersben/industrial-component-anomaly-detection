@@ -194,7 +194,7 @@ def ssim_mse_loss(alpha: float = 0.84) -> Any:
     return _loss
 
 
-def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
+def build_cae(crop_size: int = 64, latent_channels: int = 32) -> Any:
     """Build and compile a Convolutional Autoencoder (CAE) using TF/Keras.
 
     Architecture Overview:
@@ -206,13 +206,13 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
             -> Conv2D(64,  4x4, stride 2) + BatchNorm + ELU   -> H/4  x W/4  x 64
             -> Conv2D(128, 4x4, stride 2) + BatchNorm + ELU   -> H/8  x W/8  x 128
             -> Conv2D(256, 4x4, stride 2) + BatchNorm + ELU   -> H/16 x W/16 x 256
-            -> Flatten -> Dense(latent_dim)                     -> latent_dim
+            -> Conv2D(latent_channels, 3x3, stride 1)         -> H/16 x W/16 x latent_channels
 
         Decoder (reconstruction):
-            Dense(H/16 x W/16 x 256) -> Reshape(H/16, W/16, 256)
-            -> Conv2DTranspose(128, 4x4, stride 2) + BatchNorm + ELU -> H/8  x W/8
-            -> Conv2DTranspose(64,  4x4, stride 2) + BatchNorm + ELU -> H/4  x W/4
-            -> Conv2DTranspose(32,  4x4, stride 2) + BatchNorm + ELU -> H/2  x W/2
+            -> Conv2DTranspose(256, 3x3, stride 1) + BatchNorm + ELU -> H/16 x W/16 x 256
+            -> Conv2DTranspose(128, 4x4, stride 2) + BatchNorm + ELU -> H/8  x W/8  x 128
+            -> Conv2DTranspose(64,  4x4, stride 2) + BatchNorm + ELU -> H/4  x W/4  x 64
+            -> Conv2DTranspose(32,  4x4, stride 2) + BatchNorm + ELU -> H/2  x W/2  x 32
             -> Conv2DTranspose(3,   4x4, stride 2) + Sigmoid         -> H    x W    x 3
 
     Choices explained:
@@ -223,8 +223,8 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
         - AdamW optimiser (weight_decay=1e-4) for regularised training.
 
     Args:
-        img_size: Spatial size of input images (both width and height). Must be divisible by 16.
-        latent_dim: Dimensionality of the bottleneck latent vector.
+        crop_size: Spatial size of input image crops (both width and height). Must be divisible by 16.
+        latent_channels: Number of channels in the convolutional bottleneck.
 
     Returns:
         Compiled ``tf.keras.Model`` ready for training.
@@ -234,12 +234,11 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
     """
     tf = _require_tf()
 
-    if img_size % 16 != 0:
-        raise ValueError(f"img_size must be divisible by 16 (for 4 stride-2 layers). Got: {img_size}")
+    if crop_size % 16 != 0:
+        raise ValueError(f"crop_size must be divisible by 16 (for 4 stride-2 layers). Got: {crop_size}")
 
     # Spatial dimensions at the bottleneck (after 4 stride-2 downsampling layers)
-    bottleneck_spatial = img_size // 16  # e.g. 128 -> 8
-    bottleneck_flat = bottleneck_spatial * bottleneck_spatial * 256
+    bottleneck_spatial = crop_size // 16  # e.g. 64 -> 4
 
     layers = tf.keras.layers
     sequential = tf.keras.Sequential
@@ -247,7 +246,7 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
     model = sequential(
         [
             # ENCODER
-            tf.keras.Input(shape=(img_size, img_size, 3), name="encoder_input"),
+            tf.keras.Input(shape=(crop_size, crop_size, 3), name="encoder_input"),
             layers.Conv2D(32, kernel_size=4, strides=2, padding="same", use_bias=False),
             layers.BatchNormalization(),
             layers.ELU(),
@@ -260,12 +259,14 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
             layers.Conv2D(256, kernel_size=4, strides=2, padding="same", use_bias=False),
             layers.BatchNormalization(),
             layers.ELU(),
-            # Flatten spatial features -> dense bottleneck
-            layers.Flatten(),
-            layers.Dense(latent_dim, name="latent_vector"),
+            # Fully Convolutional Bottleneck
+            layers.Conv2D(
+                latent_channels, kernel_size=3, strides=1, padding="same", use_bias=False, name="latent_conv"
+            ),
             # DECODER
-            layers.Dense(bottleneck_flat),
-            layers.Reshape((bottleneck_spatial, bottleneck_spatial, 256)),
+            layers.Conv2DTranspose(256, kernel_size=3, strides=1, padding="same", use_bias=False, name="decoder_conv"),
+            layers.BatchNormalization(),
+            layers.ELU(),
             layers.Conv2DTranspose(128, kernel_size=4, strides=2, padding="same", use_bias=False),
             layers.BatchNormalization(),
             layers.ELU(),
@@ -289,9 +290,9 @@ def build_cae(img_size: int = 128, latent_dim: int = 128) -> Any:
     model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84))
 
     logger.info(
-        "Built Keras CAE: img_size=%d, latent_dim=%d, bottleneck_spatial=%d",
-        img_size,
-        latent_dim,
+        "Built Keras CAE: crop_size=%d, latent_channels=%d, bottleneck_spatial=%d",
+        crop_size,
+        latent_channels,
         bottleneck_spatial,
     )
     return model
