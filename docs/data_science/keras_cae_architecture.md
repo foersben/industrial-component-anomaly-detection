@@ -7,11 +7,6 @@ tags: [keras, autoencoder, documentation]
 
 # Keras CAE: Architecture Overview
 
-> **Audience**: This document series is written for beginners through intermediate practitioners.
-> Every design decision is explained in plain English *before* the technical formulation.
-> You do not need a machine learning background to follow this - every concept is introduced
-> from first principles.
-
 This is the **entry point** for the Keras CAE documentation. Each of the 10 pipeline steps
 is covered in a dedicated sub-page. Start here to understand the big picture, then navigate
 to whichever step you want to understand in depth.
@@ -28,7 +23,7 @@ between the input and the output.
 ```mermaid
 flowchart LR
     IMG["Input Image"] --> ENC["Encoder\n(compress)"]
-    ENC --> BN["Bottleneck\n(latent vector)"]
+    ENC --> BN["Fully Convolutional Bottleneck\n(H/16 x W/16 x C)"]
     BN --> DEC["Decoder\n(reconstruct)"]
     DEC --> REC["Reconstructed Image"]
     IMG & REC --> LOSS["Reconstruction Error\n= Anomaly Score"]
@@ -58,9 +53,9 @@ flowchart TD
     H --> I["Train with\nMasked Image Modeling\nSSIM+MSE Loss"]
     I --> J["Score Test Images\nTop-K Pooling"]
     J --> K["Adaptive Threshold\nQuantile or Mahalanobis"]
-    K --> L["Evaluate\nAUROC + AUPIMO"]
+    K --> L["Evaluate\nAUROC + AUPIMO\n(Train 85/15 Split & Test Set)"]
     L --> M{"Anomalies detected?"}
-    M -- Yes --> N["Generate Reconstruction\nError Heatmaps"]
+    M -- Yes --> N["Generate Reconstruction\nError Heatmap Grid\n(Side-by-side UI)"]
     M -- No --> O["Results Dictionary"]
     N --> O
     style H fill:#4a9,color:#fff
@@ -76,13 +71,13 @@ Each Python module handles one specific concern - no module does more than one j
 
 | Module | What it does |
 |--------|-------------|
-| [`augmentation.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/augmentation.py) | Category-aware data augmentation (texture vs. object strategies) |
-| [`segmentation.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/segmentation.py) | Otsu + Canny foreground extraction and background replacement |
-| [`cae_keras.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/cae_keras.py) | CAE model definition (`build_cae`), MIM masking, SSIM+MSE loss, training loop |
-| [`scoring.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/scoring.py) | Pixel error map computation, Top-K pooling, adaptive thresholds |
-| [`evaluation.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/evaluation.py) | AUROC, AUPIMO, Precision/Recall/F1, tradeoff curves |
-| [`error_heatmap.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/error_heatmap.py) | Reconstruction Error Heatmap XAI overlays |
-| [`cae_pipeline.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/cae_pipeline.py) | End-to-end orchestrator: calls all modules in order |
+| [`augmentation.py`](../../app/pipelines/multi_stage_ae/augmentation.py) | Category-aware data augmentation (texture vs. object strategies) |
+| [`segmentation.py`](../../app/pipelines/multi_stage_ae/segmentation.py) | Otsu + Canny foreground extraction and background replacement |
+| [`cae_keras.py`](../../app/pipelines/multi_stage_ae/cae_keras.py) | CAE model definition (`build_cae`), MIM masking, SSIM+MSE loss, training loop |
+| [`scoring.py`](../../app/pipelines/multi_stage_ae/scoring.py) | Pixel error map computation, Top-K pooling, adaptive thresholds |
+| [`evaluation.py`](../../app/pipelines/multi_stage_ae/evaluation.py) | AUROC, AUPIMO, Precision/Recall/F1, tradeoff curves |
+| [`error_heatmap.py`](../../app/pipelines/multi_stage_ae/error_heatmap.py) | Reconstruction Error Heatmap XAI overlays |
+| [`cae_pipeline.py`](../../app/pipelines/multi_stage_ae/cae_pipeline.py) | End-to-end orchestrator: calls all modules in order |
 
 ---
 
@@ -123,14 +118,15 @@ Request body (all fields optional, defaults shown):
   "data_root":        "data/raw/mvtec_ad",
   "category":         "bottle",
   "img_size":         128,
-  "latent_dim":       128,
+  "latent_channels":  32,
   "epochs":           20,
   "batch_size":       16,
   "mask_ratio":       0.25,
   "threshold_method": "quantile",
   "k_fraction":       0.002,
   "use_segmentation": true,
-  "run_shap":         false
+  "run_heatmap":      true,
+  "force_retrain":    false
 }
 ```
 
@@ -171,7 +167,7 @@ pixi install --environment ci
 For optional SHAP explainability:
 
 ```bash
-pixi run pip install shap scikit-image
+pixi run pip install shap
 ```
 
 For details on how TF chooses GPU vs. CPU at runtime, see

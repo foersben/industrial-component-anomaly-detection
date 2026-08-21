@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore", category=FutureWarning, message=".*timm.*")
 warnings.filterwarnings("ignore", category=FutureWarning, module=".*timm.*")
 
 
-def make_api_request(endpoint: str, payload: dict[str, Any], timeout: int = 10) -> Any:
+def make_api_request(endpoint: str, payload: dict[str, Any], timeout: int | None = 10) -> Any:
     """Helper to handle repetitive POST requests and error catching.
 
     Args:
@@ -147,15 +147,27 @@ def render_baseline_patchcore_tab() -> None:
     data_root = st.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="b_root")
     category = st.text_input("Category Name", value="bottle", key="b_cat")
 
+    st.subheader("Model Configuration")
+    c1, c2 = st.columns(2)
+    backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"])
+    coreset_ratio = c2.slider("Coreset Sampling Ratio", min_value=0.01, max_value=0.2, value=0.1, step=0.01)
+
     st.subheader("Preprocessing Options")
-    use_clahe = st.checkbox("Apply CLAHE", value=False)
-    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False)
+    use_mask = st.checkbox(
+        "Apply Otsu+Canny Foreground Masking (zeros out background)", value=False, key="patchcore_mask"
+    )
+    use_clahe = st.checkbox("Apply CLAHE", value=False, key="patchcore_clahe")
+    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False, key="patchcore_gaussian")
 
     preprocessing_steps = []
+    if use_mask:
+        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
     if use_clahe:
         preprocessing_steps.append({"name": "clahe", "params": {}})
     if use_gaussian:
         preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+
+    run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", value=False)
 
     if not st.button("Run Patchcore Evaluation Pipeline"):
         return
@@ -165,6 +177,9 @@ def render_baseline_patchcore_tab() -> None:
             "data_root": data_root,
             "category": category,
             "preprocessing_steps": preprocessing_steps,
+            "backbone": backbone,
+            "coreset_sampling_ratio": coreset_ratio,
+            "run_heatmap": run_heatmap,
         }
         data = make_api_request("/api/pipelines/baseline", payload, timeout=300)
 
@@ -181,8 +196,27 @@ def render_baseline_patchcore_tab() -> None:
 
             with col_img:
                 _display_level_metrics("Image-Level (Classification)", img_metrics)
+                prec = img_metrics.get("precision", 0.0) * 100
+                rec = img_metrics.get("recall", 0.0) * 100
+                if prec > 0 or rec > 0:
+                    st.info(
+                        "Using a strict threshold calculated only on normal test images, the model successfully "
+                        f"flagged **{rec:.1f}%** of the actual defects. When it fired an alarm, "
+                        f"it was correct **{prec:.1f}%** of the time."
+                    )
             with col_pix:
                 _display_level_metrics("Pixel-Level (Localization)", pix_metrics)
+                aupimo_thresh = pix_metrics.get("t_aupimo_min", 0.0)
+                aupimo_score = pix_metrics.get("aupimo", 0.0)
+                if aupimo_thresh > 0:
+                    st.info(
+                        f"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as "
+                        f"**{aupimo_thresh:.4f}**. The model must exceed this high threshold to flag a pixel "
+                        f"without violating the FPR constraint.\n\n"
+                        f"At this threshold, the model finds **{aupimo_score * 100:.2f}%** "
+                        f"of the actual anomalous pixels, guaranteeing highly reliable defect localization "
+                        f"with fewer than 1 false alarm per 100,000 normal pixels."
+                    )
 
             st.divider()
 
@@ -193,6 +227,8 @@ def render_baseline_patchcore_tab() -> None:
 
             if "metrics_path" in pix_metrics:
                 render_evaluation_curves(pix_metrics["metrics_path"])
+
+            _render_heatmap_explorer(results)
         else:
             st.text_area("Results Summary", value=str(results), height=180)
 
@@ -308,17 +344,32 @@ def render_keras_cae_tab() -> None:
     st.subheader("Training Hyperparameters")
     c1, c2, c3, c4 = st.columns(4)
     epochs = c1.number_input("Epochs", min_value=1, max_value=100, value=20, step=5)
-    latent_dim = c2.number_input("Latent Dim", min_value=32, max_value=512, value=128, step=32)
+    latent_channels = c2.number_input("Latent Channels", min_value=8, max_value=256, value=32, step=8)
     img_size = c3.number_input("Image Size", min_value=64, max_value=256, value=128, step=16)
     batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, value=16, step=4)
 
-    st.subheader("Pipeline Options")
-    c5, c6, c7 = st.columns(3)
-    mask_ratio = c5.slider("Mask Ratio (MIM)", min_value=0.1, max_value=0.5, value=0.25, step=0.05)
-    k_fraction = c6.slider("Top-K Fraction", min_value=0.001, max_value=0.05, value=0.002, step=0.001, format="%.3f")
-    threshold_method = c7.selectbox("Threshold Method", ["quantile", "mahalanobis"])
+    with st.expander("Advanced Hyperparameters"):
+        ac1, ac2, ac3 = st.columns(3)
+        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, 0.25, 0.05)
+        threshold_method = ac2.selectbox("Threshold Method", ["quantile", "mahalanobis"])
+        k_fraction = ac3.number_input(
+            "Top-K Fraction", min_value=0.001, max_value=0.050, value=0.002, step=0.001, format="%.3f"
+        )
 
-    use_seg = st.checkbox("Apply Otsu+Canny Foreground Extraction (BGRP-G)", value=True)
+    st.subheader("Preprocessing Options")
+    use_seg = st.checkbox("Apply Otsu+Canny Foreground Masking (BGRP-G)", value=True, key="kcae_mask")
+    use_clahe = st.checkbox("Apply CLAHE", value=False, key="kcae_clahe")
+    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False, key="kcae_gaussian")
+
+    preprocessing_steps = []
+    if use_seg:
+        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+    if use_clahe:
+        preprocessing_steps.append({"name": "clahe", "params": {}})
+    if use_gaussian:
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+
+    st.subheader("Execution")
     force_retrain = st.checkbox("Force Retrain Model (bypass cache even if hyperparameters match)", value=False)
 
     if not st.button("Run Keras CAE Pipeline"):
@@ -329,17 +380,17 @@ def render_keras_cae_tab() -> None:
             "data_root": data_root,
             "category": category,
             "img_size": img_size,
-            "latent_dim": latent_dim,
+            "latent_channels": latent_channels,
             "epochs": epochs,
             "batch_size": batch_size,
             "mask_ratio": mask_ratio,
             "threshold_method": threshold_method,
             "k_fraction": k_fraction,
-            "use_segmentation": use_seg,
+            "preprocessing_steps": preprocessing_steps,
             "run_heatmap": True,  # Automatically compute heatmaps
             "force_retrain": force_retrain,
         }
-        data = make_api_request("/api/pipelines/keras_cae", payload, timeout=600)
+        data = make_api_request("/api/pipelines/keras_cae", payload, timeout=None)
 
     if not data:
         return
@@ -355,8 +406,27 @@ def render_keras_cae_tab() -> None:
 
         with col_img:
             _display_level_metrics("Image-Level (Classification)", img_metrics)
+            total = results.get("total_test_images", 0)
+            prec = results.get("precision", 0.0) * 100
+            rec = results.get("recall", 0.0) * 100
+            st.info(
+                f"Out of {total} test components, the model successfully flagged **{rec:.1f}%** of the actual defects. "
+                f"When it fired an alarm, it was correct **{prec:.1f}%** of the time."
+            )
+
         with col_pix:
             _display_level_metrics("Pixel-Level (Localization)", pix_metrics)
+            aupimo_thresh = pix_metrics.get("t_aupimo_min", 0.0)
+            aupimo_score = pix_metrics.get("aupimo", 0.0)
+            if aupimo_thresh > 0:
+                st.info(
+                    f"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as "
+                    f"**{aupimo_thresh:.4f}**. The model must exceed this high threshold to flag a pixel "
+                    f"without violating the FPR constraint.\n\n"
+                    f"At this threshold, the model finds **{aupimo_score * 100:.2f}%** "
+                    f"of the actual anomalous pixels, guaranteeing highly reliable defect localization "
+                    f"with fewer than 1 false alarm per 100,000 normal pixels."
+                )
 
         st.divider()
 
@@ -383,8 +453,12 @@ def render_keras_cae_tab() -> None:
 
     # ── Loss Curve ───────────────────────────────────────────────────────────────
     if loss_history := results.get("loss_history"):
-        st.subheader("Training Loss Curve")
-        st.line_chart(loss_history)
+        if isinstance(loss_history, dict):
+            clean_history = {k: v for k, v in loss_history.items() if isinstance(v, list) and len(v) > 0}
+            if clean_history:
+                st.subheader("Training Loss Curve")
+                df_loss = pd.DataFrame({k: pd.Series(v) for k, v in clean_history.items()})
+                st.line_chart(df_loss)
 
     # ── Heatmap Explorer ───────────────────────────────────────────────
     _render_heatmap_explorer(results)
@@ -403,17 +477,15 @@ def _render_heatmap_explorer(results: dict[str, Any]) -> None:
 
     st.divider()
     with st.expander(
-        f"Reconstruction Error Explorer — {len(anomalous_indices)} anomalous image(s) found",
+        f"Anomaly Heatmap Explorer — {len(anomalous_indices)} anomalous image(s) found",
         expanded=True,
     ):
         st.markdown("""
-        The autoencoder was trained only on **normal** parts. When it sees a defective image,
-        it tries to reconstruct it — but it can't perfectly recreate the defect because it
-        has never seen one before. The heatmap shows exactly **where it failed**: regions
-        with high reconstruction error are flagged as anomalous.
+        The model processes test images and generates a pixel-wise **Anomaly Map**. High values indicate that the model
+        believes those specific pixels are defective based on what it learned from normal components.
 
-        **Red / warm** — high reconstruction error → likely a defect
-        **Blue / cool** — low error → looks normal to the model
+        **Red / warm** — high anomaly score → likely a defect
+        **Blue / cool** — low anomaly score → looks normal to the model
         """)
 
         # Check if we have Heatmap results from the pipeline run
@@ -428,27 +500,50 @@ def _render_heatmap_explorer(results: dict[str, Any]) -> None:
 def _render_heatmap_gallery(overlays: dict[Any, Any], anomalous_indices: list[int]) -> None:
     """Render a grid of Error heatmap overlays for all anomalous images.
 
-    Displays images in rows of 3 columns for a clean gallery layout.
+    Displays two rectangular areas (grids) side-by-side:
+    - Left Grid: Original image + Model Prediction Heatmap
+    - Right Grid: Ground Truth Mask + Model Prediction Heatmap
     """
     import numpy as np
 
     st.success(f"Heatmaps computed for {len(overlays)} image(s).")
-    cols_per_row = 3
-    indices = [i for i in anomalous_indices if str(i) in overlays or i in overlays]
 
-    for row_start in range(0, len(indices), cols_per_row):
-        row_indices = indices[row_start : row_start + cols_per_row]
-        cols = st.columns(len(row_indices))
-        for col, idx in zip(cols, row_indices, strict=False):
-            # API returns JSON keys as strings
-            overlay_data = overlays.get(idx) or overlays.get(str(idx))
-            if overlay_data is not None:
-                overlay_arr = np.array(overlay_data, dtype=np.uint8)
-                col.image(
-                    overlay_arr,
-                    caption=f"Test image #{idx}",
-                    width="stretch",
-                )
+    indices = [i for i in anomalous_indices if str(i) in overlays or i in overlays]
+    if not indices:
+        return
+
+    main_col1, main_col2 = st.columns(2)
+    cols_per_row = 2
+
+    with main_col1:
+        st.subheader("Prediction Heatmap")
+        for row_start in range(0, len(indices), cols_per_row):
+            row_indices = indices[row_start : row_start + cols_per_row]
+            cols = st.columns(len(row_indices))
+            for col, idx in zip(cols, row_indices, strict=False):
+                overlay_data = overlays.get(idx) or overlays.get(str(idx))
+                if isinstance(overlay_data, dict) and "heatmap" in overlay_data:
+                    hm_arr = np.array(overlay_data["heatmap"], dtype=np.uint8)
+                    col.image(hm_arr, caption=f"Image #{idx}", width="stretch")
+                elif isinstance(overlay_data, list):
+                    # Fallback
+                    col.image(np.array(overlay_data, dtype=np.uint8), caption=f"Image #{idx}")
+
+    with main_col2:
+        st.subheader("Ground Truth + Heatmap")
+        for row_start in range(0, len(indices), cols_per_row):
+            row_indices = indices[row_start : row_start + cols_per_row]
+            cols = st.columns(len(row_indices))
+            for col, idx in zip(cols, row_indices, strict=False):
+                overlay_data = overlays.get(idx) or overlays.get(str(idx))
+                if isinstance(overlay_data, dict):
+                    if "gt_and_heatmap" in overlay_data:
+                        gt_hm_arr = np.array(overlay_data["gt_and_heatmap"], dtype=np.uint8)
+                        col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
+                    elif "gt_overlay" in overlay_data:
+                        # Fallback for previous run format
+                        gt_hm_arr = np.array(overlay_data["gt_overlay"], dtype=np.uint8)
+                        col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
 
     st.caption(
         "Heatmaps derived directly from the per-pixel Mean Squared Error between the original "

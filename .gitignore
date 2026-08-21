@@ -226,6 +226,7 @@ __marimo__/
 data/raw/
 data/processed/
 data/external/
+data/tmp/
 
 # Locally trained notebook checkpoints (directory or local symlink)
 /models

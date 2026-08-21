@@ -1,6 +1,7 @@
 """FastAPI backend server module."""
 
 import warnings
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -37,18 +38,25 @@ class DummyEvaluationRequest(BaseModel):
 
 
 class BaselineEvaluationRequest(BaseModel):
-    """Request schema for Patchcore baseline evaluation.
+    """Request schema for the Patchcore baseline pipeline.
 
     Attributes:
-        data_root: Path to the root directory of the MVTec AD dataset.
-        category: The specific category to evaluate (e.g., 'bottle').
-        fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
+        data_root: Path to the MVTec AD dataset root directory.
+        category: Component category to evaluate on (e.g., 'bottle', 'wood').
+        preprocessing_steps: Optional ordered list of preprocessing steps to apply.
+        fpr_limit: Maximum allowable False Positive Rate for AUPIMO bounds.
+        backbone: Feature extractor backbone for Patchcore (e.g., 'resnet18', 'wide_resnet50_2').
+        coreset_sampling_ratio: Fraction of the feature pool to keep in the memory bank.
+        run_heatmap: Whether to compute Anomaly Heatmap overlays for anomalous images.
     """
 
     data_root: str = "data/raw/mvtec_ad"
     category: str = "bottle"
-    fpr_limit: float = 1e-4
     preprocessing_steps: list[dict[str, Any]] | None = None
+    fpr_limit: float = 1e-4
+    backbone: str = "resnet18"
+    coreset_sampling_ratio: float = 0.1
+    run_heatmap: bool = False
 
 
 class AutoencoderEvaluationRequest(BaseModel):
@@ -134,10 +142,13 @@ def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
         Dictionary containing evaluation metrics and summary lines.
     """
     results = run_baseline(
-        data_root=req.data_root,
+        data_root=Path(req.data_root),
         category=req.category,
+        pipeline=req.preprocessing_steps,
         fpr_limit=req.fpr_limit,
-        preprocessing_steps=req.preprocessing_steps,
+        backbone=req.backbone,
+        coreset_sampling_ratio=req.coreset_sampling_ratio,
+        run_heatmap=req.run_heatmap,
     )
     return {
         "status": "success",
@@ -180,8 +191,10 @@ class KerasCAERequest(BaseModel):
     Attributes:
         data_root: Path to the MVTec AD dataset root directory.
         category: Component category to train/evaluate on (e.g., 'bottle', 'wood').
-        img_size: Spatial size (H=W) for image resizing. Must be divisible by 16.
-        latent_dim: Bottleneck dimension of the CAE.
+        img_size: Spatial size (H=W) for image resizing.
+        crop_size: Size of sliding window crops extracted from the base image.
+        crop_stride: Stride of the sliding window.
+        latent_channels: Number of channels in the convolutional bottleneck.
         epochs: Number of training epochs.
         batch_size: Number of images per gradient step.
         mask_ratio: Fraction of image patches to mask for Masked Image Modeling.
@@ -194,14 +207,16 @@ class KerasCAERequest(BaseModel):
 
     data_root: str = "data/raw/mvtec_ad"
     category: str = "bottle"
-    img_size: int = 128
-    latent_dim: int = 128
+    img_size: int = 256
+    crop_size: int = 64
+    crop_stride: int = 32
+    latent_channels: int = 32
     epochs: int = 20
     batch_size: int = 16
     mask_ratio: float = 0.25
     threshold_method: str = "quantile"
     k_fraction: float = 0.002
-    use_segmentation: bool = True
+    preprocessing_steps: list[dict[str, Any]] | None = None
     run_heatmap: bool = False
     force_retrain: bool = False
 
@@ -224,13 +239,15 @@ def run_keras_cae_endpoint(req: KerasCAERequest) -> dict[str, Any]:
         data_root=req.data_root,
         category=req.category,
         img_size=req.img_size,
-        latent_dim=req.latent_dim,
+        crop_size=req.crop_size,
+        crop_stride=req.crop_stride,
+        latent_channels=req.latent_channels,
         epochs=req.epochs,
         batch_size=req.batch_size,
         mask_ratio=req.mask_ratio,
         threshold_method=req.threshold_method,
         k_fraction=req.k_fraction,
-        use_segmentation=req.use_segmentation,
+        preprocessing_steps=req.preprocessing_steps,
         run_heatmap=req.run_heatmap,
         force_retrain=req.force_retrain,
     )

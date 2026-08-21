@@ -60,7 +60,7 @@ This runs the `huggingface_hub` downloader, which downloads the repository snaps
 
 ## Automated Workspace Recipes
 
-To make this workflow seamless, the [Justfile](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/Justfile) includes targets to automate these operations:
+To make this workflow seamless, the [Justfile](../../Justfile) includes targets to automate these operations:
 
 ### 1. Extract Dataset Packages (Optional)
 

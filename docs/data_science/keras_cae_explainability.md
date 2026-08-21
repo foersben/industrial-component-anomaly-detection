@@ -42,9 +42,51 @@ This Error Map *is* the Anomaly Score! (Our final anomaly score is mathematicall
 
 ---
 
+## Technical Architecture: Patch Inference & Error Map Synthesis
+
+```mermaid
+graph TD
+    TestImg["Full Test Image (256x256)"] --> SlidingCrop["Sliding Window Crop Extraction (64x64, Stride 32)"]
+    SlidingCrop --> Model["Keras CAE Patch Inference"]
+    Model --> ReconCrops["Reconstructed 64x64 Crops"]
+    ReconCrops --> Stitch["Weighted Overlap Stitching (stitch_crops)"]
+    Stitch --> FullRecon["Full Reconstructed Image (256x256)"]
+    TestImg & FullRecon --> ErrorMap["Structural Error Map (SSIM + MAE)"]
+    ErrorMap --> Smooth["Gaussian Smoothing (σ = 3.0)"]
+    Smooth --> Quantile["Robust Quantile Normalization (1st-99th percentile)"]
+    Quantile --> Overlay["Perceptual Jet Heatmap Overlay & GT Fusion"]
+```
+
+### 1. Sliding Window Stitching & Precomputed Inference
+
+The Keras CAE is trained on small local crops (default $64 \times 64$). Full-resolution test images ($256 \times 256$) are divided into overlapping crops with stride 32, passed through the model in batches, and reconstructed into a seamless full-resolution image using weighted overlap blending (`stitch_crops`).
+
+Passing the **precomputed full reconstruction** directly to `compute_error_heatmap()` ensures the model's patch architecture evaluates the entire component without dimension mismatch errors or redundant forward passes.
+
+### 2. Structural Error Formulation
+
+The raw pixel error map $E$ blends Structural Similarity (SSIM) and Mean Absolute Error (MAE):
+
+$$E(x, y) = \alpha \cdot (1 - \text{SSIM}(I(x, y), \hat{I}(x, y))) + (1 - \alpha) \cdot |I(x, y) - \hat{I}(x, y)|$$
+
+- $\alpha = 0.84$: Aligns error calculation with the combined SSIM+MSE training loss.
+- **Gaussian Filter ($\sigma = 3.0$):** Smooths high-frequency sensor noise and clusters contiguous defect pixels.
+- **Robust Quantile Clamping ($p_1$ to $p_{99}$):** Prevents boundary artifacts and outliers from washing out fine defect signals.
+
+---
+
 ## How to Interpret the Heatmaps in the UI
 
-When you run the Keras CAE pipeline, the **Reconstruction Error Explorer** is generated automatically at the end of the evaluation. It presents a gallery of vibrant, slightly smoothed heatmaps overlaid onto the original anomalous images.
+When you run the Keras CAE pipeline, the **Reconstruction Error Explorer** is generated automatically at the end of the evaluation. It presents a side-by-side gallery of vibrant, slightly smoothed heatmaps overlaid onto the original anomalous images, paired with their respective Ground Truth masks.
+
+### Side-by-Side Visualization Grid
+
+The Streamlit UI displays a comparative grid for each anomalous test image:
+
+- **Left Panel (Prediction Heatmap):** The original image overlaid with the model's predicted anomaly heatmap.
+- **Right Panel (Ground Truth + Heatmap):** The Ground Truth defect contour fused with the anomaly heatmap.
+
+This side-by-side layout allows for immediate visual validation of the model's localization accuracy (AUPIMO) in a rectangular, easily scannable format rather than a long vertical scroll.
 
 We use a perceptual colourmap (typically "jet") blended with the original image, with transparency allowing the underlying component to show through:
 

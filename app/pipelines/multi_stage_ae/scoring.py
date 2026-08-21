@@ -62,23 +62,42 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def compute_pixel_error_map(original: np.ndarray, reconstruction: np.ndarray) -> np.ndarray:
+def compute_pixel_error_map(
+    original: np.ndarray, reconstruction: np.ndarray, alpha: float = 0.84, sigma: float = 2.0
+) -> np.ndarray:
     """Compute the per-pixel absolute reconstruction error map.
 
-    The error map is the channel-wise mean absolute difference (MAE) between the
-    original and reconstructed image. It highlights regions where the autoencoder
-    struggled to faithfully reconstruct the input, which correlates with anomalies.
+    The error map is a weighted blend of Structural Similarity (SSIM) error
+    and channel-wise Mean Absolute Error (MAE), aligned with the training loss.
+    A Gaussian blur is applied to smooth noise and cluster anomaly predictions.
 
     Args:
         original: Original normalised image, shape (H, W, 3), values in [0, 1].
         reconstruction: Reconstructed image from the CAE, same shape as original.
+        alpha: Weight for the SSIM component (default 0.84, matches loss).
+        sigma: Standard deviation for Gaussian kernel (default 2.0).
 
     Returns:
         2D error map, shape (H, W), values ≥ 0. Higher values = more likely anomalous.
     """
-    # Absolute difference per pixel per channel, then average across channels (axis=-1)
+    from scipy.ndimage import gaussian_filter
+    from skimage.metrics import structural_similarity as ssim
+
+    # 1. Structural Error Map (1 - SSIM)
+    _, ssim_map = ssim(original, reconstruction, data_range=1.0, channel_axis=-1, full=True)  # type: ignore[no-untyped-call]
+    ssim_error = 1.0 - np.mean(ssim_map, axis=-1)  # (H, W)
+
+    # 2. Pixel Error Map (MAE)
     per_channel_error = np.abs(original - reconstruction)  # (H, W, 3)
-    error_map: np.ndarray = np.mean(per_channel_error, axis=-1)  # (H, W)
+    mae_error = np.mean(per_channel_error, axis=-1)  # (H, W)
+
+    # 3. Blend them together
+    error_map = alpha * ssim_error + (1.0 - alpha) * mae_error
+
+    # 4. Smooth the result to cluster defect pixels
+    if sigma > 0:
+        error_map = gaussian_filter(error_map, sigma=sigma)
+
     return error_map
 
 
@@ -114,6 +133,7 @@ def compute_image_scores(
     model: Any,
     images: np.ndarray,
     k_fraction: float = 0.002,
+    reconstructions: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[np.ndarray]]:
     """Compute image-level anomaly scores and pixel error maps for a dataset.
 
@@ -121,17 +141,19 @@ def compute_image_scores(
     error map, and aggregates to an image-level score using Top-K pooling.
 
     Args:
-        model: Trained Keras CAE model. Must have a ``predict`` method.
+        model: Trained Keras CAE model. Must have a ``predict`` method. Can be None if reconstructions are provided.
         images: Array of normalised test images, shape (N, H, W, 3), values in [0, 1].
         k_fraction: Top-K pooling fraction. See ``top_k_pooling`` for details.
+        reconstructions: Optional pre-computed reconstructions. If None, uses model.predict.
 
     Returns:
         Tuple of:
             - scores: 1D numpy array of image-level anomaly scores, shape (N,).
             - error_maps: List of N 2D error maps, each shape (H, W).
     """
-    # Run all images through the CAE in a single batched predict call
-    reconstructions = model.predict(images, verbose=0)
+    # Run all images through the CAE in a single batched predict call if not provided
+    if reconstructions is None:
+        reconstructions = model.predict(images, verbose=0)
 
     scores: list[float] = []
     error_maps: list[np.ndarray] = []
