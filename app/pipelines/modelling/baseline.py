@@ -32,7 +32,16 @@ class MetricLevelResult(TypedDict, total=False):
     Attributes:
         auroc: Area Under the Receiver Operating Characteristic Curve.
         f1_score: F1 score for the given metric level.
+        precision: Precision score.
+        recall: Recall score.
+        threshold: Decision threshold for classification.
+        threshold_limit: Anomaly score threshold at the lower bound.
         t_aupimo_min: Minimum AUPIMO threshold bound (for pixel localization).
+        tpr_at_limit: Recall/catch rate at threshold_limit.
+        aupimo_score: Integrated AUPIMO score.
+        fpr_lower_bound: Lower bound for FPR integration.
+        fpr_upper_bound: Upper bound for FPR integration.
+        aupimo: AUPIMO score.
         metrics_path: Path to the .npz file containing precision, recall, and thresholds.
     """
 
@@ -40,7 +49,13 @@ class MetricLevelResult(TypedDict, total=False):
     f1_score: float
     precision: float
     recall: float
+    threshold: float
+    threshold_limit: float
     t_aupimo_min: float
+    tpr_at_limit: float
+    aupimo_score: float
+    fpr_lower_bound: float
+    fpr_upper_bound: float
     aupimo: float
     metrics_path: str
 
@@ -155,7 +170,7 @@ def extract_and_save_pr_metrics(
     base_dir: Path,
     fpr_limit: float = 1e-4,
     run_heatmap: bool = False,
-) -> tuple[float, float, float, float, dict[int, dict[str, list[Any]]], list[int]]:
+) -> tuple[float, float, float, float, float, dict[int, dict[str, list[Any]]], list[int]]:
     """Extract model predictions and persist Precision-Recall metrics for visual analysis.
 
     Args:
@@ -170,7 +185,7 @@ def extract_and_save_pr_metrics(
         logger.info("Extracting predictions for PR curve metrics...")
         raw_predictions = engine.predict(model=model, dataloaders=datamodule.test_dataloader())
         if not raw_predictions:
-            return 0.0, 0.0, 0.0, 0.0, {}, []
+            return 0.0, 0.0, 0.0, 0.0, 0.0, {}, []
         predictions = raw_predictions
 
         pixel_scores, pixel_labels = [], []
@@ -307,13 +322,14 @@ def extract_and_save_pr_metrics(
             manual_pixel_f1,
             manual_image_prec,
             manual_image_rec,
+            img_threshold,
             heatmap_overlays,
             anomalous_indices,
         )
 
     except Exception as e:
         logger.warning("Could not auto-save evaluation metrics.npz: %s", e)
-        return 0.0, 0.0, 0.0, 0.0, {}, []
+        return 0.0, 0.0, 0.0, 0.0, 0.0, {}, []
 
 
 def format_results(
@@ -324,8 +340,10 @@ def format_results(
     manual_pixel_f1: float,
     manual_image_prec: float,
     manual_image_rec: float,
+    img_threshold: float,
     heatmap_overlays: dict[int, dict[str, list[Any]]],
     anomalous_indices: list[int],
+    fpr_limit: float = 1e-4,
 ) -> BaselineResult:
     """Format anomalib engine evaluation output into a structured response schema.
 
@@ -337,8 +355,10 @@ def format_results(
         manual_pixel_f1: Manually calculated pixel-level F1 score.
         manual_image_prec: Manually calculated image-level Precision score.
         manual_image_rec: Manually calculated image-level Recall score.
+        img_threshold: Manually calculated image-level classification threshold.
         heatmap_overlays: Dictionary of precomputed heatmap overlays.
         anomalous_indices: List of image indices corresponding to anomalies.
+        fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
 
     Returns:
         A dictionary containing structured image_level and pixel_level results.
@@ -365,13 +385,19 @@ def format_results(
             "f1_score": manual_image_f1,
             "precision": manual_image_prec,
             "recall": manual_image_rec,
+            "threshold": img_threshold,
             "metrics_path": str(base_dir / "image_metrics.npz"),
         },
         "pixel_level": {
             "auroc": _to_float(res_dict.get("pixel_AUROC", 0.0)),
             "f1_score": manual_pixel_f1,
+            "aupimo_score": _to_float(res_dict.get("pixel_AUPIMO", 0.0)),
+            "threshold_limit": t_aupimo_min,
+            "tpr_at_limit": aupimo,
+            "fpr_lower_bound": 1e-5,
+            "fpr_upper_bound": fpr_limit,
             "t_aupimo_min": t_aupimo_min,
-            "aupimo": aupimo,
+            "aupimo": _to_float(res_dict.get("pixel_AUPIMO", 0.0)),
             "metrics_path": str(base_dir / "pixel_metrics.npz"),
         },
         "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
@@ -453,6 +479,7 @@ def run_baseline(
         manual_pixel_f1,
         manual_image_prec,
         manual_image_rec,
+        img_threshold,
         heatmap_overlays,
         anomalous_indices,
     ) = extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit, run_heatmap)
@@ -465,8 +492,10 @@ def run_baseline(
         manual_pixel_f1,
         manual_image_prec,
         manual_image_rec,
+        img_threshold,
         heatmap_overlays,
         anomalous_indices,
+        fpr_limit,
     )
 
 

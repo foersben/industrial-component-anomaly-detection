@@ -54,23 +54,102 @@ def _display_metrics_row(metrics: dict[str, Any]) -> None:
     col3.metric("Recall", f"{metrics.get('recall', 0):.2f}")
 
 
-def _display_level_metrics(title: str, metrics: dict[str, Any]) -> None:
+def _display_level_metrics(title: str, metrics: dict[str, Any], level_type: str = "image") -> None:
     """Helper to render level-specific metrics (Image or Pixel).
 
     Args:
         title: The title of the metrics.
         metrics: The metrics to display.
+        level_type: Type of level ('image' or 'pixel').
     """
     st.subheader(title)
-    if "auroc" in metrics:
-        st.metric("AUROC", f"{metrics.get('auroc', 0.0):.4f}")
-
-    if "f1_score" in metrics:
-        st.metric("F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
-    elif "aupimo" in metrics:
-        st.metric("AUPIMO", f"{metrics.get('aupimo', 0.0):.4f}")
+    if level_type == "pixel":
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Pixel AUROC", f"{metrics.get('auroc', 0.0):.4f}")
+        aupimo_score = metrics.get("aupimo_score", metrics.get("aupimo", 0.0))
+        m2.metric("AUPIMO Score", f"{aupimo_score:.4f}")
+        m3.metric("Pixel F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
+    else:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Image AUROC", f"{metrics.get('auroc', 0.0):.4f}")
+        m2.metric("F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
+        m3.metric("Precision", f"{metrics.get('precision', 0.0):.4f}")
 
     st.caption(f"Saved: `{metrics.get('metrics_path', '')}`")
+
+
+def _render_evaluation_summary(results: dict[str, Any]) -> None:
+    """Render structured Image-Level and Pixel-Level evaluation metric cards and dynamic info boxes.
+
+    Args:
+        results: Dictionary containing image_level and pixel_level evaluation metrics.
+    """
+    if "image_level" in results and "pixel_level" in results:
+        col_img, col_pix = st.columns(2)
+        img_metrics = results.get("image_level", {})
+        pix_metrics = results.get("pixel_level", {})
+
+        with col_img:
+            _display_level_metrics("Image-Level (Classification)", img_metrics, level_type="image")
+            image_threshold = float(img_metrics.get("threshold", results.get("threshold", 0.0)))
+            image_precision = float(img_metrics.get("precision", results.get("precision", 0.0)))
+            image_recall = float(img_metrics.get("recall", results.get("recall", 0.0)))
+
+            st.info(
+                f"**Image-Level Classification**\n"
+                f"* **Threshold:** The model uses an anomaly score threshold of **{image_threshold:.4f}**, "
+                f"which represents the 95th percentile of normal validation images.\n"
+                f"* **Precision:** At this threshold, the model achieves a Precision of "
+                f"**{image_precision * 100:.1f}%**. This means out of all components flagged as defective, "
+                f"{image_precision * 100:.1f}% are truly defective (minimal false alarms/wasted parts).\n"
+                f"* **Recall:** The model achieves a Recall of **{image_recall * 100:.1f}%**, meaning it successfully "
+                f"catches {image_recall * 100:.1f}% of all actual defective components on the line."
+            )
+
+        with col_pix:
+            _display_level_metrics("Pixel-Level (Localization)", pix_metrics, level_type="pixel")
+            aupimo_score = float(pix_metrics.get("aupimo_score", pix_metrics.get("aupimo", results.get("aupimo", 0.0))))
+            fpr_lower_bound = float(pix_metrics.get("fpr_lower_bound", 1e-05))
+            fpr_upper_bound = float(pix_metrics.get("fpr_upper_bound", 1e-04))
+            threshold_limit = float(pix_metrics.get("threshold_limit", pix_metrics.get("t_aupimo_min", 0.0)))
+            tpr_at_limit = float(
+                pix_metrics.get("tpr_at_limit", pix_metrics.get("aupimo_recall", pix_metrics.get("aupimo", 0.0)))
+            )
+            fpr_denom = fpr_lower_bound if fpr_lower_bound > 0 else 1e-5
+
+            st.info(
+                f"**Pixel-Level Localization (AUPIMO)**\n"
+                f"AUPIMO (Area Under the Per-Image Measurement Overlap) evaluates how well the model localizes "
+                f"defects across a strictly controlled False Positive Rate (FPR) range "
+                f"(from {fpr_lower_bound} to {fpr_upper_bound}).\n\n"
+                f"* **Overall Score:** An AUPIMO score of **{aupimo_score:.4f}** means that, on average across "
+                f"this strict trust range, the model successfully highlights **{aupimo_score * 100:.1f}%** "
+                f"of the actual defective pixel area.\n"
+                f"* **Industrial Threshold Limit:** To guarantee highly reliable defect localization with fewer than "
+                f"1 false alarm per {int(1 / fpr_denom):,} normal pixels, the model calculates a strict "
+                f"binarization threshold of **{threshold_limit:.4f}**.\n"
+                f"* **Reliability:** If deployed at this strict threshold, the model catches "
+                f"**{tpr_at_limit * 100:.2f}%** of the actual anomalous pixels, meaning any pixel flagged "
+                f"is guaranteed to be a defect with >99.99% confidence."
+            )
+
+        st.divider()
+
+        if "metrics_path" in img_metrics:
+            render_evaluation_curves(img_metrics["metrics_path"])
+
+        st.divider()
+
+        if "metrics_path" in pix_metrics:
+            render_evaluation_curves(pix_metrics["metrics_path"])
+    else:
+        st.subheader("Evaluation Metrics")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("AUROC (Image)", f"{results.get('auroc', 0.0):.4f}")
+        m2.metric("AUPIMO Score", f"{results.get('aupimo', 0.0):.4f}")
+        m3.metric("Accuracy", f"{results.get('accuracy', 0.0) * 100:.2f}%")
+        m4.metric("Precision", f"{results.get('precision', 0.0):.4f}")
+        m5.metric("Recall", f"{results.get('recall', 0.0):.4f}")
 
 
 def _find_metric_files() -> list[str]:
@@ -190,44 +269,7 @@ def render_baseline_patchcore_tab() -> None:
         results = data.get("results", {})
 
         if isinstance(results, dict):
-            col_img, col_pix = st.columns(2)
-            img_metrics = results.get("image_level", {})
-            pix_metrics = results.get("pixel_level", {})
-
-            with col_img:
-                _display_level_metrics("Image-Level (Classification)", img_metrics)
-                prec = img_metrics.get("precision", 0.0) * 100
-                rec = img_metrics.get("recall", 0.0) * 100
-                if prec > 0 or rec > 0:
-                    st.info(
-                        "Using a strict threshold calculated only on normal test images, the model successfully "
-                        f"flagged **{rec:.1f}%** of the actual defects. When it fired an alarm, "
-                        f"it was correct **{prec:.1f}%** of the time."
-                    )
-            with col_pix:
-                _display_level_metrics("Pixel-Level (Localization)", pix_metrics)
-                aupimo_thresh = pix_metrics.get("t_aupimo_min", 0.0)
-                aupimo_score = pix_metrics.get("aupimo", 0.0)
-                if aupimo_thresh > 0:
-                    st.info(
-                        f"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as "
-                        f"**{aupimo_thresh:.4f}**. The model must exceed this high threshold to flag a pixel "
-                        f"without violating the FPR constraint.\n\n"
-                        f"At this threshold, the model finds **{aupimo_score * 100:.2f}%** "
-                        f"of the actual anomalous pixels, guaranteeing highly reliable defect localization "
-                        f"with fewer than 1 false alarm per 100,000 normal pixels."
-                    )
-
-            st.divider()
-
-            if "metrics_path" in img_metrics:
-                render_evaluation_curves(img_metrics["metrics_path"])
-
-            st.divider()
-
-            if "metrics_path" in pix_metrics:
-                render_evaluation_curves(pix_metrics["metrics_path"])
-
+            _render_evaluation_summary(results)
             _render_heatmap_explorer(results)
         else:
             st.text_area("Results Summary", value=str(results), height=180)
@@ -304,34 +346,94 @@ def render_keras_cae_tab() -> None:
     # ── Model Registry Table ──────────────────────────────────────────────────────
     st.subheader("Model Registry (Cached Models)")
     registry_path = Path("data/models/keras_cae")
-    cached_models = []
+    cached_models: list[dict[str, Any]] = []
     if registry_path.exists():
         for meta_file in registry_path.rglob("metadata.json"):
             try:
                 with open(meta_file, encoding="utf-8") as f:
                     meta = json.load(f)
+                    ts_str = meta.get("timestamp", "")
+                    created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
                     cached_models.append(
                         {
-                            "Category": meta.get("category"),
-                            "Hash": meta.get("hash"),
-                            "Img Size": meta.get("img_size"),
-                            "Latent": meta.get("latent_dim"),
-                            "Epochs": meta.get("epochs"),
-                            "Batch": meta.get("batch_size"),
-                            "Mask Ratio": meta.get("mask_ratio"),
-                            "Created": meta.get("timestamp", "")[:19].replace("T", " "),
+                            "Category": meta.get("category", "unknown"),
+                            "Hash": meta.get("hash", meta_file.parent.name),
+                            "Img Size": meta.get("img_size", 128),
+                            "Latent": meta.get("latent_channels", meta.get("latent_dim", 32)),
+                            "Epochs": meta.get("epochs", 20),
+                            "Batch": meta.get("batch_size", 16),
+                            "Mask Ratio": meta.get("mask_ratio", 0.25),
+                            "Created": created_display,
+                            "_raw_timestamp": ts_str,
                         }
                     )
             except Exception:
                 pass
 
+    selected_model_hash: str | None = None
+    selected_model_meta: dict[str, Any] | None = None
+    load_selected_clicked = False
+
     if cached_models:
-        df_models = pd.DataFrame(cached_models)
-        st.dataframe(df_models, width="stretch", hide_index=True)
-        st.info(
-            "If you run the pipeline with hyperparameters matching a cached model, "
-            "it will instantly load without retraining."
+        # Sort newest first
+        cached_models.sort(key=lambda x: str(x.get("_raw_timestamp", "")), reverse=True)
+        display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
+        df_models = pd.DataFrame(display_models)
+
+        selection = st.dataframe(
+            df_models,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="kcae_registry_selection",
         )
+
+        selected_rows: list[int] = []
+        if selection is not None:
+            if isinstance(selection, dict):
+                selected_rows = selection.get("selection", {}).get("rows", [])
+            else:
+                sel_attr = getattr(selection, "selection", None)
+                if isinstance(sel_attr, dict):
+                    selected_rows = sel_attr.get("rows", [])
+                elif hasattr(sel_attr, "rows"):
+                    selected_rows = getattr(sel_attr, "rows", [])
+
+        if selected_rows and 0 <= selected_rows[0] < len(cached_models):
+            selected_model_meta = cached_models[selected_rows[0]]
+            selected_model_hash = str(selected_model_meta.get("Hash"))
+
+        if selected_model_hash and selected_model_meta:
+            # Sync inputs with selected model if selection changed
+            if st.session_state.get("_last_kcae_selected_hash") != selected_model_hash:
+                st.session_state["_last_kcae_selected_hash"] = selected_model_hash
+                st.session_state["kcae_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                st.session_state["kcae_epochs"] = int(selected_model_meta.get("Epochs", 20))
+                st.session_state["kcae_latent"] = int(selected_model_meta.get("Latent", 32))
+                st.session_state["kcae_img_size"] = int(selected_model_meta.get("Img Size", 128))
+                st.session_state["kcae_batch"] = int(selected_model_meta.get("Batch", 16))
+                st.session_state["kcae_mask_ratio"] = float(selected_model_meta.get("Mask Ratio", 0.25))
+
+            st.success(
+                f"Selected cached model: **`{selected_model_hash}`** ("
+                f"Category: `{selected_model_meta.get('Category')}`, "
+                f"Img Size: `{selected_model_meta.get('Img Size')}`, "
+                f"Latent: `{selected_model_meta.get('Latent')}`, "
+                f"Epochs: `{selected_model_meta.get('Epochs')}`, "
+                f"Created: `{selected_model_meta.get('Created')}`)"
+            )
+            col_load, _ = st.columns([1, 2])
+            load_selected_clicked = col_load.button(
+                f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                type="primary",
+                key="btn_load_kcae_selected",
+            )
+        else:
+            st.info(
+                "💡 **Interactive Model Registry:** Click on any row above to select and load that cached model. "
+                "The pipeline always loads the newest matching cached model automatically when available."
+            )
     else:
         st.caption("No cached models found in registry.")
 
@@ -343,14 +445,16 @@ def render_keras_cae_tab() -> None:
 
     st.subheader("Training Hyperparameters")
     c1, c2, c3, c4 = st.columns(4)
-    epochs = c1.number_input("Epochs", min_value=1, max_value=100, value=20, step=5)
-    latent_channels = c2.number_input("Latent Channels", min_value=8, max_value=256, value=32, step=8)
-    img_size = c3.number_input("Image Size", min_value=64, max_value=256, value=128, step=16)
-    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, value=16, step=4)
+    epochs = c1.number_input("Epochs", min_value=1, max_value=100, value=20, step=5, key="kcae_epochs")
+    latent_channels = c2.number_input(
+        "Latent Channels", min_value=8, max_value=256, value=32, step=8, key="kcae_latent"
+    )
+    img_size = c3.number_input("Image Size", min_value=64, max_value=256, value=128, step=16, key="kcae_img_size")
+    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, value=16, step=4, key="kcae_batch")
 
     with st.expander("Advanced Hyperparameters"):
         ac1, ac2, ac3 = st.columns(3)
-        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, 0.25, 0.05)
+        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, 0.25, 0.05, key="kcae_mask_ratio")
         threshold_method = ac2.selectbox("Threshold Method", ["quantile", "mahalanobis"])
         k_fraction = ac3.number_input(
             "Top-K Fraction", min_value=0.001, max_value=0.050, value=0.002, step=0.001, format="%.3f"
@@ -372,10 +476,15 @@ def render_keras_cae_tab() -> None:
     st.subheader("Execution")
     force_retrain = st.checkbox("Force Retrain Model (bypass cache even if hyperparameters match)", value=False)
 
-    if not st.button("Run Keras CAE Pipeline"):
+    run_pipeline_clicked = st.button("Run Keras CAE Pipeline")
+
+    if not (load_selected_clicked or run_pipeline_clicked):
         return
 
-    with st.spinner("Training Keras CAE and evaluating... (may take several minutes)"):
+    active_hash = selected_model_hash if load_selected_clicked else None
+    active_force_retrain = False if load_selected_clicked else force_retrain
+
+    with st.spinner("Executing Keras CAE pipeline and evaluating..."):
         payload = {
             "data_root": data_root,
             "category": category,
@@ -388,7 +497,8 @@ def render_keras_cae_tab() -> None:
             "k_fraction": k_fraction,
             "preprocessing_steps": preprocessing_steps,
             "run_heatmap": True,  # Automatically compute heatmaps
-            "force_retrain": force_retrain,
+            "force_retrain": active_force_retrain,
+            "model_hash": active_hash,
         }
         data = make_api_request("/api/pipelines/keras_cae", payload, timeout=None)
 
@@ -399,52 +509,7 @@ def render_keras_cae_tab() -> None:
     results = data.get("results", {})
 
     # ── Metrics ──────────────────────────────────────────────────────────────────
-    if "image_level" in results and "pixel_level" in results:
-        col_img, col_pix = st.columns(2)
-        img_metrics = results.get("image_level", {})
-        pix_metrics = results.get("pixel_level", {})
-
-        with col_img:
-            _display_level_metrics("Image-Level (Classification)", img_metrics)
-            total = results.get("total_test_images", 0)
-            prec = results.get("precision", 0.0) * 100
-            rec = results.get("recall", 0.0) * 100
-            st.info(
-                f"Out of {total} test components, the model successfully flagged **{rec:.1f}%** of the actual defects. "
-                f"When it fired an alarm, it was correct **{prec:.1f}%** of the time."
-            )
-
-        with col_pix:
-            _display_level_metrics("Pixel-Level (Localization)", pix_metrics)
-            aupimo_thresh = pix_metrics.get("t_aupimo_min", 0.0)
-            aupimo_score = pix_metrics.get("aupimo", 0.0)
-            if aupimo_thresh > 0:
-                st.info(
-                    f"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as "
-                    f"**{aupimo_thresh:.4f}**. The model must exceed this high threshold to flag a pixel "
-                    f"without violating the FPR constraint.\n\n"
-                    f"At this threshold, the model finds **{aupimo_score * 100:.2f}%** "
-                    f"of the actual anomalous pixels, guaranteeing highly reliable defect localization "
-                    f"with fewer than 1 false alarm per 100,000 normal pixels."
-                )
-
-        st.divider()
-
-        if "metrics_path" in img_metrics:
-            render_evaluation_curves(img_metrics["metrics_path"])
-
-        st.divider()
-
-        if "metrics_path" in pix_metrics:
-            render_evaluation_curves(pix_metrics["metrics_path"])
-    else:
-        st.subheader("Evaluation Metrics")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("AUROC (Image)", f"{results.get('auroc', 0.0):.4f}")
-        m2.metric("AUPIMO (Pixel)", f"{results.get('aupimo', 0.0):.4f}")
-        m3.metric("Accuracy", f"{results.get('accuracy', 0.0) * 100:.2f}%")
-        m4.metric("Precision", f"{results.get('precision', 0.0):.4f}")
-        m5.metric("Recall", f"{results.get('recall', 0.0):.4f}")
+    _render_evaluation_summary(results)
 
     st.caption(
         f"Adaptive Threshold: `{results.get('threshold', 0.0):.6f}` | "

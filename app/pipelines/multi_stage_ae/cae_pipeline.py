@@ -164,6 +164,113 @@ def extract_crops(images: np.ndarray, crop_size: int, crop_stride: int) -> np.nd
     return crops_stack.reshape(-1, crop_size, crop_size, c)
 
 
+def find_cached_model(
+    category: str,
+    img_size: int,
+    crop_size: int = 64,
+    crop_stride: int = 32,
+    latent_channels: int = 32,
+    epochs: int = 20,
+    batch_size: int = 16,
+    mask_ratio: float = 0.25,
+    mask_patch_size: int = 8,
+    target_hash: str | None = None,
+    registry_base: Path | str = "data/models/keras_cae",
+) -> tuple[Path, dict[str, Any]] | None:
+    """Find the newest cached model matching either a specific hash or the given hyperparameters.
+
+    Args:
+        category: Component category name.
+        img_size: Spatial image dimension.
+        crop_size: Crop dimension.
+        crop_stride: Crop sliding stride.
+        latent_channels: Bottleneck latent channels.
+        epochs: Number of epochs.
+        batch_size: Batch size.
+        mask_ratio: Mask ratio for MIM.
+        mask_patch_size: Mask patch size for MIM.
+        target_hash: Optional exact model hash to search for.
+        registry_base: Path to the keras_cae model registry.
+
+    Returns:
+        Tuple of (model_dir, metadata_dict) if found, else None.
+    """
+    base_path = Path(registry_base)
+    if not base_path.exists():
+        return None
+
+    # 1. If explicit target_hash is given, look for exact directory
+    if target_hash:
+        target_dir = base_path / target_hash
+        model_file = target_dir / "model.keras"
+        meta_file = target_dir / "metadata.json"
+        if model_file.exists():
+            meta: dict[str, Any] = {}
+            if meta_file.exists():
+                try:
+                    with open(meta_file, encoding="utf-8") as f:
+                        meta = json.load(f)
+                except Exception:
+                    pass
+            return target_dir, meta
+
+    # 2. Otherwise, search all models and find those matching hyperparameters
+    candidates: list[tuple[float, Path, dict[str, Any]]] = []
+    for meta_file in base_path.rglob("metadata.json"):
+        model_dir = meta_file.parent
+        model_file = model_dir / "model.keras"
+        if not model_file.exists():
+            continue
+
+        try:
+            with open(meta_file, encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            continue
+
+        # Check parameter compatibility
+        if meta.get("category") != category:
+            continue
+        if meta.get("img_size") != img_size:
+            continue
+        meta_latent = meta.get("latent_channels", meta.get("latent_dim", 32))
+        if meta_latent != latent_channels:
+            continue
+        if meta.get("epochs") != epochs:
+            continue
+        if meta.get("batch_size") != batch_size:
+            continue
+        if abs(float(meta.get("mask_ratio", 0.25)) - mask_ratio) > 1e-3:
+            continue
+        if meta.get("crop_size", 64) != crop_size:
+            continue
+        if meta.get("crop_stride", 32) != crop_stride:
+            continue
+        if meta.get("mask_patch_size", 8) != mask_patch_size:
+            continue
+
+        # Determine timestamp / mtime for sorting newest first
+        ts_str = meta.get("timestamp", "")
+        try:
+            if ts_str:
+                dt = datetime.fromisoformat(ts_str)
+                ts = dt.timestamp()
+            else:
+                ts = model_file.stat().st_mtime
+        except Exception:
+            ts = model_file.stat().st_mtime
+
+        candidates.append((ts, model_dir, meta))
+
+    if not candidates:
+        return None
+
+    # Sort descending by timestamp (newest first)
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    _, newest_dir, newest_meta = candidates[0]
+    return newest_dir, newest_meta
+
+
 def stitch_crops(
     crops: np.ndarray, n_images: int, img_h: int, img_w: int, crop_size: int, crop_stride: int
 ) -> np.ndarray:
@@ -202,6 +309,7 @@ def run_keras_cae_pipeline(
     preprocessing_steps: list[dict[str, Any]] | None = None,
     run_heatmap: bool = False,
     force_retrain: bool = False,
+    model_hash: str | None = None,
 ) -> dict[str, Any]:
     """Run the complete Keras CAE anomaly detection pipeline for one MVTec category.
 
@@ -220,7 +328,7 @@ def run_keras_cae_pipeline(
         data_root: Path to the MVTec AD dataset root directory.
         category: MVTec category to train and evaluate on (e.g., 'bottle', 'wood').
         img_size: Size (height and width) to resize base images to.
-        crop_size: Size of sliding window crops extracted from the base image.
+        crop_size: Size of the sliding window crops extracted from the base image.
         crop_stride: Stride of the sliding window.
         latent_channels: Number of channels in the convolutional bottleneck.
         epochs: Number of training epochs.
@@ -232,6 +340,7 @@ def run_keras_cae_pipeline(
         preprocessing_steps: Optional configuration list for preprocessing transforms.
         run_heatmap: Whether to compute Reconstruction Error heatmap overlays for anomalous images.
         force_retrain: If True, bypass the cache and force training of a new model.
+        model_hash: Optional specific model hash to load directly from registry.
 
     Returns:
         Dictionary with all results (metrics, scores, heatmap, optional anomaly heatmaps).
@@ -289,27 +398,47 @@ def run_keras_cae_pipeline(
     val_good_crops = extract_crops(val_good_images, crop_size, crop_stride) if len(val_good_images) > 0 else None
     val_an_crops = None  # No anomalous images used during validation tuning
 
-    # Create a unique hash for these hyperparameters
-    hp_string = (
-        f"{category}_{img_size}_{crop_size}_{crop_stride}_{latent_channels}_"
-        f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}"
+    cached = (
+        find_cached_model(
+            category=category,
+            img_size=img_size,
+            crop_size=crop_size,
+            crop_stride=crop_stride,
+            latent_channels=latent_channels,
+            epochs=epochs,
+            batch_size=batch_size,
+            mask_ratio=mask_ratio,
+            mask_patch_size=mask_patch_size,
+            target_hash=model_hash,
+        )
+        if not force_retrain
+        else None
     )
-    model_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
-    registry_dir = Path("data/models/keras_cae") / model_hash
-    model_path = registry_dir / "model.keras"
-    meta_path = registry_dir / "metadata.json"
 
     loss_history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
 
-    if not force_retrain and model_path.exists():
-        logger.info("Found cached model with identical hyperparameters (Hash: %s). Loading from disk...", model_hash)
+    if cached is not None:
+        registry_dir, meta = cached
+        resolved_hash = meta.get("hash", registry_dir.name)
+        model_path = registry_dir / "model.keras"
+        logger.info(
+            "Found newest cached model matching parameters (Hash: %s, Dir: %s). Loading from disk...",
+            resolved_hash,
+            registry_dir,
+        )
         model = tf.keras.models.load_model(model_path, compile=False)
-        # Load cached loss history if available
-        if meta_path.exists():
-            with open(meta_path, encoding="utf-8") as f:
-                meta = json.load(f)
-                loss_history = meta.get("loss_history", loss_history)
+        loss_history = meta.get("loss_history", loss_history)
+        model_hash = resolved_hash
     else:
+        hp_string = (
+            f"{category}_{img_size}_{crop_size}_{crop_stride}_{latent_channels}_"
+            f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}"
+        )
+        model_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
+        registry_dir = Path("data/models/keras_cae") / model_hash
+        model_path = registry_dir / "model.keras"
+        meta_path = registry_dir / "metadata.json"
+
         logger.info("No cache found (or force_retrain=True). Training new model (Hash: %s)...", model_hash)
         model = build_cae(crop_size=crop_size, latent_channels=latent_channels)
         loss_history = train_cae(
@@ -392,18 +521,25 @@ def run_keras_cae_pipeline(
         "f1_score": results.get("f1_score", 0.0),
         "precision": results.get("precision", 0.0),
         "recall": results.get("recall", 0.0),
+        "threshold": threshold,
         "metrics_path": str(registry_dir / "image_metrics.npz"),
     }
     results["pixel_level"] = {
         "auroc": results.get("pixel_auroc", results.get("auroc", 0.0)),
         "f1_score": results.get("pixel_f1", results.get("f1_score", 0.0)),
+        "aupimo_score": results.get("aupimo", 0.0),
+        "threshold_limit": t_aupimo_min,
+        "tpr_at_limit": aupimo_recall,
+        "fpr_lower_bound": 1e-5,
+        "fpr_upper_bound": 1e-4,
         "t_aupimo_min": t_aupimo_min,
-        "aupimo": aupimo_recall,
+        "aupimo": results.get("aupimo", 0.0),
         "metrics_path": str(pixel_file),
     }
     results["final_train_loss"] = loss_history["train"][-1] if loss_history["train"] else 0.0
     results["category"] = category
     results["epochs"] = epochs
+    results["model_hash"] = model_hash
     results["loss_history"] = loss_history
 
     # Include anomalous image indices so the UI can offer a SHAP image selector

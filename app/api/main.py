@@ -219,6 +219,7 @@ class KerasCAERequest(BaseModel):
     preprocessing_steps: list[dict[str, Any]] | None = None
     run_heatmap: bool = False
     force_retrain: bool = False
+    model_hash: str | None = None
 
 
 @app.post("/api/pipelines/keras_cae")
@@ -250,6 +251,7 @@ def run_keras_cae_endpoint(req: KerasCAERequest) -> dict[str, Any]:
         preprocessing_steps=req.preprocessing_steps,
         run_heatmap=req.run_heatmap,
         force_retrain=req.force_retrain,
+        model_hash=req.model_hash,
     )
     return {
         "status": "success",
