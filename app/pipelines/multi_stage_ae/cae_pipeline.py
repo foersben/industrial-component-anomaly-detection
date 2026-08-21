@@ -74,12 +74,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import tensorflow as tf
 from PIL import Image
 
 from app.domain.data import build_mvtec_manifest
 from app.pipelines.multi_stage_ae.augmentation import augment_batch, get_augmenter
-from app.pipelines.multi_stage_ae.cae_keras import build_cae, train_cae
+from app.pipelines.multi_stage_ae.cae_keras import _require_tf, build_cae, train_cae
 from app.pipelines.multi_stage_ae.evaluation import evaluate_cae
 from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold, compute_image_scores
 from app.pipelines.preprocessing import PreprocessingPipeline, build_pipeline_from_configs
@@ -164,6 +163,19 @@ def extract_crops(images: np.ndarray, crop_size: int, crop_stride: int) -> np.nd
     return crops_stack.reshape(-1, crop_size, crop_size, c)
 
 
+def _normalize_preprocessing_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Normalize preprocessing step configurations for deterministic comparison and hashing."""
+    if not steps:
+        return []
+    normalized: list[dict[str, Any]] = []
+    for s in steps:
+        name = str(s.get("name", ""))
+        params = dict(s.get("params", {})) if isinstance(s.get("params"), dict) else {}
+        normalized.append({"name": name, "params": params})
+    normalized.sort(key=lambda x: x["name"])
+    return normalized
+
+
 def find_cached_model(
     category: str,
     img_size: int,
@@ -174,6 +186,7 @@ def find_cached_model(
     batch_size: int = 16,
     mask_ratio: float = 0.25,
     mask_patch_size: int = 8,
+    preprocessing_steps: list[dict[str, Any]] | None = None,
     target_hash: str | None = None,
     registry_base: Path | str = "data/models/keras_cae",
 ) -> tuple[Path, dict[str, Any]] | None:
@@ -189,6 +202,7 @@ def find_cached_model(
         batch_size: Batch size.
         mask_ratio: Mask ratio for MIM.
         mask_patch_size: Mask patch size for MIM.
+        preprocessing_steps: Optional preprocessing step configurations.
         target_hash: Optional exact model hash to search for.
         registry_base: Path to the keras_cae model registry.
 
@@ -213,6 +227,8 @@ def find_cached_model(
                 except Exception:
                     pass
             return target_dir, meta
+
+    norm_req_prep = _normalize_preprocessing_steps(preprocessing_steps)
 
     # 2. Otherwise, search all models and find those matching hyperparameters
     candidates: list[tuple[float, Path, dict[str, Any]]] = []
@@ -247,6 +263,11 @@ def find_cached_model(
         if meta.get("crop_stride", 32) != crop_stride:
             continue
         if meta.get("mask_patch_size", 8) != mask_patch_size:
+            continue
+
+        # Check preprocessing steps compatibility
+        meta_prep = _normalize_preprocessing_steps(meta.get("preprocessing_steps"))
+        if meta_prep != norm_req_prep:
             continue
 
         # Determine timestamp / mtime for sorting newest first
@@ -314,11 +335,11 @@ def run_keras_cae_pipeline(
     """Run the complete Keras CAE anomaly detection pipeline for one MVTec category.
 
     This is the main entry point called by the FastAPI endpoint. It:
-    1. Loads train (normal only) and test images as numpy arrays.
-    2. Optionally applies modular preprocessing transforms.
-    3. Applies category-aware augmentation to training data.
+    1. Resolves cached model or configures new training parameters.
+    2. Loads train (normal only) and test images as numpy arrays using exact parameters.
+    3. Applies modular preprocessing transforms consistent with model state.
     4. Normalises images to [0, 1].
-    5. Builds and trains the Keras CAE with MIM + SSIM+MSE + AdamW.
+    5. Builds and trains the Keras CAE with MIM + SSIM+MSE + AdamW (or loads from cache).
     6. Scores all test images using Top-K pooling.
     7. Computes an adaptive threshold from normal test scores.
     8. Evaluates with image-level AUROC and pixel-level AUPIMO.
@@ -345,9 +366,71 @@ def run_keras_cae_pipeline(
     Returns:
         Dictionary with all results (metrics, scores, heatmap, optional anomaly heatmaps).
     """
-    logger.info("=== Keras CAE Pipeline: category='%s', img_size=%d ===", category, img_size)
+    tf = _require_tf()
 
-    # ── 1. Load Dataset Manifest ────────────────────────────────────────────────
+    # ── 1. Cache Resolution (Pre-Dataset Loading) ──────────────────────────────
+    cached = (
+        find_cached_model(
+            category=category,
+            img_size=img_size,
+            crop_size=crop_size,
+            crop_stride=crop_stride,
+            latent_channels=latent_channels,
+            epochs=epochs,
+            batch_size=batch_size,
+            mask_ratio=mask_ratio,
+            mask_patch_size=mask_patch_size,
+            preprocessing_steps=preprocessing_steps,
+            target_hash=model_hash,
+        )
+        if not force_retrain
+        else None
+    )
+
+    loss_history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
+
+    if cached is not None:
+        registry_dir, meta = cached
+        resolved_hash = meta.get("hash", registry_dir.name)
+        model_path = registry_dir / "model.keras"
+        logger.info(
+            "Found newest cached model matching parameters (Hash: %s, Dir: %s). Loading from disk...",
+            resolved_hash,
+            registry_dir,
+        )
+        model = tf.keras.models.load_model(model_path, compile=False)
+        loss_history = meta.get("loss_history", loss_history)
+        model_hash = resolved_hash
+
+        # Extract and align hyperparameters strictly with cached model metadata
+        category = str(meta.get("category", category))
+        img_size = int(meta.get("img_size", img_size))
+        crop_size = int(meta.get("crop_size", crop_size))
+        crop_stride = int(meta.get("crop_stride", crop_stride))
+        latent_channels = int(meta.get("latent_channels", meta.get("latent_dim", latent_channels)))
+        epochs = int(meta.get("epochs", epochs))
+        batch_size = int(meta.get("batch_size", batch_size))
+        mask_ratio = float(meta.get("mask_ratio", mask_ratio))
+        mask_patch_size = int(meta.get("mask_patch_size", mask_patch_size))
+        threshold_method = str(meta.get("threshold_method", threshold_method))
+        k_fraction = float(meta.get("k_fraction", k_fraction))
+        if "preprocessing_steps" in meta and meta.get("preprocessing_steps") is not None:
+            preprocessing_steps = meta.get("preprocessing_steps")
+    else:
+        norm_prep = _normalize_preprocessing_steps(preprocessing_steps)
+        prep_str = json.dumps(norm_prep, sort_keys=True)
+        hp_string = (
+            f"{category}_{img_size}_{crop_size}_{crop_stride}_{latent_channels}_"
+            f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}_{prep_str}"
+        )
+        model_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
+        registry_dir = Path("data/models/keras_cae") / model_hash
+        model_path = registry_dir / "model.keras"
+        meta_path = registry_dir / "metadata.json"
+
+    logger.info("=== Keras CAE Pipeline: category='%s', img_size=%d, hash='%s' ===", category, img_size, model_hash)
+
+    # ── 2. Load Dataset Manifest ────────────────────────────────────────────────
     manifest = build_mvtec_manifest(data_root)
     cat = manifest[manifest["product"] == category].copy()
 
@@ -370,7 +453,7 @@ def run_keras_cae_pipeline(
 
     logger.info("Train (normal): %d | Val (normal): %d | Test: %d", len(train_paths), len(val_paths), len(test_paths))
 
-    # ── 2. Preprocessing ────────────────────────────────────────────────────────
+    # ── 3. Preprocessing ────────────────────────────────────────────────────────
     pipeline = build_pipeline_from_configs(preprocessing_steps)
     if len(pipeline) > 0:
         logger.info("Applying %d preprocessing steps.", len(pipeline))
@@ -379,18 +462,18 @@ def run_keras_cae_pipeline(
     val_images_uint8 = _load_images_as_numpy(val_paths, img_size, pipeline)
     test_images_uint8 = _load_images_as_numpy(test_paths, img_size, pipeline)
 
-    # ── 3. Category-Aware Augmentation (Training Only) ─────────────────────────
+    # ── 4. Category-Aware Augmentation (Training Only) ─────────────────────────
     augmenter = get_augmenter(category)
     # Augment training data: double the training set with one augmented copy
     augmented = augment_batch(train_images_uint8, augmenter)
     train_images_uint8 = np.concatenate([train_images_uint8, augmented], axis=0)
     logger.info("After augmentation: %d training images.", len(train_images_uint8))
 
-    # ── 4. Normalise to [0, 1] ──────────────────────────────────────────────────
+    # ── 5. Normalise to [0, 1] ──────────────────────────────────────────────────
     train_images = train_images_uint8.astype(np.float32) / 255.0
     test_images = test_images_uint8.astype(np.float32) / 255.0
 
-    # ── 5. Build & Train Keras CAE (with Caching) ───────────────────────────────
+    # ── 6. Build & Train Keras CAE (if not cached) ──────────────────────────────
     logger.info("Extracting overlapping %dx%d crops for training...", crop_size, crop_size)
     train_crops = extract_crops(train_images, crop_size, crop_stride)
 
@@ -398,47 +481,7 @@ def run_keras_cae_pipeline(
     val_good_crops = extract_crops(val_good_images, crop_size, crop_stride) if len(val_good_images) > 0 else None
     val_an_crops = None  # No anomalous images used during validation tuning
 
-    cached = (
-        find_cached_model(
-            category=category,
-            img_size=img_size,
-            crop_size=crop_size,
-            crop_stride=crop_stride,
-            latent_channels=latent_channels,
-            epochs=epochs,
-            batch_size=batch_size,
-            mask_ratio=mask_ratio,
-            mask_patch_size=mask_patch_size,
-            target_hash=model_hash,
-        )
-        if not force_retrain
-        else None
-    )
-
-    loss_history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
-
-    if cached is not None:
-        registry_dir, meta = cached
-        resolved_hash = meta.get("hash", registry_dir.name)
-        model_path = registry_dir / "model.keras"
-        logger.info(
-            "Found newest cached model matching parameters (Hash: %s, Dir: %s). Loading from disk...",
-            resolved_hash,
-            registry_dir,
-        )
-        model = tf.keras.models.load_model(model_path, compile=False)
-        loss_history = meta.get("loss_history", loss_history)
-        model_hash = resolved_hash
-    else:
-        hp_string = (
-            f"{category}_{img_size}_{crop_size}_{crop_stride}_{latent_channels}_"
-            f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}"
-        )
-        model_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
-        registry_dir = Path("data/models/keras_cae") / model_hash
-        model_path = registry_dir / "model.keras"
-        meta_path = registry_dir / "metadata.json"
-
+    if cached is None:
         logger.info("No cache found (or force_retrain=True). Training new model (Hash: %s)...", model_hash)
         model = build_cae(crop_size=crop_size, latent_channels=latent_channels)
         loss_history = train_cae(
@@ -465,6 +508,10 @@ def run_keras_cae_pipeline(
             "epochs": epochs,
             "batch_size": batch_size,
             "mask_ratio": mask_ratio,
+            "mask_patch_size": mask_patch_size,
+            "threshold_method": threshold_method,
+            "k_fraction": k_fraction,
+            "preprocessing_steps": preprocessing_steps or [],
             "loss_history": loss_history,
             "timestamp": datetime.now(UTC).isoformat(),
         }

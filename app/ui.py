@@ -354,6 +354,9 @@ def render_keras_cae_tab() -> None:
                     meta = json.load(f)
                     ts_str = meta.get("timestamp", "")
                     created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
+                    prep_list = meta.get("preprocessing_steps", [])
+                    prep_names = [s.get("name", "") for s in prep_list] if isinstance(prep_list, list) else []
+                    prep_display = ", ".join(prep_names) if prep_names else "None"
                     cached_models.append(
                         {
                             "Category": meta.get("category", "unknown"),
@@ -363,8 +366,10 @@ def render_keras_cae_tab() -> None:
                             "Epochs": meta.get("epochs", 20),
                             "Batch": meta.get("batch_size", 16),
                             "Mask Ratio": meta.get("mask_ratio", 0.25),
+                            "Preprocessing": prep_display,
                             "Created": created_display,
                             "_raw_timestamp": ts_str,
+                            "_raw_preprocessing_steps": prep_list,
                         }
                     )
             except Exception:
@@ -415,12 +420,20 @@ def render_keras_cae_tab() -> None:
                 st.session_state["kcae_batch"] = int(selected_model_meta.get("Batch", 16))
                 st.session_state["kcae_mask_ratio"] = float(selected_model_meta.get("Mask Ratio", 0.25))
 
+                # Sync preprocessing checkboxes with the cached model's preprocessing configuration
+                raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                if isinstance(raw_prep, list):
+                    st.session_state["kcae_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                    st.session_state["kcae_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                    st.session_state["kcae_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
             st.success(
                 f"Selected cached model: **`{selected_model_hash}`** ("
                 f"Category: `{selected_model_meta.get('Category')}`, "
                 f"Img Size: `{selected_model_meta.get('Img Size')}`, "
                 f"Latent: `{selected_model_meta.get('Latent')}`, "
                 f"Epochs: `{selected_model_meta.get('Epochs')}`, "
+                f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
                 f"Created: `{selected_model_meta.get('Created')}`)"
             )
             col_load, _ = st.columns([1, 2])
@@ -483,6 +496,11 @@ def render_keras_cae_tab() -> None:
 
     active_hash = selected_model_hash if load_selected_clicked else None
     active_force_retrain = False if load_selected_clicked else force_retrain
+    active_prep = (
+        selected_model_meta.get("_raw_preprocessing_steps", preprocessing_steps)
+        if load_selected_clicked and selected_model_meta
+        else preprocessing_steps
+    )
 
     with st.spinner("Executing Keras CAE pipeline and evaluating..."):
         payload = {
@@ -495,7 +513,7 @@ def render_keras_cae_tab() -> None:
             "mask_ratio": mask_ratio,
             "threshold_method": threshold_method,
             "k_fraction": k_fraction,
-            "preprocessing_steps": preprocessing_steps,
+            "preprocessing_steps": active_prep,
             "run_heatmap": True,  # Automatically compute heatmaps
             "force_retrain": active_force_retrain,
             "model_hash": active_hash,
