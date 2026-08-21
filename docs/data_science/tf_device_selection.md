@@ -183,8 +183,9 @@ driver via the NVML C library.
 
 ```python
 import pynvml
+
 pynvml.nvmlInit()
-handle   = pynvml.nvmlDeviceGetHandleByIndex(0)
+handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
 free_mib = mem_info.free // (1024 * 1024)
 ```
@@ -228,6 +229,7 @@ will cause CUDA out-of-memory errors on batch size spikes.
 
 ```python
 from app.core.tf_device import configure_tensorflow
+
 profile = configure_tensorflow(min_vram_mib=4096)  # Require 4 GB free for GPU
 ```
 
@@ -366,11 +368,11 @@ graph LR
 ### Thread Configuration
 
 ```python
-os.environ["TF_ENABLE_ONEDNN_OPTS"]  = "1"    # Activate oneDNN/AVX2 kernels
-os.environ["OMP_NUM_THREADS"]         = cores  # OpenMP parallel threads (oneDNN uses this)
-os.environ["TF_NUM_INTRAOP_THREADS"]  = cores  # TF threads within one op (e.g. one Conv2D)
-os.environ["TF_NUM_INTEROP_THREADS"]  = "1"    # TF threads between ops (keep serial)
-os.environ["TF_CPP_MIN_LOG_LEVEL"]    = "2"    # Suppress oneDNN startup banner
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "1"  # Activate oneDNN/AVX2 kernels
+os.environ["OMP_NUM_THREADS"] = cores  # OpenMP parallel threads (oneDNN uses this)
+os.environ["TF_NUM_INTRAOP_THREADS"] = cores  # TF threads within one op (e.g. one Conv2D)
+os.environ["TF_NUM_INTEROP_THREADS"] = "1"  # TF threads between ops (keep serial)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppress oneDNN startup banner
 ```
 
 **Why `INTEROP_THREADS=1`?**
@@ -399,6 +401,7 @@ def configure_tensorflow(min_vram_mib: int = DEFAULT_MIN_VRAM_MIB) -> HardwarePr
     # ... perform detection and configuration ...
     configure_tensorflow._cached_profile = profile
     return profile
+
 
 configure_tensorflow._cached_profile = None  # module-level cache slot
 ```
@@ -508,6 +511,7 @@ Export trained Keras model to ONNX, use ONNX Runtime's `CUDAExecutionProvider` /
 
 ```python
 import onnxruntime as ort
+
 providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 session = ort.InferenceSession("model.onnx", providers=providers)
 ```
@@ -537,6 +541,7 @@ and automatically compiles to XLA for both GPU and CPU.
 
 ```python
 import jax
+
 devices = jax.devices("gpu") or jax.devices("cpu")
 ```
 
@@ -665,5 +670,5 @@ partway through the first epoch.
 - [Keras CAE Architecture](keras_cae_architecture.md) - Full CAE model design including
   ELU, Masked Image Modeling, SSIM+MSE loss, Top-K pooling, and AUPIMO evaluation.
 - [Pixi Package Management](../concepts/pixi.md) - How Pixi features and environments work.
-- Source: [`app/core/tf_device.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/core/tf_device.py)
-- Source: [`pyproject.toml`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/pyproject.toml)
+- Source: [`app/core/tf_device.py`](../../app/core/tf_device.py)
+- Source: [`pyproject.toml`](../../pyproject.toml)

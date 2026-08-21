@@ -9,7 +9,7 @@ tags: [keras, autoencoder, documentation]
 
 > **Part of the Keras CAE documentation series.** Start at the [Architecture Overview](keras_cae_architecture.md) if you are new to this pipeline.
 
-This page covers **Steps 3-6**: the encoder-decoder network structure, why identity mapping is a fatal problem, the SSIM+MSE loss function, and the AdamW optimizer. All code lives in [`cae_keras.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/cae_keras.py) - the model definition (`build_cae`), the MIM masking (`apply_patch_masking`), the loss function, and the training loop are all in this single file.
+This page covers **Steps 3-6**: the encoder-decoder network structure, why identity mapping is a fatal problem, the SSIM+MSE loss function, and the AdamW optimizer. All code lives in [`cae_keras.py`](../../app/pipelines/multi_stage_ae/cae_keras.py) - the model definition (`build_cae`), the MIM masking (`apply_patch_masking`), the loss function, and the training loop are all in this single file.
 
 ---
 
@@ -47,8 +47,7 @@ graph TD
     C1 --> C2["Conv2D(64 filters, 4x4, stride 2)\n+ BatchNorm + ELU\n-> output: 32 x 32 x 64"]
     C2 --> C3["Conv2D(128 filters, 4x4, stride 2)\n+ BatchNorm + ELU\n-> output: 16 x 16 x 128"]
     C3 --> C4["Conv2D(256 filters, 4x4, stride 2)\n+ BatchNorm + ELU\n-> output: 8 x 8 x 256"]
-    C4 --> FL["Flatten\n-> vector: 8 x 8 x 256 = 16,384 values"]
-    FL --> LAT["Dense(latent_dim=128)\n-> bottleneck: 128 values"]
+    C4 --> LAT["Conv2D(latent_channels=32, 3x3, stride 1)\n-> bottleneck: 8 x 8 x 32"]
     style LAT fill:#f0a,color:#fff
 ```
 
@@ -58,13 +57,24 @@ graph TD
 
 **Stride 2**: Instead of a separate pooling step, stride-2 convolutions learn to downsample. This is preferable because the learned downsampling preserves more task-relevant information than fixed max-pooling.
 
+### Why a Fully Convolutional Bottleneck (FCAE)?
+
+**The Rationale & Expectation:**
+In a classic autoencoder, the bottleneck is flattened into a 1D dense vector. The critical flaw of this approach for image anomaly detection is that flattening destroys spatial topology. An 8x8 image patch becomes a 1D list of numbers, and the decoder is forced to "re-learn" spatial coordinates and 2D relationships entirely from scratch to project it back into an image.
+By replacing the dense layer with a **Fully Convolutional Bottleneck** (maintaining an `8 x 8 x 32` tensor), the network inherently preserves the $x, y$ spatial structure of the image at its most compressed state.
+We expect this to dramatically improve the reconstruction of high-frequency, non-anomalous textures and sharp edges. When normal textures are reconstructed sharply, they produce zero error, virtually eliminating false-positive anomaly spikes along the edges of components.
+
+**The Risk (Capacity Balancing):**
+The primary risk of an FCAE is **excessive bottleneck capacity**. If `latent_channels` is set too high (e.g., 256 or 512), the bottleneck becomes wide enough to act as a near-perfect identity mapping channel. If the model has enough capacity to easily compress and reconstruct *anything* (including anomalies it has never seen), defective regions will be reconstructed perfectly, yielding low error scores, and causing us to completely miss real defects (False Negatives).
+By tuning `latent_channels=32`, we strike the exact balance: enough capacity to reconstruct normal textures sharply, but narrow enough to force the model to "forget" anomalous structures.
+
 ### Decoder Architecture
 
 The decoder mirrors the encoder using **transposed convolutions** (sometimes called "deconvolutions" - this term is technically incorrect, but you may encounter it in the literature). Each transposed convolution doubles the spatial dimensions:
 
 ```mermaid
 graph TD
-    LAT["Latent Vector (128 values)"] --> D0["Dense(8 x 8 x 256)\n+ Reshape -> 8 x 8 x 256"]
+    LAT["Latent Tensor (8 x 8 x 32)"] --> D0["Conv2DTranspose(256, 3x3, stride 1)\n+ BatchNorm + ELU\n-> 8 x 8 x 256"]
     D0 --> CT1["Conv2DTranspose(128, 4x4, stride 2)\n+ BatchNorm + ELU\n-> 16 x 16 x 128"]
     CT1 --> CT2["Conv2DTranspose(64, 4x4, stride 2)\n+ BatchNorm + ELU\n-> 32 x 32 x 64"]
     CT2 --> CT3["Conv2DTranspose(32, 4x4, stride 2)\n+ BatchNorm + ELU\n-> 64 x 64 x 32"]
@@ -80,7 +90,7 @@ graph TD
 
 ## Step 4: Masked Image Modeling (MIM)
 
-**Implementation**: [`cae_keras.py: apply_patch_masking`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/cae_keras.py#L312-L364) and the `train_cae` training loop in the same file.
+**Implementation**: [`cae_keras.py: apply_patch_masking`](../../app/pipelines/multi_stage_ae/cae_keras.py#L312-L364) and the `train_cae` training loop in the same file.
 
 There is no separate `cae_dataset.py` - all training-time data augmentation (masking, shuffling) happens directly within the `train_cae` training loop in `cae_keras.py`.
 
@@ -118,7 +128,7 @@ For a 128x128 image with `patch_size=16`:
 - With `mask_ratio=0.25`, exactly **16 patches** (25% of 64) are randomly selected and zeroed per image per batch step.
 - The selection is **re-randomised independently for each image in the batch** - no two images ever have the same masked regions, providing maximum diversity.
 
-```
+```text
 Example: 128x128 image -> 8x8 = 64 patches of 16x16.
 Each 'X' = masked (zeroed to black), '.' = visible:
 
@@ -136,8 +146,8 @@ X . . . X . . .
 
 ```python
 for start in range(0, n_samples, batch_size):
-    batch_clean  = train_images[batch_indices]          # Target: original images
-    batch_masked = apply_patch_masking(                  # Input: corrupted images
+    batch_clean = train_images[batch_indices]  # Target: original images
+    batch_masked = apply_patch_masking(  # Input: corrupted images
         batch_clean, mask_ratio=0.25, patch_size=16
     )
     # Key: model input != training target!
@@ -194,7 +204,7 @@ SSIM returns values in $[-1, 1]$ where $1.0$ = identical. We use $(1 - \text{SSI
 
 ```python
 ssim_per_image = tf.image.ssim(y_true, y_pred, max_val=1.0)  # per-image similarity
-ssim_loss = 1.0 - tf.reduce_mean(ssim_per_image)              # loss: 0 = perfect
+ssim_loss = 1.0 - tf.reduce_mean(ssim_per_image)  # loss: 0 = perfect
 ```
 
 ### The Combined Loss
@@ -276,23 +286,23 @@ At each training iteration $t$:
 
 1. **Gradient Computation**:
 
-$$g_t = \nabla_{w} \mathcal{L}(w_t)$$
+    $$g_t = \nabla_{w} \mathcal{L}(w_t)$$
 
 2. **First Moment Vector (Moving Average of Gradients - Direction & Momentum)**:
 
-$$m_t = \beta_1 \cdot m_{t-1} + (1 - \beta_1) \cdot g_t$$
+    $$m_t = \beta_1 \cdot m_{t-1} + (1 - \beta_1) \cdot g_t$$
 
 3. **Second Moment Vector (Moving Average of Squared Gradients - Curvature & Scale)**:
 
-$$v_t = \beta_2 \cdot v_{t-1} + (1 - \beta_2) \cdot g_t^2$$
+    $$v_t = \beta_2 \cdot v_{t-1} + (1 - \beta_2) \cdot g_t^2$$
 
 4. **Bias Corrections** (correcting for zero-initialisation at early steps):
 
-$$\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \qquad \hat{v}_t = \frac{v_t}{1 - \beta_2^t}$$
+    $$\hat{m}_t = \frac{m_t}{1 - \beta_1^t}, \qquad \hat{v}_t = \frac{v_t}{1 - \beta_2^t}$$
 
 5. **Weight Update with Decoupled Weight Decay**:
 
-$$w_{t+1} = \underbrace{(1 - \eta_t \lambda) \cdot w_t}_{\text{Direct shrinkage}} - \underbrace{\frac{\eta_t}{\sqrt{\hat{v}_t} + \epsilon} \cdot \hat{m}_t}_{\text{Adaptive gradient step}}$$
+    $$w_{t+1} = \underbrace{(1 - \eta_t \lambda) \cdot w_t}_{\text{Direct shrinkage}} - \underbrace{\frac{\eta_t}{\sqrt{\hat{v}_t} + \epsilon} \cdot \hat{m}_t}_{\text{Adaptive gradient step}}$$
 
 ### Parameter Reference
 
@@ -315,11 +325,11 @@ $$w_{t+1} = \underbrace{(1 - \eta_t \lambda) \cdot w_t}_{\text{Direct shrinkage}
 import tensorflow as tf
 
 optimizer = tf.keras.optimizers.AdamW(
-    learning_rate=1e-3,      # eta: initial step size
-    weight_decay=1e-4,       # lambda: decoupled shrinkage rate
-    beta_1=0.9,              # momentum exponential decay factor
-    beta_2=0.999,            # second moment variance decay factor
-    epsilon=1e-7,            # numerical stability constant
+    learning_rate=1e-3,  # eta: initial step size
+    weight_decay=1e-4,  # lambda: decoupled shrinkage rate
+    beta_1=0.9,  # momentum exponential decay factor
+    beta_2=0.999,  # second moment variance decay factor
+    epsilon=1e-7,  # numerical stability constant
 )
 
 model.compile(

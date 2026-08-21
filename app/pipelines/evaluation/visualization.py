@@ -60,15 +60,15 @@ def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
     diff = np.abs(precisions - recalls)
     t_crossover = float(thresholds[np.argmin(diff)])
 
-    # Sort arrays by Recall ascending for AUPR integration
-    sorted_indices = np.argsort(recalls)
-    sorted_recalls = recalls[sorted_indices]
-    sorted_precisions = precisions[sorted_indices]
+    # Arrays from precision_recall_curve are ordered by decision threshold,
+    # making recall monotonically decreasing. This preserves the curve's continuous line.
+    sorted_recalls = recalls
+    sorted_precisions = precisions
 
     # Pad curve down to Recall = 0.0 for accurate AUPR integration
-    if sorted_recalls[0] > 0.0:
-        sorted_recalls = np.insert(sorted_recalls, 0, 0.0)
-        sorted_precisions = np.insert(sorted_precisions, 0, sorted_precisions[0])
+    if sorted_recalls[-1] > 0.0:
+        sorted_recalls = np.append(sorted_recalls, 0.0)
+        sorted_precisions = np.append(sorted_precisions, sorted_precisions[-1])
 
     integrated_aupr = float(auc(sorted_recalls, sorted_precisions))
 

@@ -229,6 +229,7 @@ def evaluate_cae(
     threshold: float,
     k_fraction: float = 0.002,
     output_dir: Path | None = None,
+    reconstructions: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Run full evaluation of the trained CAE on the test set.
 
@@ -246,6 +247,7 @@ def evaluate_cae(
         threshold: Decision threshold from ``compute_adaptive_threshold``.
         k_fraction: Top-K pooling fraction for image-level scoring.
         output_dir: Directory to save detailed PR metrics (.npz files) for UI rendering.
+        reconstructions: Optional pre-computed full-image reconstructions.
 
     Returns:
         Dictionary containing all evaluation results:
@@ -265,7 +267,9 @@ def evaluate_cae(
 
     logger.info("Running CAE evaluation on %d test images...", len(test_images))
 
-    scores, error_maps = compute_image_scores(model, test_images, k_fraction=k_fraction)
+    scores, error_maps = compute_image_scores(
+        model, test_images, k_fraction=k_fraction, reconstructions=reconstructions
+    )
     binary_labels = test_labels.astype(int)
 
     auroc = compute_image_auroc(scores, binary_labels)
@@ -286,6 +290,8 @@ def evaluate_cae(
         rec,
     )
 
+    pixel_auroc = 0.0
+    pixel_f1 = 0.0
     if output_dir:
         from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
 
@@ -305,6 +311,16 @@ def evaluate_cae(
 
         compute_and_save_pr_metrics(y_true_pixel, y_score_pixel, output_dir / "pixel_metrics.npz", level="pixel")
 
+        if len(np.unique(y_true_pixel)) >= 2:
+            from sklearn.metrics import roc_auc_score
+
+            pixel_auroc = float(roc_auc_score(y_true_pixel, y_score_pixel))
+
+        pixel_pred = (y_score_pixel > threshold).astype(int)
+        pixel_prec = float(precision_score(y_true_pixel, pixel_pred, zero_division=0))
+        pixel_rec = float(recall_score(y_true_pixel, pixel_pred, zero_division=0))
+        pixel_f1 = 2 * (pixel_prec * pixel_rec) / (pixel_prec + pixel_rec) if (pixel_prec + pixel_rec) > 0 else 0.0
+
     return {
         "auroc": auroc,
         "aupimo": aupimo,
@@ -312,6 +328,8 @@ def evaluate_cae(
         "precision": prec,
         "recall": rec,
         "f1_score": f1,
+        "pixel_auroc": pixel_auroc,
+        "pixel_f1": pixel_f1,
         "scores": scores,
         "error_maps": error_maps,
         "threshold": threshold,

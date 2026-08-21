@@ -16,8 +16,8 @@ vs. Mahalanobis), and honest evaluation (AUROC, F1, AUPIMO).
 
 **Implementation files**:
 
-- [`scoring.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/scoring.py) - pixel error maps, Top-K, thresholds
-- [`evaluation.py`](file:///home/benni/Documents/antigravity_workspace/industrial-component-anomaly-detection/app/pipelines/multi_stage_ae/evaluation.py) - AUROC, AUPIMO, Precision/Recall/F1
+- [`scoring.py`](../../app/pipelines/multi_stage_ae/scoring.py) - pixel error maps, Top-K, thresholds
+- [`evaluation.py`](../../app/pipelines/multi_stage_ae/evaluation.py) - AUROC, AUPIMO, Precision/Recall/F1
 
 ---
 
@@ -27,15 +27,23 @@ vs. Mahalanobis), and honest evaluation (AUROC, F1, AUPIMO).
 
 After training, the model runs in **inference mode** with no masking - the original,
 clean test images are fed directly to the encoder-decoder. For each test image, the
-reconstruction $\hat{X}$ is compared pixel-by-pixel to the original $X$ to produce a
+reconstruction $\hat{X}$ is compared to the original $X$ to produce a
 **pixel error map**:
 
-$$E(i, j) = \frac{1}{C} \sum_{c=1}^{C} |X_{i,j,c} - \hat{X}_{i,j,c}|$$
+$$E_{pixel} = \alpha \cdot (1 - \text{SSIM}(X, \hat{X})) + (1 - \alpha) \cdot \text{MAE}(X, \hat{X})$$
 
-This gives a 2D map of the same spatial dimensions as the image (128x128), where each
-value represents how well the model reconstructed that pixel.
+### Why SSIM and Gaussian Smoothing?
 
-**Higher value = the model struggled here = likely anomalous.**
+**The Rationale & Expectation:**
+Previously, our pixel error map used pure Mean Absolute Error (MAE). While MAE is simple, it is "spatially blind" and punishes harmless 1-pixel shifts heavily, creating a high level of background noise on normal textures.
+By incorporating **SSIM** (Structural Similarity) into the error map, our inference evaluation perfectly aligns with the loss function the model was trained on. SSIM evaluates the structural pattern of a local window, meaning it ignores slight lighting/contrast variations and correctly flags regions where the *texture structure* is destroyed (like a deep scratch or dent).
+
+**Gaussian Smoothing ($\sigma = 2.0$)** acts as a low-pass filter on the raw error map. Autoencoders frequently exhibit high-frequency "salt-and-pepper" noise in their reconstructions (uncertainty at isolated pixels). Real industrial defects, however, are physically contiguous clusters of pixels. The Gaussian blur suppresses the isolated noise spikes while amplifying contiguous clusters of error, vastly improving the overlap with actual ground-truth defect masks (directly boosting the AUPIMO score).
+
+**The Risk (Over-Smoothing):**
+The primary risk of applying a Gaussian blur is **over-smoothing**. If the $\sigma$ value is set too large (e.g., $\sigma = 5.0$), it will dilute small but real defects (like a thin, 1-pixel-wide hairline crack) into the surrounding normal background, driving their peak error below the anomaly threshold. This would cause the model to miss subtle defects (False Negatives). A $\sigma = 2.0$ provides the exact balance of noise suppression without losing fine defect resolution.
+
+**Higher value in the smoothed map = the model structurally failed here = likely anomalous.**
 
 To make a binary classification decision ("is the whole image defective?"), the 2D map
 must be collapsed into a single scalar score. The choice of pooling method dramatically
@@ -80,32 +88,12 @@ exactly zero to the decision.
 
 - **Against sensor noise**: A single noisy pixel is 1 of 33 in the top-K average. Its contribution is diluted by $1/33$. The other 32 slots are filled by the next-highest error pixels - which, in the absence of a real defect, are just normal high-variation texture pixels, not outliers. The average stays low.
 - **For small defects**: A 5x5 pixel scratch (fully visible to a human inspector, a real reject) on a 128x128 image:
-
     - Covers 25 pixels out of 16,384 total (0.15% of the image).
     - Defect error: 0.9, background error: 0.01.
     - Mean score: $(25 \times 0.9 + 16359 \times 0.01) / 16384 = 0.021$.
 
 A score of 0.021 is below any meaningful threshold. The defect is **completely invisible**
 to mean pooling.
-
-### Top-K Pooling: The Correct Balance
-
-$$S_{\text{top-K}} = \frac{1}{K} \sum_{p \in \text{top-}K \text{ pixels}} E(p)$$
-
-With $K = \lfloor k_\text{fraction} \times H \times W \rfloor$, where `k_fraction = 0.002`.
-
-For 128x128 images: $K = 0.002 \times 16384 = 33$ pixels.
-
-**What happens to the other 16,351 pixels?** They are discarded entirely. The image score
-is computed exclusively from the 33 highest-error pixels. Every other pixel contributes
-exactly zero to the decision.
-
-**Why this is correct**:
-
-- **Against sensor noise**: A single noisy pixel is 1 of 33 in the top-K average. Its contribution is diluted by $1/33$. The other 32 slots are filled by the next-highest error pixels - which, in the absence of a real defect, are just normal high-variation texture pixels, not outliers. The average stays low.
-- **For small defects**: A 5x5 scratch (25 pixels) with error 0.9 dominates the top-33 pool: 25 out of 33 slots come from the defect cluster. The score is approximately $(25 \times 0.9 + 8 \times 0.05) / 33 \approx 0.70$ - strongly anomalous.
-
-**The core principle**: Real industrial defects are physically contiguous - cracks, scratches, and contamination always affect many adjacent pixels as a cluster. Sensor noise is isolated - individual dead pixels are spatially separated. Top-K pooling requires a *cluster* of high-error pixels to produce a high score.
 
 ```
 Concrete comparison on 128x128 with a 5x5 defect:
@@ -197,54 +185,98 @@ Where:
 
 **Why F1 instead of Accuracy?** Accuracy is misleading on imbalanced datasets. If the test set has 80% good parts and 20% defective, a model that predicts "good" for everything achieves 80% accuracy while having 0% Recall - zero defects caught. F1 penalises both missing defects (low Recall) and false alarms (low Precision) equally, making it a more honest single-number summary.
 
-**The Precision-Recall trade-off**: Increasing recall (catching more defects) inevitably increases false alarms (lower precision). The threshold controls this trade-off. A **Precision-Recall curve** plots all trade-off points; the **PR-AUC** (area under this curve) summarises performance across all operating points without picking a threshold. On imbalanced datasets, PR-AUC is typically lower and more honest than AUROC.
+---
+
+### Step 9: Precision-Recall Curves & The Operational Breakpoint
+
+While a single threshold gives one set of Precision/Recall values, real-world deployment requires understanding the full spectrum of operating trade-offs.
+
+```mermaid
+graph TD
+    Scores["Continuous Anomaly Scores (Image / Pixel)"] --> PRCurve["Threshold Sweep: precision_recall_curve()"]
+    PRCurve --> Trace["Monotonic Decreasing Recall & Precision Trajectory"]
+    Trace --> AUPR["AUPR / PR-AUC: Area Under Precision-Recall Curve"]
+    Trace --> Crossover["Optimal Breakpoint: Threshold where Precision ≈ Recall"]
+    Trace --> AUPIMOBound["Industrial Bound: Threshold where FPR ≤ 1e-5"]
+```
+
+#### 1. Precision-Recall Curve (PR-AUC / AUPR)
+
+The **Precision-Recall curve** plots Precision ($y$-axis) against Recall ($x$-axis) across all possible decision thresholds. 
+
+- **The Threshold Sweep:** Scikit-learn's `precision_recall_curve()` sweeps thresholds in ascending order. As the threshold increases, Recall monotonically decreases towards zero while Precision generally rises.
+- **Preserving Threshold Ordering (Plotting Fix):** In visualization tools, sorting PR points strictly by Recall rather than their native threshold order scrambles the curve whenever multiple thresholds produce identical recall values, creating a jagged zigzag or filled polygon artifact. Preserving the natural threshold order ensures a clean, continuous line from $\text{Recall} = 1.0$ down to $\text{Recall} = 0.0$.
+- **Boundary Padding for Accurate Integration:** Scikit-learn terminates the PR curve at the lowest recall achieved by the highest finite threshold. To compute an honest integrated Area Under the PR Curve (AUPR), the curve is padded down to $(\text{Recall} = 0.0, \text{Precision} = \text{Precision}_{\text{last}})$.
+
+#### 2. The Optimal Breakpoint ($T_{\text{crossover}}$)
+
+The **Optimal Breakpoint** is the decision threshold where Precision and Recall are approximately balanced ($\text{Precision} \approx \text{Recall}$):
+
+$$T_{\text{crossover}} = \arg\min_t |\text{Precision}(t) - \text{Recall}(t)|$$
+
+This serves as a neutral, balanced operating baseline for quality engineers before adjusting thresholds for higher defect catch rates (Recall) or lower false alarm rates (Precision).
 
 ---
 
-### Pixel-Level: Does the Model Localise WHERE the Defect Is?
+### Pixel-Level: Defect Localization & Industrial FPR Standards
 
-Pixel-level evaluation requires **ground truth defect masks** (binary maps where `1 = defect pixel`, `0 = normal pixel`), which MVTec AD provides for all defective images.
-
-#### AUPIMO (Area Under Per-Image Overlap) - The Right Metric for Industrial Use
-
-Standard pixel evaluation metrics (like PRO-score / AUPRO) integrate pixel overlap at all FPR values up to a loose 30% threshold. In a factory inspecting 10,000 parts per day, 30% FPR means 3,000 good parts incorrectly rejected per day. This is completely unacceptable.
-
-AUPIMO integrates per-image pixel overlap only within an extremely tight, industrially realistic FPR range:
-
-$$\text{FPR} \in [10^{-5},\; 10^{-4}]$$
-
-This corresponds to 1 false alarm per 10,000 to 100,000 inspected pixels of normal surface area - the kind of false alarm rate that quality engineers actually demand in automotive, electronics, and pharmaceutical manufacturing.
+Pixel-level evaluation determines whether the model accurately outlines defect geometry on images with ground-truth defect masks (`1 = defect pixel`, `0 = normal pixel`).
 
 ```mermaid
 graph LR
-    MAPS["Pixel Score Maps"] --> AUPIMO["AUPIMO\nagreed FPR 1e-5 to 1e-4"]
-    MASKS["Ground Truth Masks"] --> AUPIMO
-    AUPIMO --> SCORE["Pixel-Level Score\n(higher = better localisation)"]
+    PError["2D Pixel Error Maps (SSIM + MAE)"] --> PixelPR["Pixel-Level PR Curve & AUROC"]
+    GTMasks["Ground Truth Masks"] --> PixelPR
+    PError --> AUPIMO["AUPIMO Integration (FPR 1e-5 to 1e-4)"]
+    GTMasks --> AUPIMO
+    AUPIMO --> PScore["Reliable Defect Detection at <1 False Alarm / 100k Pixels"]
 ```
 
-**What does AUPIMO = 0.5 mean?** At the strict industrial FPR operating range, the model's predicted anomaly map overlaps 50% of the actual ground truth defect pixels on average. This is already a very demanding standard. Values above 0.7 indicate strong localisation.
+#### 1. AUPIMO (Area Under Per-Image Overlap)
 
-**Critical distinction - image-level vs. pixel-level threshold**: The image-level adaptive threshold from Step 8 (Quantile/Mahalanobis) decides whether the *entire image* is flagged. The AUPIMO metric operates with its own internal pixel-level threshold sweep. These are independent. The Precision and Recall values shown in the Streamlit UI metric cards refer to the **image-level** adaptive threshold - not the AUPIMO pixel threshold.
+Standard pixel metrics (such as classical AUPRO) integrate overlap up to an FPR of 30%, which allows far too many false alarms for manufacturing lines.
+**AUPIMO** integrates per-image overlap strictly across the realistic industrial False Positive Rate range:
 
-> **NOTE**: AUPIMO is provided by the `anomalib` library, which is already a dependency
-> of this project.
+$$\text{FPR} \in [10^{-5},\; 10^{-4}]$$
+
+This guarantees that performance is only measured when the model produces **fewer than 1 false alarm per 10,000 to 100,000 normal pixels**.
+
+#### 2. The Strict Industrial FPR Threshold Limit ($T_{AUPIMO}^{min}$)
+
+In the UI dashboard, the pipeline computes and displays the exact lower bound threshold:
+
+- **The Threshold Limit ($T_{AUPIMO}^{min}$):** The minimum score a pixel must exceed so that the false alarm rate on normal pixels does not violate the strict industrial constraint ($\text{FPR} \le 10^{-5}$).
+- **Defect Catch Percentage at Limit:** The percentage of actual anomalous pixels successfully identified at this high threshold:
+
+$$\text{Reliability} = \text{Recall}(T_{AUPIMO}^{min}) \times 100\%$$
+
+This gives plant managers an exact, unambiguous reliability metric: *"At this threshold, the model finds X% of the actual anomalous pixels, guaranteeing highly reliable defect localization with fewer than 1 false alarm per 100,000 normal pixels."*
+
+---
+
+### Training Loss Curve & Multi-Series Validation
+
+During training, the Keras CAE pipeline tracks training loss and optional validation loss across epochs:
+
+- `train`: Average combined SSIM+MSE reconstruction loss on masked training patches.
+- `val_good`: Loss on unmasked normal validation patches (tracking baseline reconstruction quality).
+- `val_anomalous`: Loss on unmasked anomalous validation patches (verifying that the model fails to reconstruct defects).
+
+**Resilient DataFrame Construction:** When validation sets are not supplied or vary in length, dictionary arrays are converted using `pandas.Series` columns with index alignment, preventing array dimension errors in Streamlit and ensuring smooth line plots over all epochs.
 
 ---
 
 ## What Comes Next
 
-After evaluation, you can request optional **Reconstruction Error Heatmaps** on individual anomalous images.
+After evaluation, you can inspect visual **Reconstruction Error Heatmaps** on individual anomalous components.
 
 Continue reading: **[Explainability (Reconstruction Error) ->](keras_cae_explainability.md)**
 
-For the rationale behind each design decision (why not PRO-score? why not Pixel-AUROC?):
+For the rationale behind each design decision:
 **[Classical Alternatives & Design Decisions ->](keras_cae_alternatives.md)**
 
 ---
 
 ## References
 
-- Dickson, A. et al. (2024). *AUPIMO: Redefining Visual Anomaly Detection Benchmarks
-  with High Speed and Low Tolerance.* ECCV 2024.
-- Bergmann, P., et al. (2019). *Improving Unsupervised Defect Segmentation by Applying
-  Structural Similarity to Autoencoders.* VISAPP 2019.
+- Dickson, A. et al. (2024). *AUPIMO: Redefining Visual Anomaly Detection Benchmarks with High Speed and Low Tolerance.* ECCV 2024.
+- Bergmann, P., et al. (2019). *Improving Unsupervised Defect Segmentation by Applying Structural Similarity to Autoencoders.* VISAPP 2019.

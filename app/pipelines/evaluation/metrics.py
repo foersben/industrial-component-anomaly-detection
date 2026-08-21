@@ -34,6 +34,7 @@ def save_evaluation_metrics(
     recalls: Any,
     thresholds: Any,
     t_aupimo_min: float = 0.0,
+    aupimo: float = 0.0,
     level: str = "pixel",
 ) -> Path:
     """Saves precision, recall, threshold arrays, and AUPIMO bound to an .npz file.
@@ -44,6 +45,7 @@ def save_evaluation_metrics(
         recalls: Recall values array.
         thresholds: Binarization thresholds array.
         t_aupimo_min: AUPIMO minimum threshold bound.
+        aupimo: AUPIMO recall metric score at the threshold limit.
         level: Evaluation level ('pixel' for localization, 'image' for classification).
 
     Returns:
@@ -57,6 +59,7 @@ def save_evaluation_metrics(
         recall=recalls,
         thresholds=thresholds,
         t_aupimo_min=t_aupimo_min,
+        aupimo=aupimo,
         level=level,
     )
     return path
@@ -85,7 +88,18 @@ def compute_and_save_pr_metrics(
     y_score_arr = np.asarray(y_score)
 
     precision, recall, thresholds = precision_recall_curve(y_true_arr, y_score_arr)
-    t_aupimo_min = compute_aupimo_lower_bound(y_true_arr, y_score_arr, fpr_limit=fpr_limit) if level == "pixel" else 0.0
+
+    t_aupimo_min = 0.0
+    aupimo = 0.0
+
+    if level == "pixel":
+        t_aupimo_min = compute_aupimo_lower_bound(y_true_arr, y_score_arr, fpr_limit=fpr_limit)
+        if t_aupimo_min > 0 and len(thresholds) > 0:
+            idx = np.argmax(thresholds >= t_aupimo_min)
+            if idx == 0 and thresholds[0] < t_aupimo_min:
+                aupimo = 0.0
+            else:
+                aupimo = recall[idx]
 
     return save_evaluation_metrics(
         output_path,
@@ -93,5 +107,6 @@ def compute_and_save_pr_metrics(
         recall,
         thresholds,
         t_aupimo_min=t_aupimo_min,
+        aupimo=aupimo,
         level=level,
     )
