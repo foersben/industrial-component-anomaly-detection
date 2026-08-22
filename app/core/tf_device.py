@@ -227,6 +227,38 @@ def detect_hardware() -> HardwareProfile:
     return profile
 
 
+def preload_cuda_shared_libraries() -> None:
+    """Preload conda/pixi-installed CUDA and cuDNN shared libraries into the global symbol table.
+
+    This ensures that when TensorFlow is loaded via dynamic linkers in environments where
+    LD_LIBRARY_PATH is not set at process startup (e.g. raw Jupyter kernels or IDE subshells),
+    the CUDA 12 and cuDNN 8/9 shared libraries are immediately available in-process.
+    """
+    import ctypes
+    import sys
+
+    lib_dir = os.path.join(sys.prefix, "lib")
+    cuda_libs = [
+        "libcudart.so.12",
+        "libcublas.so.12",
+        "libcublasLt.so.12",
+        "libcufft.so.11",
+        "libcurand.so.10",
+        "libcusolver.so.11",
+        "libcusparse.so.12",
+        "libcudnn.so.8",
+        "libcupti.so.12",
+        "libnvrtc.so.12",
+    ]
+    for lib in cuda_libs:
+        lib_path = os.path.join(lib_dir, lib)
+        if os.path.exists(lib_path):
+            try:
+                ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
+            except Exception as e:
+                logger.debug("Failed preloading %s: %s", lib_path, e)
+
+
 def _apply_gpu_config(profile: HardwareProfile) -> None:
     """Apply TensorFlow GPU configuration (memory growth, logging).
 
@@ -237,6 +269,7 @@ def _apply_gpu_config(profile: HardwareProfile) -> None:
         profile: Hardware profile to record applied settings into.
     """
     try:
+        preload_cuda_shared_libraries()
         import tensorflow as tf
 
         gpus = tf.config.list_physical_devices("GPU")

@@ -11,3 +11,11 @@ This package contains the CLI, API, UI, and evaluation pipelines.
 __all__ = ["main"]
 
 __version__ = "0.1.0"
+
+# Preload Conda/Pixi CUDA and cuDNN shared libraries into global process table
+try:
+    from app.core.tf_device import preload_cuda_shared_libraries
+
+    preload_cuda_shared_libraries()
+except Exception:
+    pass
