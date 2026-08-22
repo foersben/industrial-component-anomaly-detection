@@ -8,6 +8,7 @@ from app.pipelines.modelling.autoencoder import (
 )
 from app.pipelines.modelling.baseline import run_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
+from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 
 __all__ = [
     "ConvAutoencoder",
@@ -17,5 +18,6 @@ __all__ = [
     "run_autoencoder_pipeline",
     "run_baseline",
     "run_dummy_evaluation",
+    "run_keras_cae_pipeline",
     "run_real_data_dummy",
 ]

@@ -28,22 +28,23 @@ flowchart TD
     Tests --> Unit
     Tests --> Integration
 
-    Integration --> API["test_api_cae_pipeline.py"]
+    Integration --> API["test_api_cae_pipeline.py\n(FastAPI Contract)"]
 
-    Unit --> Hyp["test_cae_hypothesis.py"]
-    Unit --> DataInv["test_cae_data_invariants.py"]
+    Unit --> Hyp["test_cae_hypothesis.py\n(Property-Based Invariants)"]
+    Unit --> DataInv["test_cae_data_invariants.py\n(Partitioning & Leakage)"]
 
-    Unit --> CAE_Arch["test_cae_architecture_and_training.py"]
-    Unit --> CAE_Aug["test_cae_augmentation_and_segmentation.py"]
-    Unit --> CAE_Crop["test_cae_crops_and_stitching.py"]
-    Unit --> CAE_Eval["test_cae_evaluation_and_explainability.py"]
-    Unit --> CAE_Pers["test_cae_persistence.py"]
+    Unit --> CAE_Arch["test_cae_architecture_and_training.py\n(modelling.keras_cae)"]
+    Unit --> CAE_Aug["test_cae_augmentation_and_segmentation.py\n(preprocessing)"]
+    Unit --> CAE_Crop["test_cae_crops_and_stitching.py\n(modelling.keras_cae)"]
+    Unit --> CAE_Eval["test_cae_evaluation_and_explainability.py\n(evaluation)"]
+    Unit --> CAE_Pers["test_cae_persistence.py\n(modelling.keras_cae)"]
+    Unit --> CAE_Score["test_cae_scoring_and_thresholding.py\n(evaluation)"]
 
-    Unit --> CoreData["test_domain_data.py"]
-    Unit --> CorePre["test_preprocessing.py"]
-    Unit --> CoreAE["test_autoencoder.py"]
-    Unit --> CoreCLI["test_cli.py"]
-    Unit --> CoreConfig["test_config.py"]
+    Unit --> CoreData["test_domain_data.py\n(domain)"]
+    Unit --> CorePre["test_preprocessing.py\n(preprocessing)"]
+    Unit --> CoreAE["test_autoencoder.py\n(modelling.autoencoder)"]
+    Unit --> CoreCLI["test_cli.py\n(cli)"]
+    Unit --> CoreConfig["test_config.py\n(core)"]
 ```
 
 ### Diagram 2: Fixture Dependency & Data Flow Graph
@@ -70,22 +71,22 @@ flowchart LR
     Fix5 -.-> TrainSuite["Architecture & Training"]
 ```
 
-### Diagram 3: CAE Pipeline Verification & Invariant Lifecycle
+### Diagram 3: Modular CAE Pipeline Verification & Invariant Lifecycle
 ```mermaid
 sequenceDiagram
-    participant Data as Data Preparation
-    participant Train as Training Loop
-    participant Infer as Inference & Scoring
-    participant Eval as Evaluation
+    participant Pre as Preprocessing (app/pipelines/preprocessing)
+    participant Model as Modelling (app/pipelines/modelling/keras_cae)
+    participant Eval as Evaluation (app/pipelines/evaluation)
 
-    Data->>Data: Partitioning (15% validation split)
-    Data->>Data: Augmentation Isolation (Train Only)
-    Data->>Train: Synthetic / Mock Batches
-    Train->>Train: Model Execution (Mocked/Fast)
-    Train->>Infer: Caching & Persistence
-    Infer->>Infer: Top-K Scoring
-    Infer->>Infer: Threshold Calibration
-    Infer->>Eval: Metric Evaluation (AUROC & AUPIMO)
+    Pre->>Pre: Dataset Partitioning (15% validation split)
+    Pre->>Pre: Foreground Segmentation & Augmentations
+    Pre->>Model: Synthetic / Mock Batches
+    Model->>Model: CAE Training Loop (SSIM+MSE Loss, MIM)
+    Model->>Model: Caching, Hashing & Trash Recovery
+    Model->>Eval: Reconstructed Crops & Residuals
+    Eval->>Eval: Top-K Scoring & Adaptive Thresholding
+    Eval->>Eval: AUROC & AUPIMO Metric Computation
+    Eval->>Eval: Error Heatmap XAI Overlays
 ```
 
 ### Diagram 4: CI/CD Quality Gate Pipeline
@@ -145,6 +146,8 @@ flowchart TD
   Asserts correctness of AUROC, AUPIMO pixel-level localization, error heatmap synthesis, and GT contour overlays.
 - **`tests/unit/test_cae_persistence.py`**
   Verifies Keras model save/load numerical consistency, preprocessing step cache hashing, cached pipeline re-evaluation parity, soft-deletion/restoration via `.trash/`, trash purging, and path-traversal safety guards.
+- **`tests/unit/test_cae_scoring_and_thresholding.py`**
+  Validates pixel error map synthesis, Top-K spatial pooling score calculation, Mahalanobis distance calibration, and quantile adaptive thresholding.
 
 ### Core, Domain & Preprocessing Suites
 - **`tests/unit/test_domain_data.py`**
