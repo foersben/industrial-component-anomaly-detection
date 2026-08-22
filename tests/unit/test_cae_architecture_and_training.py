@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import tensorflow as tf
 
-from app.pipelines.multi_stage_ae.cae_keras import apply_patch_masking, build_cae, ssim_mse_loss, train_cae
+from app.pipelines.modelling.keras_cae.cae_keras import apply_patch_masking, build_cae, ssim_mse_loss, train_cae
 
 
 def test_build_cae_spatial_invariants() -> None:

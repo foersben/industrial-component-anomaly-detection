@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.pipelines.modelling.autoencoder import run_autoencoder_pipeline
 from app.pipelines.modelling.baseline import run_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
-from app.pipelines.multi_stage_ae.cae_pipeline import run_keras_cae_pipeline
+from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 
 # Suppress timm deprecation warnings emitted by downstream libraries
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*timm.*")

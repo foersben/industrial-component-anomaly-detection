@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 
-from app.pipelines.multi_stage_ae.cae_keras import build_cae
-from app.pipelines.multi_stage_ae.cae_pipeline import (
+from app.pipelines.modelling.keras_cae.cae_keras import build_cae
+from app.pipelines.modelling.keras_cae.cae_pipeline import (
     delete_cached_model,
     find_cached_model,
     list_trashed_models,

@@ -8,8 +8,8 @@ isolates prominent foreground objects.
 
 import numpy as np
 
-from app.pipelines.multi_stage_ae.augmentation import ObjectAugmenter, TextureAugmenter, augment_batch, get_augmenter
-from app.pipelines.multi_stage_ae.segmentation import OtsuCannySegmentor, extract_largest_component
+from app.pipelines.preprocessing.augmentation import ObjectAugmenter, TextureAugmenter, augment_batch, get_augmenter
+from app.pipelines.preprocessing.segmentation import OtsuCannySegmentor, extract_largest_component
 
 
 def test_get_augmenter_routing() -> None:

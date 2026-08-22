@@ -133,7 +133,7 @@ def mock_keras_cae() -> Any:
     Returns:
         Any: Compiled tf.keras.Model with crop_size=32 and latent_channels=8.
     """
-    from app.pipelines.multi_stage_ae.cae_keras import build_cae
+    from app.pipelines.modelling.keras_cae.cae_keras import build_cae
 
     return build_cae(crop_size=32, latent_channels=8)
 
@@ -149,5 +149,5 @@ def mock_fast_training() -> Generator[None, None, None]:
     def _mock_train_cae(*_args: Any, **_kwargs: Any) -> dict[str, list[float]]:
         return {"train": [0.1], "val_good": [0.1], "val_anomalous": [0.2]}
 
-    with patch("app.pipelines.multi_stage_ae.cae_pipeline.train_cae", side_effect=_mock_train_cae):
+    with patch("app.pipelines.modelling.keras_cae.cae_pipeline.train_cae", side_effect=_mock_train_cae):
         yield

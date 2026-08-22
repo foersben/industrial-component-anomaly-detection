@@ -7,7 +7,7 @@ statistical thresholds calculate valid decision boundaries.
 
 import numpy as np
 
-from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold, compute_pixel_error_map, top_k_pooling
+from app.pipelines.evaluation.scoring import compute_adaptive_threshold, compute_pixel_error_map, top_k_pooling
 
 
 def test_compute_pixel_error_map() -> None:

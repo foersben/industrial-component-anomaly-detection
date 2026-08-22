@@ -9,12 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from app.pipelines.multi_stage_ae.error_heatmap import compute_error_heatmap, overlay_ground_truth, overlay_heatmap
-from app.pipelines.multi_stage_ae.evaluation import (
+from app.pipelines.evaluation.cae_metrics import (
     compute_aupimo,
     compute_image_auroc,
     evaluate_cae,
 )
+from app.pipelines.evaluation.heatmaps import compute_error_heatmap, overlay_ground_truth, overlay_heatmap
 
 
 def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path) -> None:

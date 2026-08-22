@@ -71,13 +71,13 @@ Each Python module handles one specific concern - no module does more than one j
 
 | Module | What it does |
 |--------|-------------|
-| [`augmentation.py`](../../app/pipelines/multi_stage_ae/augmentation.py) | Category-aware data augmentation (texture vs. object strategies) |
-| [`segmentation.py`](../../app/pipelines/multi_stage_ae/segmentation.py) | Otsu + Canny foreground extraction and background replacement |
-| [`cae_keras.py`](../../app/pipelines/multi_stage_ae/cae_keras.py) | CAE model definition (`build_cae`), MIM masking, SSIM+MSE loss, training loop |
-| [`scoring.py`](../../app/pipelines/multi_stage_ae/scoring.py) | Pixel error map computation, Top-K pooling, adaptive thresholds |
-| [`evaluation.py`](../../app/pipelines/multi_stage_ae/evaluation.py) | AUROC, AUPIMO, Precision/Recall/F1, tradeoff curves |
-| [`error_heatmap.py`](../../app/pipelines/multi_stage_ae/error_heatmap.py) | Reconstruction Error Heatmap XAI overlays |
-| [`cae_pipeline.py`](../../app/pipelines/multi_stage_ae/cae_pipeline.py) | End-to-end orchestrator: calls all modules in order |
+| [`augmentation.py`](../../app/pipelines/preprocessing/augmentation.py) | Category-aware data augmentation (texture vs. object strategies) |
+| [`segmentation.py`](../../app/pipelines/preprocessing/segmentation.py) | Otsu + Canny foreground extraction and background replacement |
+| [`cae_keras.py`](../../app/pipelines/modelling/keras_cae/cae_keras.py) | CAE model definition (`build_cae`), MIM masking, SSIM+MSE loss, training loop |
+| [`scoring.py`](../../app/pipelines/evaluation/scoring.py) | Pixel error map computation, Top-K pooling, adaptive thresholds |
+| [`evaluation.py`](../../app/pipelines/evaluation/cae_metrics.py) | AUROC, AUPIMO, Precision/Recall/F1, tradeoff curves |
+| [`error_heatmap.py`](../../app/pipelines/evaluation/heatmaps.py) | Reconstruction Error Heatmap XAI overlays |
+| [`cae_pipeline.py`](../../app/pipelines/modelling/keras_cae/cae_pipeline.py) | End-to-end orchestrator: calls all modules in order |
 
 ---
 

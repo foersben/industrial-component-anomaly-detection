@@ -263,7 +263,7 @@ def evaluate_cae(
     """
     from sklearn.metrics import accuracy_score, precision_score, recall_score
 
-    from app.pipelines.multi_stage_ae.scoring import compute_image_scores
+    from app.pipelines.evaluation.scoring import compute_image_scores
 
     logger.info("Running CAE evaluation on %d test images...", len(test_images))
 

@@ -10,7 +10,7 @@ import requests
 import streamlit as st
 
 from app.pipelines.evaluation.visualization import render_evaluation_curves
-from app.pipelines.multi_stage_ae.cae_pipeline import (
+from app.pipelines.modelling.keras_cae.cae_pipeline import (
     delete_cached_model,
     list_trashed_models,
     purge_trash,
@@ -229,20 +229,25 @@ def render_baseline_patchcore_tab() -> None:
     st.header("Patchcore Anomaly Detection & Evaluation")
     st.markdown("Run Patchcore model training and evaluation on MVTec AD dataset (Image & Pixel level).")
 
-    data_root = st.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="b_root")
-    category = st.text_input("Category Name", value="bottle", key="b_cat")
+    st.session_state.setdefault("b_root", "data/raw/mvtec_ad")
+    data_root = st.text_input("Dataset Root Directory", key="b_root")
+    st.session_state.setdefault("b_cat", "bottle")
+    category = st.text_input("Category Name", key="b_cat")
 
     st.subheader("Model Configuration")
     c1, c2 = st.columns(2)
-    backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"])
-    coreset_ratio = c2.slider("Coreset Sampling Ratio", min_value=0.01, max_value=0.2, value=0.1, step=0.01)
+    st.session_state.setdefault("b_backbone", "resnet18")
+    backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"], key="b_backbone")
+    st.session_state.setdefault("b_coreset_ratio", 0.1)
+    coreset_ratio = c2.slider("Coreset Sampling Ratio", min_value=0.01, max_value=0.2, step=0.01, key="b_coreset_ratio")
 
     st.subheader("Preprocessing Options")
-    use_mask = st.checkbox(
-        "Apply Otsu+Canny Foreground Masking (zeros out background)", value=False, key="patchcore_mask"
-    )
-    use_clahe = st.checkbox("Apply CLAHE", value=False, key="patchcore_clahe")
-    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False, key="patchcore_gaussian")
+    st.session_state.setdefault("patchcore_mask", False)
+    use_mask = st.checkbox("Apply Otsu+Canny Foreground Masking (zeros out background)", key="patchcore_mask")
+    st.session_state.setdefault("patchcore_clahe", False)
+    use_clahe = st.checkbox("Apply CLAHE", key="patchcore_clahe")
+    st.session_state.setdefault("patchcore_gaussian", False)
+    use_gaussian = st.checkbox("Apply Gaussian Blur", key="patchcore_gaussian")
 
     preprocessing_steps = []
     if use_mask:
@@ -252,7 +257,8 @@ def render_baseline_patchcore_tab() -> None:
     if use_gaussian:
         preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
 
-    run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", value=False)
+    st.session_state.setdefault("b_heatmap", False)
+    run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", key="b_heatmap")
 
     if not st.button("Run Patchcore Evaluation Pipeline"):
         return
@@ -276,6 +282,13 @@ def render_baseline_patchcore_tab() -> None:
 
         if isinstance(results, dict):
             _render_evaluation_summary(results)
+
+            # Additional Parity for PatchCore
+            pixel_metrics = results.get("pixel_level", {})
+            metrics_path = pixel_metrics.get("metrics_path")
+            if metrics_path:
+                render_evaluation_curves(metrics_path)
+
             _render_heatmap_explorer(results)
         else:
             st.text_area("Results Summary", value=str(results), height=180)
@@ -290,14 +303,20 @@ def render_autoencoder_tab() -> None:
     )
 
     col1, col2 = st.columns(2)
-    data_root = col1.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="ae_root")
-    category = col2.text_input("Category Name", value="bottle", key="ae_cat")
+    st.session_state.setdefault("ae_root", "data/raw/mvtec_ad")
+    data_root = col1.text_input("Dataset Root Directory", key="ae_root")
+    st.session_state.setdefault("ae_cat", "bottle")
+    category = col2.text_input("Category Name", key="ae_cat")
 
     col_e, col_b, col_l, col_s = st.columns(4)
-    epochs = col_e.number_input("Epochs", min_value=1, max_value=50, value=5, step=1)
-    batch_size = col_b.number_input("Batch Size", min_value=1, max_value=64, value=16, step=4)
-    latent_dim = col_l.number_input("Latent Dim", min_value=8, max_value=256, value=64, step=8)
-    img_size = col_s.number_input("Image Size", min_value=32, max_value=128, value=64, step=16)
+    st.session_state.setdefault("ae_epochs", 5)
+    epochs = col_e.number_input("Epochs", min_value=1, max_value=50, step=1, key="ae_epochs")
+    st.session_state.setdefault("ae_batch", 16)
+    batch_size = col_b.number_input("Batch Size", min_value=1, max_value=64, step=4, key="ae_batch")
+    st.session_state.setdefault("ae_latent", 64)
+    latent_dim = col_l.number_input("Latent Dim", min_value=8, max_value=256, step=8, key="ae_latent")
+    st.session_state.setdefault("ae_size", 64)
+    img_size = col_s.number_input("Image Size", min_value=32, max_value=128, step=16, key="ae_size")
 
     if not st.button("Run Autoencoder Training & Evaluation"):
         return

@@ -6,7 +6,7 @@ match the mathematical grid dimensions and can be losslessly blended back into t
 
 import numpy as np
 
-from app.pipelines.multi_stage_ae.cae_pipeline import extract_crops, stitch_crops
+from app.pipelines.modelling.keras_cae.cae_pipeline import extract_crops, stitch_crops
 
 
 def test_extract_crops_dimension_matching() -> None:

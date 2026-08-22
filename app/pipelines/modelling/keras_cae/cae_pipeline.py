@@ -77,11 +77,11 @@ import numpy as np
 from PIL import Image
 
 from app.domain.data import build_mvtec_manifest
-from app.pipelines.multi_stage_ae.augmentation import augment_batch, get_augmenter
-from app.pipelines.multi_stage_ae.cae_keras import _require_tf, build_cae, train_cae
-from app.pipelines.multi_stage_ae.evaluation import evaluate_cae
-from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold, compute_image_scores
+from app.pipelines.evaluation.cae_metrics import evaluate_cae
+from app.pipelines.evaluation.scoring import compute_adaptive_threshold, compute_image_scores
+from app.pipelines.modelling.keras_cae.cae_keras import _require_tf, build_cae, train_cae
 from app.pipelines.preprocessing import PreprocessingPipeline, build_pipeline_from_configs
+from app.pipelines.preprocessing.augmentation import augment_batch, get_augmenter
 
 logger = logging.getLogger(__name__)
 
@@ -748,7 +748,7 @@ def run_keras_cae_pipeline(
     # Computes a smoothed error heatmap for every anomalous test image.
     if run_heatmap and anomalous_indices:
         logger.info("Computing Reconstruction Error Heatmap for %d anomalous images...", len(anomalous_indices))
-        from app.pipelines.multi_stage_ae.error_heatmap import (
+        from app.pipelines.evaluation.heatmaps import (
             compute_error_heatmap,
             overlay_ground_truth,
             overlay_heatmap,

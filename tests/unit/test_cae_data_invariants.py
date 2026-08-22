@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import sklearn.model_selection as ms
 
-import app.pipelines.multi_stage_ae.cae_pipeline as p_mod
-from app.pipelines.multi_stage_ae.cae_pipeline import run_keras_cae_pipeline
+import app.pipelines.modelling.keras_cae.cae_pipeline as p_mod
+from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 
 
 def test_partition_label_isolation(mock_large_mvtec_dataset: str) -> None:
@@ -32,7 +32,7 @@ def test_partition_label_isolation(mock_large_mvtec_dataset: str) -> None:
         """Sentinel exception to abort pipeline immediately after data partitioning."""
 
     with patch("sklearn.model_selection.train_test_split", side_effect=mock_train_test_split):
-        with patch("app.pipelines.multi_stage_ae.cae_pipeline.build_cae", side_effect=AbortPipelineError):
+        with patch("app.pipelines.modelling.keras_cae.cae_pipeline.build_cae", side_effect=AbortPipelineError):
             try:
                 run_keras_cae_pipeline(
                     data_root=mock_large_mvtec_dataset,
@@ -76,8 +76,8 @@ def test_augmentation_leakage_prevention(mock_mvtec_dataset: str) -> None:
     class AbortPipelineError(Exception):
         """Sentinel exception to abort pipeline before neural network initialization."""
 
-    with patch("app.pipelines.multi_stage_ae.cae_pipeline.augment_batch", side_effect=mock_augment_batch):
-        with patch("app.pipelines.multi_stage_ae.cae_pipeline.build_cae", side_effect=AbortPipelineError):
+    with patch("app.pipelines.modelling.keras_cae.cae_pipeline.augment_batch", side_effect=mock_augment_batch):
+        with patch("app.pipelines.modelling.keras_cae.cae_pipeline.build_cae", side_effect=AbortPipelineError):
             try:
                 run_keras_cae_pipeline(
                     data_root=mock_mvtec_dataset,

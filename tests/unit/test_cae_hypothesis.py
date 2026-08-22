@@ -11,10 +11,10 @@ import numpy as np
 import tensorflow as tf
 from hypothesis import given, settings
 
-from app.pipelines.multi_stage_ae.cae_keras import ssim_mse_loss
-from app.pipelines.multi_stage_ae.cae_pipeline import extract_crops, stitch_crops
-from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold, top_k_pooling
-from app.pipelines.multi_stage_ae.segmentation import OtsuCannySegmentor
+from app.pipelines.evaluation.scoring import compute_adaptive_threshold, top_k_pooling
+from app.pipelines.modelling.keras_cae.cae_keras import ssim_mse_loss
+from app.pipelines.modelling.keras_cae.cae_pipeline import extract_crops, stitch_crops
+from app.pipelines.preprocessing.segmentation import OtsuCannySegmentor
 
 
 @settings(max_examples=20, deadline=None)

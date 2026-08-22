@@ -17,7 +17,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 
 from app.core.logger import logger
 from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
-from app.pipelines.multi_stage_ae.scoring import compute_adaptive_threshold
+from app.pipelines.evaluation.scoring import compute_adaptive_threshold
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.base import PreprocessingPipeline
 from app.pipelines.preprocessing.factory import build_pipeline_from_configs
@@ -241,7 +241,7 @@ def extract_and_save_pr_metrics(
             try:
                 import cv2
 
-                from app.pipelines.multi_stage_ae.error_heatmap import overlay_ground_truth, overlay_heatmap
+                from app.pipelines.evaluation.heatmaps import overlay_ground_truth, overlay_heatmap
 
                 global_idx = 0
                 for batch in predictions:
