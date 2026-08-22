@@ -1,9 +1,6 @@
-"""Unit tests for Convolutional Autoencoder modelling and evaluation."""
-
-from pathlib import Path
+"""Unit tests for PyTorch Convolutional Autoencoder architecture, inference, and evaluation."""
 
 import torch
-from PIL import Image
 from torch.utils.data import DataLoader, TensorDataset
 
 from app.pipelines.modelling.autoencoder import ConvAutoencoder, evaluate_autoencoder, run_autoencoder_pipeline
@@ -40,21 +37,14 @@ def test_evaluate_autoencoder() -> None:
     assert isinstance(metrics["threshold"], float)
 
 
-def test_run_autoencoder_pipeline_with_mock_dataset(tmp_path: Path) -> None:
-    """Run minimal end-to-end autoencoder pipeline on temporary mock dataset."""
-    # Create minimal mock mvtec dataset structure
-    for split, defect, name in [
-        ("train", "good", "000.png"),
-        ("train", "good", "001.png"),
-        ("test", "good", "000.png"),
-        ("test", "defect", "001.png"),
-    ]:
-        img_dir = tmp_path / "bottle" / split / defect
-        img_dir.mkdir(parents=True, exist_ok=True)
-        Image.new("RGB", (32, 32)).save(img_dir / name)
+def test_run_autoencoder_pipeline_with_mock_dataset(mock_mvtec_dataset: str) -> None:
+    """Run minimal end-to-end autoencoder pipeline on temporary mock dataset.
 
+    Args:
+        mock_mvtec_dataset: Path to the temporary mock MVTec dataset root.
+    """
     metrics = run_autoencoder_pipeline(
-        data_root=str(tmp_path),
+        data_root=mock_mvtec_dataset,
         category="bottle",
         epochs=1,
         batch_size=2,

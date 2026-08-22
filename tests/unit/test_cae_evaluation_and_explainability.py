@@ -1,3 +1,9 @@
+"""Unit tests for CAE evaluation metrics (AUROC, AUPIMO) and explainability visual overlays.
+
+This module validates image-level classification metrics, pixel-level localization scores,
+error heatmap synthesis from autoencoder residual deviations, and blended contour overlays.
+"""
+
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +18,15 @@ from app.pipelines.multi_stage_ae.evaluation import (
 
 
 def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path) -> None:
-    """Test full CAE evaluation metrics with clear normal vs anomalous separation."""
+    """Verify that evaluate_cae computes AUROC, Precision, Recall, and F1 on separated distributions.
+
+    Args:
+        mock_keras_cae: Pre-compiled lightweight CAE model fixture.
+        tmp_path: Pytest temporary directory fixture.
+    """
     test_images = np.random.rand(4, 32, 32, 3).astype(np.float32)
     test_reconstructed = test_images.copy()
-    # Introduce error into anomalous images
+    # Introduce high error into anomalous images
     test_reconstructed[2:, ...] = 1.0 - test_images[2:, ...]
 
     labels = np.array([0, 0, 1, 1], dtype=int)
@@ -41,7 +52,7 @@ def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path) ->
 
 
 def test_compute_image_auroc() -> None:
-    """Test AUROC computation for image-level anomaly scores."""
+    """Verify AUROC computation for perfect and inverted anomaly score separation."""
     # Perfect separation
     scores = np.array([0.1, 0.2, 0.8, 0.9])
     labels = np.array([0, 0, 1, 1])
@@ -54,12 +65,10 @@ def test_compute_image_auroc() -> None:
 
 
 def test_compute_aupimo_no_defects() -> None:
-    """Test AUPIMO gracefully handles when no ground truth defects are present."""
-    # Create empty GT masks
-    gt_masks = [np.zeros((32, 32), dtype=np.uint8) for _ in range(3)]
+    """Verify that compute_aupimo gracefully returns 0.0 when test samples contain no defects."""
+    gt_masks: list[np.ndarray | None] = [np.zeros((32, 32), dtype=np.uint8) for _ in range(3)]
     anomaly_maps = [np.random.rand(32, 32).astype(np.float32) for _ in range(3)]
 
-    # Should warn and return 0.0, but not crash
     results = compute_aupimo(anomaly_maps, gt_masks)
 
     assert isinstance(results, float)
@@ -67,7 +76,11 @@ def test_compute_aupimo_no_defects() -> None:
 
 
 def test_compute_error_heatmap(mock_keras_cae: Any) -> None:
-    """Test error heatmap generation."""
+    """Verify that compute_error_heatmap produces 2D normalized error heatmaps bounded in [0, 1].
+
+    Args:
+        mock_keras_cae: Pre-compiled lightweight CAE model fixture.
+    """
     img = np.random.rand(32, 32, 3).astype(np.float32)
     res = compute_error_heatmap(mock_keras_cae, img, sigma=2.0)
 
@@ -79,22 +92,20 @@ def test_compute_error_heatmap(mock_keras_cae: Any) -> None:
 
 
 def test_overlay_heatmap() -> None:
-    """Test overlaying a heatmap on an image."""
+    """Verify that overlay_heatmap blends an RGB image with an anomaly heatmap without shape distortion."""
     img = np.zeros((32, 32, 3), dtype=np.uint8)
     heatmap = np.zeros((32, 32), dtype=np.float32)
-    heatmap[10:20, 10:20] = 1.0  # High error region
+    heatmap[10:20, 10:20] = 1.0
 
     overlay = overlay_heatmap(img, heatmap, alpha=0.5)
 
     assert overlay.shape == (32, 32, 3)
     assert overlay.dtype == np.uint8
-
-    # The high error region should have a different color than the background
     assert np.any(overlay[15, 15] > 0)
 
 
 def test_overlay_ground_truth() -> None:
-    """Test overlaying ground truth contours."""
+    """Verify that overlay_ground_truth renders visible green contour outlines for defect regions."""
     img = np.zeros((32, 32, 3), dtype=np.uint8)
     gt_mask = np.zeros((32, 32), dtype=np.uint8)
     gt_mask[10:20, 10:20] = 255
@@ -103,7 +114,4 @@ def test_overlay_ground_truth() -> None:
 
     assert overlay.shape == (32, 32, 3)
     assert overlay.dtype == np.uint8
-
-    # There should be non-zero green pixels where the contour was drawn
-    # The contour is drawn on the boundary of the 10:20 region
     assert np.sum(overlay[..., 1]) > 0

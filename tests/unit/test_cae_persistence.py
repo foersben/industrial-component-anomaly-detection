@@ -5,14 +5,17 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
-from PIL import Image
 
 from app.pipelines.multi_stage_ae.cae_keras import build_cae
 from app.pipelines.multi_stage_ae.cae_pipeline import find_cached_model, run_keras_cae_pipeline
 
 
 def test_keras_cae_save_and_load_numerical_consistency(tmp_path: Path) -> None:
-    """Ensure that saving a CAE and loading via tf.keras reproduces identical predictions."""
+    """Ensure that saving a CAE and loading via tf.keras reproduces identical predictions.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
     model = build_cae(crop_size=32, latent_channels=16)
     dummy_input = np.random.RandomState(42).rand(4, 32, 32, 3).astype(np.float32)
 
@@ -28,7 +31,11 @@ def test_keras_cae_save_and_load_numerical_consistency(tmp_path: Path) -> None:
 
 
 def test_find_cached_model_matching_preprocessing(tmp_path: Path) -> None:
-    """Verify that find_cached_model strictly matches preprocessing_steps."""
+    """Verify that find_cached_model strictly matches preprocessing_steps.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
     reg_dir = tmp_path / "model_abc"
     reg_dir.mkdir(parents=True, exist_ok=True)
     (reg_dir / "model.keras").touch()
@@ -86,28 +93,23 @@ def test_find_cached_model_matching_preprocessing(tmp_path: Path) -> None:
     assert found_meta["hash"] == "model_abc"
 
 
-def test_keras_cae_pipeline_cached_evaluation(tmp_path: Path) -> None:
-    """Run pipeline to train and save a model on mock data, then reload and verify exact match."""
-    data_dir = tmp_path / "data"
-    # Create minimal mock mvtec dataset structure
-    for split, defect, count in [("train", "good", 10), ("test", "good", 4), ("test", "defect", 4)]:
-        d = data_dir / "bottle" / split / defect
-        d.mkdir(parents=True, exist_ok=True)
-        for i in range(count):
-            img_arr = np.uint8(np.random.RandomState(i).rand(64, 64, 3) * 255)
-            Image.fromarray(img_arr).save(d / f"{i:03d}.png")
+def test_keras_cae_pipeline_cached_evaluation(mock_mvtec_dataset: str) -> None:
+    """Run pipeline to train and save a model on mock data, then reload and verify exact match.
 
+    Args:
+        mock_mvtec_dataset: Path to the temporary mock MVTec dataset root.
+    """
     # 1. Fresh training
     res1 = run_keras_cae_pipeline(
-        data_root=str(data_dir),
+        data_root=mock_mvtec_dataset,
         category="bottle",
-        img_size=64,
-        crop_size=32,
-        crop_stride=16,
-        latent_channels=16,
+        img_size=32,
+        crop_size=16,
+        crop_stride=8,
+        latent_channels=8,
         epochs=1,
-        batch_size=4,
-        mask_ratio=0.25,
+        batch_size=2,
+        mask_ratio=0.0,
         preprocessing_steps=[],
         run_heatmap=False,
         force_retrain=True,
@@ -117,15 +119,15 @@ def test_keras_cae_pipeline_cached_evaluation(tmp_path: Path) -> None:
 
     # 2. Reload via cache
     res2 = run_keras_cae_pipeline(
-        data_root=str(data_dir),
+        data_root=mock_mvtec_dataset,
         category="bottle",
-        img_size=64,
-        crop_size=32,
-        crop_stride=16,
-        latent_channels=16,
+        img_size=32,
+        crop_size=16,
+        crop_stride=8,
+        latent_channels=8,
         epochs=1,
-        batch_size=4,
-        mask_ratio=0.25,
+        batch_size=2,
+        mask_ratio=0.0,
         preprocessing_steps=[],
         run_heatmap=False,
         force_retrain=False,

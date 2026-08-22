@@ -1,10 +1,16 @@
+"""Unit tests for sliding-window patch extraction and blending reconstruction in the CAE pipeline.
+
+This module validates that overlapping sub-image patches extracted from multi-channel image batches
+match the mathematical grid dimensions and can be losslessly blended back into the original image space.
+"""
+
 import numpy as np
 
 from app.pipelines.multi_stage_ae.cae_pipeline import extract_crops, stitch_crops
 
 
 def test_extract_crops_dimension_matching() -> None:
-    """Test extracting crops and validating dimensions and counts."""
+    """Verify that patch extraction produces the exact expected tensor shapes and grid counts."""
     n_val = 2
     h, w = 64, 64
     c_val = 3
@@ -24,7 +30,7 @@ def test_extract_crops_dimension_matching() -> None:
 
 
 def test_perfect_identity_reconstruction() -> None:
-    """Test round-trip extraction and stitching produces identical output."""
+    """Verify that extracting patches and stitching them without degradation yields the original image."""
     n_val = 1
     h, w = 64, 64
     c_val = 3
@@ -52,8 +58,5 @@ def test_perfect_identity_reconstruction() -> None:
         reconstructed_crops, n_images=n_val, img_h=h, img_w=w, crop_size=crop_size, crop_stride=crop_stride
     )
 
-    # Check shape
     assert stitched_images.shape == images.shape
-
-    # Check content with high precision (tol 1e-5 as requested)
     assert np.allclose(images, stitched_images, atol=1e-5)
