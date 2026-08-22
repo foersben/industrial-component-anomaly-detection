@@ -45,7 +45,7 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
     if apply_clahe:
         preprocessing_steps.append({"name": "clahe", "params": {}})
     if apply_blur:
-        preprocessing_steps.append({"name": "gaussian_blur", "params": {"ksize": blur_ksize}})
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {"kernel_size": blur_ksize}})
 
     # We use fewer epochs and a smaller batch size to quickly prune bad trials
     epochs = 20

@@ -136,6 +136,12 @@ pynvml = ">=11.5.0,<12"    # Runtime CUDA/VRAM detection for TF device selection
 scikit-image = "*"
 optuna = ">=4.9.0,<5"
 
+[tool.pixi.feature.gpu.dependencies]
+cuda-version = "12.*"
+cuda-libraries = "12.*"
+cuda-cupti = "12.*"
+cudnn = ">=8.9,<9"
+
 [tool.pixi.feature.gpu.pypi-dependencies]
 # ── PyTorch (GPU / CUDA) ────────────────────────────────────────────────────
 torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cu121" }
@@ -157,6 +163,9 @@ default = { features = ["gpu"], solve-group = "default" }
 dev = { features = ["dev", "gpu"], solve-group = "default" }
 ci = { features = ["cpu"], solve-group = "ci" }
 ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
+
+[tool.pixi.target.linux-64.activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 
 [tool.pixi.tasks]
 api = { cmd = "uvicorn app.api.main:app --reload --port 8000", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }

@@ -17,14 +17,16 @@ class GaussianBlurStep(BasePreprocessingStep):
 
     name = "gaussian_blur"
 
-    def __init__(self, kernel_size: int = 5, sigma: float = 0.0) -> None:
+    def __init__(self, kernel_size: int = 5, sigma: float = 0.0, ksize: int | None = None) -> None:
         """Initialize the Gaussian Blur step.
 
         Args:
             kernel_size: Size of the Gaussian kernel.
             sigma: Standard deviation of the Gaussian kernel.
+            ksize: Alias for kernel_size.
         """
-        self.kernel_size = kernel_size if kernel_size % 2 != 0 else kernel_size + 1
+        chosen_ksize = ksize if ksize is not None else kernel_size
+        self.kernel_size = chosen_ksize if chosen_ksize % 2 != 0 else chosen_ksize + 1
         self.sigma = sigma
 
     def __call__(self, image: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
