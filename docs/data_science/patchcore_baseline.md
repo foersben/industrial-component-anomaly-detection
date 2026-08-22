@@ -97,3 +97,51 @@ At this strict `1e-5` FPR limit, the model computed a highly conservative anomal
 - **AUPIMO (Area Under the Per-Image Overlap):** Under these extreme false-positive constraints (integrating across the low-tolerance FPR range), the model achieved an AUPIMO score of **98.67%**.
 - **Recall (Sensitivity):** This means that the model correctly isolated an average of 98.67% of all anomalous (defective) pixels across the dataset, even when restricted by the `0.9806` threshold.
 - **Reliability (Prosaic Interpretation):** If a defect appears on the production line, you can be 98.67% confident that the model will catch and segment the exact defective region (High AUPIMO). Simultaneously, the strict `1e-5` FPR constraint guarantees that the model will almost never accidentally stop the line for a healthy component. This combination of high anomaly localization and low false-alarm tolerance proves that the optimized Patchcore pipeline is highly reliable for strict industrial deployment.
+
+---
+
+## Model Registry & Unified Caching Architecture
+
+To avoid expensive re-fitting of feature memory banks and ensure full architectural parity across models, PatchCore uses the same deterministic hashing, caching, and model lifecycle system as the Keras CAE.
+
+### 1. Unified Directory Layout
+
+All PatchCore models and evaluation metrics are persisted under `data/models/patchcore/`:
+
+```text
+data/models/patchcore/
+├── <12_char_hex_hash>/
+│   ├── metadata.json       # Hyperparameters, preprocessing steps, dataset split & metrics
+│   ├── image_metrics.npz   # Precision-Recall arrays, thresholds, AUROC
+│   └── pixel_metrics.npz   # Pixel-level AUPIMO, thresholds, FPR curves
+└── .trash/                 # Soft-deleted models for reversible recovery
+```
+
+### 2. Deterministic Hash Calibration
+
+The 12-character model hash is deterministically derived from all execution variables:
+
+$$\text{Hash} = \text{SHA256}\Big(\text{category} \parallel \text{backbone} \parallel \text{coreset\_ratio} \parallel \text{fpr\_limit} \parallel \text{sorted\_preprocessing\_steps}\Big)[:12]$$
+
+When a user submits a configuration:
+
+- The pipeline scans the registry via `find_cached_patchcore_model`.
+- If an exact match exists and `force_retrain=False`, results and evaluation curves are loaded in **under 100ms** without re-fitting.
+- If parameters differ or `Force Retrain` is checked, Anomalib re-fits the model and saves fresh metrics.
+
+### 3. Soft-Delete & Trash Recovery Lifecycle
+
+Models can be safely deleted without risking permanent data loss:
+
+- **Move to Trash (Soft Delete)**: `delete_cached_patchcore_model(hash, soft_delete=True)` moves the model directory into `data/models/patchcore/.trash/<hash>/`.
+- **Restoration**: `restore_cached_patchcore_model(hash)` safely moves the model back into the active registry.
+- **Empty Trash (Permanent Purge)**: `purge_patchcore_trash()` permanently deletes trashed directories from disk.
+
+### 4. Training Run Overview
+
+The Streamlit UI and FastAPI endpoints expose a comprehensive **Model Run Overview** card displaying:
+
+- **🔧 Preprocessing Configuration**: Active filters with descriptive badges (e.g., `🟢 Foreground Mask (Otsu + Canny)`, `🟢 CLAHE`, `🟢 Gaussian Blur`) or `⚪ None (Raw unmodified images)`.
+- **⚙️ Model Hyperparameters**: Category, Backbone architecture (`resnet18` / `wide_resnet50_2`), Coreset Sampling Ratio, and FPR Limit bounds.
+- **📊 Dataset Partition Split**: Exact counts of normal training samples and test samples evaluated.
+- **Fallback Compatibility**: Automatically displays informative notices when loading older legacy models that did not record these metadata fields.
