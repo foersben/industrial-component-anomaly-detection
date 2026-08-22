@@ -84,12 +84,112 @@ def _display_level_metrics(title: str, metrics: dict[str, Any], level_type: str 
     st.caption(f"Saved: `{metrics.get('metrics_path', '')}`")
 
 
-def _render_evaluation_summary(results: dict[str, Any]) -> None:
+def _render_model_run_overview(results: dict[str, Any], model_type: str = "cae") -> None:
+    """Render a comprehensive overview of active preprocessing, hyperparameters, and dataset split.
+
+    Args:
+        results: Results dictionary returned from the pipeline or model evaluation.
+        model_type: Type of model evaluated ('cae' or 'patchcore').
+    """
+    with st.expander("📋 Model Run Overview (Preprocessing, Hyperparameters & Dataset Split)", expanded=True):
+        col_prep, col_hp, col_split = st.columns(3)
+
+        # ── 1. Preprocessing Configuration ──
+        with col_prep:
+            st.markdown("#### 🔧 Preprocessing")
+            prep_steps = results.get("preprocessing_steps")
+            if prep_steps is None and "metadata" in results and isinstance(results["metadata"], dict):
+                prep_steps = results["metadata"].get("preprocessing_steps")
+
+            if prep_steps is not None and isinstance(prep_steps, list):
+                if len(prep_steps) == 0:
+                    st.markdown("⚪ **None** *(Raw unmodified images)*")
+                else:
+                    for s in prep_steps:
+                        name = str(s.get("name", "Unknown Step"))
+                        if name == "foreground_mask":
+                            st.markdown("🟢 **Foreground Mask** *(Otsu + Canny)*")
+                        elif name == "clahe":
+                            st.markdown("🟢 **CLAHE** *(Contrast Equalization)*")
+                        elif name == "gaussian_blur":
+                            st.markdown("🟢 **Gaussian Blur** *(Denoising)*")
+                        else:
+                            st.markdown(f"🟢 **`{name}`**")
+            else:
+                st.info("⚠️ *Preprocessing configuration was not recorded with this legacy model run.*")
+
+        # ── 2. Hyperparameters ──
+        with col_hp:
+            st.markdown("#### ⚙️ Hyperparameters")
+            if model_type == "cae":
+                hp = results.get("hyperparameters") or (
+                    results.get("metadata") if isinstance(results.get("metadata"), dict) else None
+                )
+                if hp and isinstance(hp, dict):
+                    st.markdown(f"- **Category:** `{hp.get('category', results.get('category', 'N/A'))}`")
+                    st.markdown(f"- **Epochs:** `{hp.get('epochs', results.get('epochs', 'N/A'))}`")
+                    st.markdown(f"- **Batch Size:** `{hp.get('batch_size', 'N/A')}`")
+                    img_sz = hp.get("img_size", 128)
+                    st.markdown(f"- **Image Size:** `{img_sz}x{img_sz}`")
+                    crop_sz = hp.get("crop_size", 64)
+                    crop_str = hp.get("crop_stride", 32)
+                    st.markdown(f"- **Crop Size / Stride:** `{crop_sz}x{crop_sz}` *(stride: {crop_str})*")
+                    latent = hp.get("latent_channels", hp.get("latent_dim", "N/A"))
+                    st.markdown(f"- **Latent Channels:** `{latent}`")
+                    mask_r = hp.get("mask_ratio", 0.25)
+                    try:
+                        mask_pct = float(mask_r) * 100
+                    except (ValueError, TypeError):
+                        mask_pct = 25.0
+                    st.markdown(f"- **Masking (MIM):** `{mask_pct:.0f}%` *(patch: {hp.get('mask_patch_size', 8)})*")
+                    st.markdown(f"- **Thresholding:** `{hp.get('threshold_method', 'quantile_95')}`")
+                else:
+                    st.info("⚠️ *Hyperparameter details were not recorded with this legacy model run.*")
+            else:
+                hp = results.get("hyperparameters", {})
+                if hp and isinstance(hp, dict) and len(hp) > 0:
+                    st.markdown(f"- **Category:** `{results.get('category', 'N/A')}`")
+                    st.markdown(f"- **Backbone:** `{hp.get('backbone', 'resnet18')}`")
+                    st.markdown(f"- **Coreset Ratio:** `{hp.get('coreset_sampling_ratio', 0.1)}`")
+                    st.markdown(f"- **FPR Limit:** `{hp.get('fpr_limit', 1e-4)}`")
+                    st.markdown(f"- **Batch Size:** `{hp.get('train_batch_size', 16)}`")
+                else:
+                    st.info("⚠️ *Hyperparameters were not recorded with this legacy model run.*")
+
+        # ── 3. Dataset Split ──
+        with col_split:
+            st.markdown("#### 📊 Dataset Partition Split")
+            split = results.get("dataset_split") or (
+                results.get("metadata", {}).get("dataset_split") if isinstance(results.get("metadata"), dict) else None
+            )
+            if split and isinstance(split, dict) and len(split) > 0:
+                if model_type == "cae":
+                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+                    st.markdown(f"- **Validation (Normal, 15%):** `{split.get('val_normal', 'N/A')}`")
+                    test_tot = split.get("test_total", "N/A")
+                    test_norm = split.get("test_normal")
+                    test_anom = split.get("test_anomalous")
+                    if test_norm is not None and test_anom is not None:
+                        st.markdown(f"- **Test Total:** `{test_tot}` *({test_norm} normal, {test_anom} anomalous)*")
+                    else:
+                        st.markdown(f"- **Test Total:** `{test_tot}`")
+                else:
+                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+                    st.markdown(f"- **Test Total:** `{split.get('test_total', 'N/A')}`")
+            else:
+                st.info("⚠️ *Dataset partition sample counts were not recorded with this legacy model run.*")
+    st.divider()
+
+
+def _render_evaluation_summary(results: dict[str, Any], model_type: str = "cae") -> None:
     """Render structured Image-Level and Pixel-Level evaluation metric cards and dynamic info boxes.
 
     Args:
         results: Dictionary containing image_level and pixel_level evaluation metrics.
+        model_type: Type of model evaluated ('cae' or 'patchcore').
     """
+    _render_model_run_overview(results, model_type=model_type)
+
     if "image_level" in results and "pixel_level" in results:
         col_img, col_pix = st.columns(2)
         img_metrics = results.get("image_level", {})
@@ -281,7 +381,7 @@ def render_baseline_patchcore_tab() -> None:
         results = data.get("results", {})
 
         if isinstance(results, dict):
-            _render_evaluation_summary(results)
+            _render_evaluation_summary(results, model_type="patchcore")
 
             # Additional Parity for PatchCore
             pixel_metrics = results.get("pixel_level", {})

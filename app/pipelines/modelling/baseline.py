@@ -70,6 +70,9 @@ class BaselineResult(TypedDict, total=False):
         raw_results: Raw evaluation results from the anomalib engine.
         heatmap_overlays: Dictionary of generated heatmap overlays.
         anomalous_indices: List of test dataset indices that are anomalous.
+        preprocessing_steps: List of active preprocessing step configurations.
+        hyperparameters: Dictionary of model hyperparameters.
+        dataset_split: Dictionary of dataset partition sample counts.
     """
 
     category: str
@@ -78,6 +81,9 @@ class BaselineResult(TypedDict, total=False):
     raw_results: dict[str, float]
     heatmap_overlays: dict[int, dict[str, list[Any]]]
     anomalous_indices: list[int]
+    preprocessing_steps: list[dict[str, Any]]
+    hyperparameters: dict[str, Any]
+    dataset_split: dict[str, Any]
 
 
 def _to_float(val: Any) -> float:
@@ -344,6 +350,9 @@ def format_results(
     heatmap_overlays: dict[int, dict[str, list[Any]]],
     anomalous_indices: list[int],
     fpr_limit: float = 1e-4,
+    preprocessing_steps: list[dict[str, Any]] | None = None,
+    hyperparameters: dict[str, Any] | None = None,
+    dataset_split: dict[str, Any] | None = None,
 ) -> BaselineResult:
     """Format anomalib engine evaluation output into a structured response schema.
 
@@ -359,6 +368,9 @@ def format_results(
         heatmap_overlays: Dictionary of precomputed heatmap overlays.
         anomalous_indices: List of image indices corresponding to anomalies.
         fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
+        preprocessing_steps: Optional list of active preprocessing steps.
+        hyperparameters: Optional dictionary of model hyperparameters.
+        dataset_split: Optional dataset partition sample counts.
 
     Returns:
         A dictionary containing structured image_level and pixel_level results.
@@ -403,6 +415,9 @@ def format_results(
         "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
         "heatmap_overlays": heatmap_overlays,
         "anomalous_indices": anomalous_indices,
+        "preprocessing_steps": preprocessing_steps or [],
+        "hyperparameters": hyperparameters or {},
+        "dataset_split": dataset_split or {},
     }
 
 
@@ -484,18 +499,40 @@ def run_baseline(
         anomalous_indices,
     ) = extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit, run_heatmap)
 
+    # Extract dataset split counts if datamodule was setup
+    split_info: dict[str, Any] = {}
+    train_ds = getattr(datamodule, "train_data", None)
+    if train_ds is not None and hasattr(train_ds, "__len__"):
+        split_info["train_normal"] = len(train_ds)
+    test_ds = getattr(datamodule, "test_data", None)
+    if test_ds is not None and hasattr(test_ds, "__len__"):
+        split_info["test_total"] = len(test_ds)
+
+    hyperparams = {
+        "backbone": backbone,
+        "coreset_sampling_ratio": coreset_sampling_ratio,
+        "fpr_limit": fpr_limit,
+        "train_batch_size": 16,
+        "eval_batch_size": 16,
+    }
+
+    raw_prep_list = steps_config if isinstance(steps_config, list) else []
+
     return format_results(
-        test_results,
-        category,
-        base_dir,
-        manual_image_f1,
-        manual_pixel_f1,
-        manual_image_prec,
-        manual_image_rec,
-        img_threshold,
-        heatmap_overlays,
-        anomalous_indices,
-        fpr_limit,
+        test_results=test_results,
+        category=category,
+        base_dir=base_dir,
+        manual_image_f1=manual_image_f1,
+        manual_pixel_f1=manual_pixel_f1,
+        manual_image_prec=manual_image_prec,
+        manual_image_rec=manual_image_rec,
+        img_threshold=img_threshold,
+        heatmap_overlays=heatmap_overlays,
+        anomalous_indices=anomalous_indices,
+        fpr_limit=fpr_limit,
+        preprocessing_steps=raw_prep_list,
+        hyperparameters=hyperparams,
+        dataset_split=split_info,
     )
 
 

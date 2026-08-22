@@ -627,6 +627,14 @@ def run_keras_cae_pipeline(
     val_good_crops = extract_crops(val_good_images, crop_size, crop_stride) if len(val_good_images) > 0 else None
     val_an_crops = None  # No anomalous images used during validation tuning
 
+    dataset_split = {
+        "train_normal": len(train_paths),
+        "val_normal": len(val_paths),
+        "test_total": len(test_paths),
+        "test_normal": int(sum(1 for label_val in test_labels if label_val == 0)),
+        "test_anomalous": int(sum(1 for label_val in test_labels if label_val == 1)),
+    }
+
     if cached is None:
         logger.info("No cache found (or force_retrain=True). Training new model (Hash: %s)...", model_hash)
         model = build_cae(crop_size=crop_size, latent_channels=latent_channels)
@@ -658,6 +666,7 @@ def run_keras_cae_pipeline(
             "threshold_method": threshold_method,
             "k_fraction": k_fraction,
             "preprocessing_steps": preprocessing_steps or [],
+            "dataset_split": dataset_split,
             "loss_history": loss_history,
             "timestamp": datetime.now(UTC).isoformat(),
         }
@@ -735,8 +744,34 @@ def run_keras_cae_pipeline(
     results["model_hash"] = model_hash
     results["loss_history"] = loss_history
 
+    # Pass through metadata, hyperparameters, and dataset split for UI/API consumption
+    active_meta = cached[1] if cached is not None else metadata
+    results["metadata"] = active_meta
+    results["preprocessing_steps"] = (
+        active_meta.get("preprocessing_steps")
+        if active_meta and "preprocessing_steps" in active_meta
+        else (preprocessing_steps or [])
+    )
+    results["hyperparameters"] = {
+        "crop_size": active_meta.get("crop_size", crop_size) if active_meta else crop_size,
+        "crop_stride": active_meta.get("crop_stride", crop_stride) if active_meta else crop_stride,
+        "latent_channels": (
+            active_meta.get("latent_channels", active_meta.get("latent_dim", latent_channels))
+            if active_meta
+            else latent_channels
+        ),
+        "epochs": active_meta.get("epochs", epochs) if active_meta else epochs,
+        "batch_size": active_meta.get("batch_size", batch_size) if active_meta else batch_size,
+        "mask_ratio": active_meta.get("mask_ratio", mask_ratio) if active_meta else mask_ratio,
+        "mask_patch_size": active_meta.get("mask_patch_size", mask_patch_size) if active_meta else mask_patch_size,
+        "threshold_method": active_meta.get("threshold_method", threshold_method) if active_meta else threshold_method,
+        "k_fraction": active_meta.get("k_fraction", k_fraction) if active_meta else k_fraction,
+        "img_size": active_meta.get("img_size", img_size) if active_meta else img_size,
+    }
+    results["dataset_split"] = active_meta.get("dataset_split", dataset_split) if active_meta else dataset_split
+
     # Include anomalous image indices so the UI can offer a SHAP image selector
-    anomalous_indices = [int(i) for i, label in enumerate(test_labels) if label == 1]
+    anomalous_indices = [int(idx_num) for idx_num, lbl in enumerate(test_labels) if lbl == 1]
     results["anomalous_indices"] = anomalous_indices
     results["total_test_images"] = len(test_images)
 
