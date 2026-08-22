@@ -144,7 +144,7 @@ flowchart TD
 - **`tests/unit/test_cae_evaluation_and_explainability.py`**
   Asserts correctness of AUROC, AUPIMO pixel-level localization, error heatmap synthesis, and GT contour overlays.
 - **`tests/unit/test_cae_persistence.py`**
-  Verifies Keras model save/load numerical consistency, preprocessing step cache hashing, and cached pipeline re-evaluation parity.
+  Verifies Keras model save/load numerical consistency, preprocessing step cache hashing, cached pipeline re-evaluation parity, soft-deletion/restoration via `.trash/`, trash purging, and path-traversal safety guards.
 
 ### Core, Domain & Preprocessing Suites
 - **`tests/unit/test_domain_data.py`**
