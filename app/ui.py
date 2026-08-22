@@ -546,18 +546,81 @@ def render_baseline_patchcore_tab() -> None:
 
     st.session_state.setdefault("b_root", "data/raw/mvtec_ad")
     data_root = st.text_input("Dataset Root Directory", key="b_root")
+
     st.session_state.setdefault("b_cat", "bottle")
-    category = st.text_input("Category Name", key="b_cat")
+    st.session_state.setdefault("b_backbone", "resnet18")
+    st.session_state.setdefault("b_feature_layers", "l2_l3")
+    st.session_state.setdefault("b_coreset_ratio", 0.1)
+    st.session_state.setdefault("b_num_neighbors", 9)
+    st.session_state.setdefault("patchcore_mask", False)
+    st.session_state.setdefault("patchcore_clahe", False)
+    st.session_state.setdefault("patchcore_gaussian", False)
+
+    def load_patchcore_optuna_defaults() -> None:
+        selected_cat = st.session_state.b_cat
+        registry_path = Path("data/hyperparameters/patchcore_best.json")
+        if registry_path.exists():
+            with open(registry_path, encoding="utf-8") as f:
+                registry = json.load(f)
+
+            if selected_cat in registry:
+                cfg = registry[selected_cat]
+                if "preprocessing" not in cfg:
+                    prep = cfg
+                    hp = cfg
+                else:
+                    prep = cfg.get("preprocessing", {})
+                    hp = cfg.get("model_hyperparameters", {})
+
+                if "backbone" in hp:
+                    st.session_state.b_backbone = hp["backbone"]
+                if "feature_layers" in hp:
+                    layers = hp["feature_layers"]
+                    st.session_state.b_feature_layers = "l2_l3_l4" if "layer4" in layers else "l2_l3"
+                if "coreset_sampling_ratio" in hp:
+                    st.session_state.b_coreset_ratio = float(hp["coreset_sampling_ratio"])
+                if "num_neighbors" in hp:
+                    st.session_state.b_num_neighbors = int(hp["num_neighbors"])
+
+                if "use_clahe" in prep:
+                    st.session_state.patchcore_clahe = prep["use_clahe"]
+                if "use_gaussian_blur" in prep:
+                    st.session_state.patchcore_gaussian = prep["use_gaussian_blur"]
+                if "use_foreground_mask" in prep:
+                    st.session_state.patchcore_mask = prep["use_foreground_mask"]
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    category = st.selectbox(
+        "Category Name", options=mvtec_categories, key="b_cat", on_change=load_patchcore_optuna_defaults
+    )
 
     st.subheader("Model Configuration")
-    c1, c2 = st.columns(2)
-    st.session_state.setdefault("b_backbone", "resnet18")
+    c1, c2, c3, c4 = st.columns(4)
     backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"], key="b_backbone")
-    st.session_state.setdefault("b_coreset_ratio", 0.1)
-    coreset_ratio = c2.slider("Coreset Sampling Ratio", min_value=0.01, max_value=0.2, step=0.01, key="b_coreset_ratio")
+    feature_layers_str = c2.selectbox("Feature Layers", ["l2_l3", "l2_l3_l4"], key="b_feature_layers")
+    feature_layers = ["layer2", "layer3", "layer4"] if feature_layers_str == "l2_l3_l4" else ["layer2", "layer3"]
+    coreset_ratio = c3.slider(
+        "Coreset Sampling Ratio", min_value=0.001, max_value=0.2, step=0.005, format="%.3f", key="b_coreset_ratio"
+    )
+    num_neighbors = c4.slider("Nearest Neighbors", min_value=1, max_value=20, step=1, key="b_num_neighbors")
 
     st.subheader("Preprocessing Options")
-    st.session_state.setdefault("patchcore_mask", False)
     use_mask = st.checkbox("Apply Otsu+Canny Foreground Masking (zeros out background)", key="patchcore_mask")
     st.session_state.setdefault("patchcore_clahe", False)
     use_clahe = st.checkbox("Apply CLAHE", key="patchcore_clahe")
@@ -590,6 +653,11 @@ def render_baseline_patchcore_tab() -> None:
 
     active_hash = selected_model_hash if load_selected_clicked else None
     active_force_retrain = False if load_selected_clicked else force_retrain
+    active_prep = (
+        selected_model_meta.get("_raw_preprocessing_steps", preprocessing_steps)
+        if load_selected_clicked and selected_model_meta
+        else preprocessing_steps
+    )
 
     spinner_msg = (
         f"Loading cached Patchcore model `{active_hash}` and evaluating..."
@@ -601,9 +669,11 @@ def render_baseline_patchcore_tab() -> None:
         payload = {
             "data_root": data_root,
             "category": category,
-            "preprocessing_steps": preprocessing_steps,
             "backbone": backbone,
+            "feature_layers": feature_layers,
             "coreset_sampling_ratio": coreset_ratio,
+            "num_neighbors": num_neighbors,
+            "preprocessing_steps": active_prep,
             "run_heatmap": run_heatmap,
             "force_retrain": active_force_retrain,
             "model_hash": active_hash,
@@ -641,8 +711,26 @@ def render_autoencoder_tab() -> None:
     col1, col2 = st.columns(2)
     st.session_state.setdefault("ae_root", "data/raw/mvtec_ad")
     data_root = col1.text_input("Dataset Root Directory", key="ae_root")
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
     st.session_state.setdefault("ae_cat", "bottle")
-    category = col2.text_input("Category Name", key="ae_cat")
+    category = col2.selectbox("Category Name", options=mvtec_categories, key="ae_cat")
 
     col_e, col_b, col_l, col_s = st.columns(4)
     st.session_state.setdefault("ae_epochs", 5)
@@ -936,9 +1024,64 @@ def render_keras_cae_tab() -> None:
     st.session_state.setdefault("kcae_clahe", False)
     st.session_state.setdefault("kcae_gaussian", False)
 
+    def load_optuna_defaults() -> None:
+        selected_cat = st.session_state.kcae_cat
+        registry_path = Path("data/hyperparameters/keras_cae_best.json")
+        if registry_path.exists():
+            with open(registry_path, encoding="utf-8") as f:
+                registry = json.load(f)
+
+            if selected_cat in registry:
+                cfg = registry[selected_cat]
+                # Backward compatibility for flat schema just in case
+                if "preprocessing" not in cfg:
+                    prep = cfg
+                    hp = cfg
+                else:
+                    prep = cfg.get("preprocessing", {})
+                    hp = cfg.get("model_hyperparameters", {})
+
+                if "latent_dim" in hp:
+                    st.session_state.kcae_latent = hp["latent_dim"]
+                elif "latent_channels" in hp:
+                    st.session_state.kcae_latent = hp["latent_channels"]
+
+                if "use_clahe" in prep:
+                    st.session_state.kcae_clahe = prep["use_clahe"]
+                elif "apply_clahe" in prep:
+                    st.session_state.kcae_clahe = prep["apply_clahe"]
+
+                if "use_gaussian_blur" in prep:
+                    st.session_state.kcae_gaussian = prep["use_gaussian_blur"]
+                elif "apply_blur" in prep:
+                    st.session_state.kcae_gaussian = prep["apply_blur"]
+
+                if "use_foreground_mask" in prep:
+                    st.session_state.kcae_mask = prep["use_foreground_mask"]
+                elif "apply_foreground_mask" in prep:
+                    st.session_state.kcae_mask = prep["apply_foreground_mask"]
+
     col1, col2 = st.columns(2)
     data_root = col1.text_input("Dataset Root Directory", key="kcae_root")
-    category = col2.text_input("Category Name", key="kcae_cat")
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    category = col2.selectbox("Category Name", options=mvtec_categories, key="kcae_cat", on_change=load_optuna_defaults)
 
     st.subheader("Training Hyperparameters")
     c1, c2, c3, c4 = st.columns(4)

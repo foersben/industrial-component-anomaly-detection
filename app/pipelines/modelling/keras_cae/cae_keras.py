@@ -104,6 +104,7 @@ import logging
 from typing import Any
 
 import numpy as np
+import optuna
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +367,7 @@ def train_cae(
     lr_patience: int = 5,
     lr_factor: float = 0.5,
     min_delta: float = 1e-6,
+    trial: optuna.Trial | None = None,
 ) -> dict[str, list[float]]:
     """Train the CAE model using Masked Image Modeling (MIM).
 
@@ -399,6 +401,7 @@ def train_cae(
         lr_patience: Epochs without improvement before reducing learning rate.
         lr_factor: Factor by which to reduce the learning rate (e.g. 0.5).
         min_delta: Minimum change required to qualify as an improvement.
+        trial: Optional Optuna trial for early pruning.
 
     Returns:
         Dictionary containing lists of epoch-average loss values:
@@ -449,6 +452,12 @@ def train_cae(
             log_msg += f" | Val Anomaly Loss: {val_an_loss:.6f}"
 
         logger.info(log_msg)
+
+        # Optuna Pruning Integration
+        if trial is not None:
+            trial.report(float(monitor_loss), step=epoch)
+            if trial.should_prune():
+                raise optuna.exceptions.TrialPruned()
 
         # Callbacks Logic (Early Stopping, Checkpoint, ReduceLR)
         if monitor_loss < best_loss - min_delta:

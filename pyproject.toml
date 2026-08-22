@@ -123,6 +123,7 @@ huggingface_hub = ">=1.22.0,<2"
 just = ">=1.55.1,<2"
 jupyter = "*"
 jupyterlab = "*"
+ipykernel = "*"
 matplotlib = ">=3.11.0,<4"
 pandas = ">=3.0.3,<4"
 pillow = ">=12.3.0,<13"
@@ -133,6 +134,7 @@ statsmodels = ">=0.14.6,<0.15"
 streamlit = ">=1.59.1,<2"
 pynvml = ">=11.5.0,<12"    # Runtime CUDA/VRAM detection for TF device selection
 scikit-image = "*"
+optuna = ">=4.9.0,<5"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 # ── PyTorch (GPU / CUDA) ────────────────────────────────────────────────────

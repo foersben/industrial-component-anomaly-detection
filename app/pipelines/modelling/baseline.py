@@ -362,7 +362,9 @@ def _normalize_preprocessing_steps(steps: list[dict[str, Any]] | None) -> list[d
 def find_cached_patchcore_model(
     category: str,
     backbone: str = "resnet18",
+    feature_layers: tuple[str, ...] = ("layer2", "layer3"),
     coreset_sampling_ratio: float = 0.1,
+    num_neighbors: int = 9,
     fpr_limit: float = 1e-4,
     preprocessing_steps: list[dict[str, Any]] | None = None,
     target_hash: str | None = None,
@@ -373,7 +375,9 @@ def find_cached_patchcore_model(
     Args:
         category: Component category name.
         backbone: Feature extractor backbone name.
+        feature_layers: Layers to extract features from.
         coreset_sampling_ratio: Ratio for coreset subsampling.
+        num_neighbors: Number of nearest neighbors for scoring.
         fpr_limit: Max allowable False Positive Rate.
         preprocessing_steps: Optional preprocessing step configurations.
         target_hash: Optional exact model hash to search for.
@@ -415,7 +419,11 @@ def find_cached_patchcore_model(
             continue
         if meta.get("backbone", "resnet18") != backbone:
             continue
+        if tuple(meta.get("feature_layers", ["layer2", "layer3"])) != tuple(feature_layers):
+            continue
         if abs(float(meta.get("coreset_sampling_ratio", 0.1)) - float(coreset_sampling_ratio)) > 1e-5:
+            continue
+        if int(meta.get("num_neighbors", 9)) != int(num_neighbors):
             continue
         if abs(float(meta.get("fpr_limit", 1e-4)) - float(fpr_limit)) > 1e-6:
             continue
@@ -675,7 +683,9 @@ def run_baseline(
     pipeline: list[dict[str, Any]] | PreprocessingPipeline | None = None,
     fpr_limit: float = 1e-4,
     backbone: str = "resnet18",
+    feature_layers: tuple[str, ...] = ("layer2", "layer3"),
     coreset_sampling_ratio: float = 0.1,
+    num_neighbors: int = 9,
     run_heatmap: bool = False,
     preprocessing_steps: list[dict[str, Any]] | None = None,
     force_retrain: bool = False,
@@ -690,7 +700,9 @@ def run_baseline(
         pipeline: Optional list of preprocessing step configurations or pipeline.
         fpr_limit: Maximum allowable False Positive Rate.
         backbone: Feature extractor backbone (e.g. 'resnet18', 'wide_resnet50_2').
+        feature_layers: Layers to extract features from.
         coreset_sampling_ratio: Ratio for coreset subsampling.
+        num_neighbors: Number of nearest neighbors for scoring.
         run_heatmap: Whether to compute heatmap overlays.
         preprocessing_steps: Deprecated alias for pipeline configuration list.
         force_retrain: If True, ignores cache and forces a full re-fit.
@@ -709,13 +721,18 @@ def run_baseline(
         raw_prep_list = _normalize_preprocessing_steps(steps_config)
 
     norm_prep_str = json.dumps(raw_prep_list, sort_keys=True)
-    hp_string = f"{category}_{backbone}_{coreset_sampling_ratio}_{fpr_limit}_{norm_prep_str}"
+    layer_str = "_".join(feature_layers)
+    hp_string = (
+        f"{category}_{backbone}_{layer_str}_{coreset_sampling_ratio}_{num_neighbors}_{fpr_limit}_{norm_prep_str}"
+    )
     computed_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
 
     cached = find_cached_patchcore_model(
         category=category,
         backbone=backbone,
+        feature_layers=feature_layers,
         coreset_sampling_ratio=coreset_sampling_ratio,
+        num_neighbors=num_neighbors,
         fpr_limit=fpr_limit,
         preprocessing_steps=raw_prep_list,
         target_hash=model_hash,
@@ -763,7 +780,9 @@ def run_baseline(
             "hyperparameters",
             {
                 "backbone": meta.get("backbone", backbone),
+                "feature_layers": meta.get("feature_layers", feature_layers),
                 "coreset_sampling_ratio": meta.get("coreset_sampling_ratio", coreset_sampling_ratio),
+                "num_neighbors": meta.get("num_neighbors", num_neighbors),
                 "fpr_limit": meta.get("fpr_limit", fpr_limit),
                 "train_batch_size": 16,
                 "eval_batch_size": 16,
@@ -829,7 +848,12 @@ def run_baseline(
         if test_data is not None:
             test_data.transform = transform_adapter
 
-    model = Patchcore(backbone=backbone, coreset_sampling_ratio=coreset_sampling_ratio)
+    model = Patchcore(
+        backbone=backbone,
+        layers=feature_layers,
+        coreset_sampling_ratio=coreset_sampling_ratio,
+        num_neighbors=num_neighbors,
+    )
     engine = Engine(accelerator="gpu", devices=1)
 
     # 2. Fit and Test
@@ -861,7 +885,9 @@ def run_baseline(
 
     hyperparams = {
         "backbone": backbone,
+        "feature_layers": feature_layers,
         "coreset_sampling_ratio": coreset_sampling_ratio,
+        "num_neighbors": num_neighbors,
         "fpr_limit": fpr_limit,
         "train_batch_size": 16,
         "eval_batch_size": 16,
@@ -874,7 +900,9 @@ def run_baseline(
         "model_type": "patchcore",
         "category": category,
         "backbone": backbone,
+        "feature_layers": feature_layers,
         "coreset_sampling_ratio": coreset_sampling_ratio,
+        "num_neighbors": num_neighbors,
         "fpr_limit": fpr_limit,
         "preprocessing_steps": raw_prep_list,
         "hyperparameters": hyperparams,

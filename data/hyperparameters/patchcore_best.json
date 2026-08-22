@@ -1,0 +1,17 @@
+{
+  "bottle": {
+    "target_metric": "pixel_aupimo",
+    "score": 0.0,
+    "preprocessing": {
+      "use_foreground_mask": true,
+      "use_clahe": false,
+      "use_gaussian_blur": true
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3",
+      "coreset_sampling_ratio": 0.013182694373726192,
+      "num_neighbors": 9
+    }
+  }
+}

@@ -477,6 +477,7 @@ def run_keras_cae_pipeline(
     run_heatmap: bool = False,
     force_retrain: bool = False,
     model_hash: str | None = None,
+    trial: Any | None = None,
 ) -> dict[str, Any]:
     """Run the complete Keras CAE anomaly detection pipeline for one MVTec category.
 
@@ -508,6 +509,7 @@ def run_keras_cae_pipeline(
         run_heatmap: Whether to compute Reconstruction Error heatmap overlays for anomalous images.
         force_retrain: If True, bypass the cache and force training of a new model.
         model_hash: Optional specific model hash to load directly from registry.
+        trial: Optional Optuna trial for hyperparameter optimization and pruning.
 
     Returns:
         Dictionary with all results (metrics, scores, heatmap, optional anomaly heatmaps).
@@ -647,6 +649,7 @@ def run_keras_cae_pipeline(
             patch_size=mask_patch_size,
             val_good_images=val_good_crops,
             val_anomalous_images=val_an_crops,
+            trial=trial,
         )
 
         # Save model and metadata to registry
