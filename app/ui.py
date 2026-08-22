@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 
 from app.pipelines.evaluation.visualization import render_evaluation_curves
+from app.pipelines.multi_stage_ae.cae_pipeline import delete_cached_model
 
 BACKEND_URL = "http://127.0.0.1:8000"
 
@@ -377,6 +378,7 @@ def render_keras_cae_tab() -> None:
 
     selected_model_hash: str | None = None
     selected_model_meta: dict[str, Any] | None = None
+    selected_model_hashes: list[str] = []
     load_selected_clicked = False
 
     if cached_models:
@@ -390,7 +392,7 @@ def render_keras_cae_tab() -> None:
             width="stretch",
             hide_index=True,
             on_select="rerun",
-            selection_mode="single-row",
+            selection_mode="multi-row",
             key="kcae_registry_selection",
         )
 
@@ -405,47 +407,80 @@ def render_keras_cae_tab() -> None:
                 elif hasattr(sel_attr, "rows"):
                     selected_rows = getattr(sel_attr, "rows", [])
 
-        if selected_rows and 0 <= selected_rows[0] < len(cached_models):
-            selected_model_meta = cached_models[selected_rows[0]]
-            selected_model_hash = str(selected_model_meta.get("Hash"))
+        selected_model_metas = [cached_models[r] for r in selected_rows if 0 <= r < len(cached_models)]
+        selected_model_hashes = [str(m.get("Hash")) for m in selected_model_metas]
 
-        if selected_model_hash and selected_model_meta:
-            # Sync inputs with selected model if selection changed
-            if st.session_state.get("_last_kcae_selected_hash") != selected_model_hash:
-                st.session_state["_last_kcae_selected_hash"] = selected_model_hash
-                st.session_state["kcae_cat"] = str(selected_model_meta.get("Category", "bottle"))
-                st.session_state["kcae_epochs"] = int(selected_model_meta.get("Epochs", 20))
-                st.session_state["kcae_latent"] = int(selected_model_meta.get("Latent", 32))
-                st.session_state["kcae_img_size"] = int(selected_model_meta.get("Img Size", 128))
-                st.session_state["kcae_batch"] = int(selected_model_meta.get("Batch", 16))
-                st.session_state["kcae_mask_ratio"] = float(selected_model_meta.get("Mask Ratio", 0.25))
+        if selected_model_hashes:
+            if len(selected_model_hashes) == 1:
+                selected_model_meta = selected_model_metas[0]
+                selected_model_hash = selected_model_hashes[0]
 
-                # Sync preprocessing checkboxes with the cached model's preprocessing configuration
-                raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
-                if isinstance(raw_prep, list):
-                    st.session_state["kcae_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
-                    st.session_state["kcae_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
-                    st.session_state["kcae_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+                # Sync inputs with selected model if selection changed
+                if st.session_state.get("_last_kcae_selected_hash") != selected_model_hash:
+                    st.session_state["_last_kcae_selected_hash"] = selected_model_hash
+                    st.session_state["kcae_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                    st.session_state["kcae_epochs"] = int(selected_model_meta.get("Epochs", 20))
+                    st.session_state["kcae_latent"] = int(selected_model_meta.get("Latent", 32))
+                    st.session_state["kcae_img_size"] = int(selected_model_meta.get("Img Size", 128))
+                    st.session_state["kcae_batch"] = int(selected_model_meta.get("Batch", 16))
+                    st.session_state["kcae_mask_ratio"] = float(selected_model_meta.get("Mask Ratio", 0.25))
 
-            st.success(
-                f"Selected cached model: **`{selected_model_hash}`** ("
-                f"Category: `{selected_model_meta.get('Category')}`, "
-                f"Img Size: `{selected_model_meta.get('Img Size')}`, "
-                f"Latent: `{selected_model_meta.get('Latent')}`, "
-                f"Epochs: `{selected_model_meta.get('Epochs')}`, "
-                f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
-                f"Created: `{selected_model_meta.get('Created')}`)"
-            )
-            col_load, _ = st.columns([1, 2])
-            load_selected_clicked = col_load.button(
-                f"⚡ Load & Evaluate Model `{selected_model_hash}`",
-                type="primary",
-                key="btn_load_kcae_selected",
-            )
+                    # Sync preprocessing checkboxes with the cached model's preprocessing configuration
+                    raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                    if isinstance(raw_prep, list):
+                        st.session_state["kcae_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                        st.session_state["kcae_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                        st.session_state["kcae_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
+                st.success(
+                    f"Selected cached model: **`{selected_model_hash}`** ("
+                    f"Category: `{selected_model_meta.get('Category')}`, "
+                    f"Img Size: `{selected_model_meta.get('Img Size')}`, "
+                    f"Latent: `{selected_model_meta.get('Latent')}`, "
+                    f"Epochs: `{selected_model_meta.get('Epochs')}`, "
+                    f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
+                    f"Created: `{selected_model_meta.get('Created')}`)"
+                )
+                col_load, col_del, _ = st.columns([2, 1, 3])
+                load_selected_clicked = col_load.button(
+                    f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                    type="primary",
+                    key="btn_load_kcae_selected",
+                )
+                with col_del.popover("🗑️ Delete Model", help=f"Delete model {selected_model_hash} from registry"):
+                    st.warning(f"Permanently delete model `{selected_model_hash}` from disk?")
+                    if st.button("Confirm Delete", type="primary", key="btn_confirm_delete_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path):
+                            st.session_state.pop("_last_kcae_selected_hash", None)
+                            st.success(f"Model `{selected_model_hash}` deleted successfully.")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete model `{selected_model_hash}`.")
+            else:
+                st.warning(f"Selected **{len(selected_model_hashes)} models**: `{', '.join(selected_model_hashes)}`")
+                col_del_multi, _ = st.columns([2, 4])
+                with col_del_multi.popover(
+                    f"🗑️ Delete {len(selected_model_hashes)} Models",
+                    help=f"Permanently delete {len(selected_model_hashes)} selected models from registry",
+                ):
+                    st.warning(f"Permanently delete **{len(selected_model_hashes)}** selected models from disk?")
+                    st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
+                    if st.button(
+                        f"Confirm Delete ({len(selected_model_hashes)} models)",
+                        type="primary",
+                        key="btn_confirm_delete_multi",
+                    ):
+                        deleted_cnt = 0
+                        for h in selected_model_hashes:
+                            if delete_cached_model(h, registry_base=registry_path):
+                                deleted_cnt += 1
+                        st.session_state.pop("_last_kcae_selected_hash", None)
+                        st.success(f"Successfully deleted {deleted_cnt} model(s).")
+                        st.rerun()
         else:
             st.info(
-                "💡 **Interactive Model Registry:** Click on any row above to select and load that cached model. "
-                "The pipeline always loads the newest matching cached model automatically when available."
+                "💡 **Interactive Model Registry:** Click on any row above to select, load, or delete that "
+                "cached model. The pipeline always loads the newest matching cached model automatically when available."
             )
     else:
         st.caption("No cached models found in registry.")

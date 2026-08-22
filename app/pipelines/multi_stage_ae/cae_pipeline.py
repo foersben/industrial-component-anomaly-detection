@@ -292,6 +292,39 @@ def find_cached_model(
     return newest_dir, newest_meta
 
 
+def delete_cached_model(model_hash: str, registry_base: str | Path = "data/models/keras_cae") -> bool:
+    """Safely delete a cached model directory from the model registry.
+
+    Args:
+        model_hash: The unique 12-character hex hash of the model to delete.
+        registry_base: Base directory path for the model registry.
+
+    Returns:
+        True if the model was found and successfully deleted, False otherwise.
+    """
+    if not model_hash or not isinstance(model_hash, str) or len(model_hash) < 4:
+        return False
+
+    base_path = Path(registry_base).resolve()
+    if not base_path.exists():
+        return False
+
+    target_dir = (base_path / model_hash).resolve()
+    # Safety guard: ensure target_dir is strictly a child of base_path
+    if not target_dir.is_relative_to(base_path) or target_dir == base_path:
+        logger.warning("Attempted invalid model deletion outside registry: %s", target_dir)
+        return False
+
+    if target_dir.exists() and target_dir.is_dir():
+        import shutil
+
+        shutil.rmtree(target_dir)
+        logger.info("Deleted cached model directory: %s", target_dir)
+        return True
+
+    return False
+
+
 def stitch_crops(
     crops: np.ndarray, n_images: int, img_h: int, img_w: int, crop_size: int, crop_stride: int
 ) -> np.ndarray:

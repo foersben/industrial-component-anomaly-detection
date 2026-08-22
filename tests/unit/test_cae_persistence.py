@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 from app.pipelines.multi_stage_ae.cae_keras import build_cae
-from app.pipelines.multi_stage_ae.cae_pipeline import find_cached_model, run_keras_cae_pipeline
+from app.pipelines.multi_stage_ae.cae_pipeline import delete_cached_model, find_cached_model, run_keras_cae_pipeline
 
 
 def test_keras_cae_save_and_load_numerical_consistency(tmp_path: Path) -> None:
@@ -138,3 +138,49 @@ def test_keras_cae_pipeline_cached_evaluation(mock_mvtec_dataset: str) -> None:
     assert np.isclose(res1["threshold"], res2["threshold"], atol=1e-5)
     assert np.isclose(res1["image_level"]["auroc"], res2["image_level"]["auroc"], atol=1e-5)
     assert np.allclose(res1["scores"], res2["scores"], atol=1e-5)
+
+
+def test_delete_cached_model_success(tmp_path: Path) -> None:
+    """Verify that delete_cached_model successfully deletes existing model directory and files.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    model_hash = "model_to_delete"
+    model_dir = tmp_path / model_hash
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "model.keras").touch()
+    (model_dir / "metadata.json").write_text("{}", encoding="utf-8")
+
+    assert model_dir.exists()
+    deleted = delete_cached_model(model_hash, registry_base=tmp_path)
+    assert deleted is True
+    assert not model_dir.exists()
+
+
+def test_delete_cached_model_nonexistent(tmp_path: Path) -> None:
+    """Verify that attempting to delete a non-existent model hash returns False gracefully.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    deleted = delete_cached_model("non_existent_hash", registry_base=tmp_path)
+    assert deleted is False
+
+
+def test_delete_cached_model_safety_guards(tmp_path: Path) -> None:
+    """Verify safety checks prevent path traversal or deletion outside registry base.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    # Empty string or short string
+    assert delete_cached_model("", registry_base=tmp_path) is False
+    assert delete_cached_model("ab", registry_base=tmp_path) is False
+
+    # Path traversal attempts
+    assert delete_cached_model("..", registry_base=tmp_path) is False
+    assert delete_cached_model("../..", registry_base=tmp_path) is False
+
+    # Non-existent registry base
+    assert delete_cached_model("model_123", registry_base=tmp_path / "non_existent") is False

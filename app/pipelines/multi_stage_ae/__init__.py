@@ -4,8 +4,9 @@ This package provides a modular, multi-step autoencoder architecture for industr
 component anomaly detection.
 """
 
-from app.pipelines.multi_stage_ae.cae_pipeline import run_keras_cae_pipeline
+from app.pipelines.multi_stage_ae.cae_pipeline import delete_cached_model, run_keras_cae_pipeline
 
 __all__ = [
+    "delete_cached_model",
     "run_keras_cae_pipeline",
 ]
