@@ -57,6 +57,8 @@ class BaselineEvaluationRequest(BaseModel):
     backbone: str = "resnet18"
     coreset_sampling_ratio: float = 0.1
     run_heatmap: bool = False
+    force_retrain: bool = False
+    model_hash: str | None = None
 
 
 class AutoencoderEvaluationRequest(BaseModel):
@@ -149,6 +151,8 @@ def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
         backbone=req.backbone,
         coreset_sampling_ratio=req.coreset_sampling_ratio,
         run_heatmap=req.run_heatmap,
+        force_retrain=req.force_retrain,
+        model_hash=req.model_hash,
     )
     return {
         "status": "success",

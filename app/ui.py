@@ -265,17 +265,19 @@ def _find_metric_files() -> list[str]:
         A list of metric file paths.
     """
     found_files: list[str] = []
-    for search_dir in [Path("results"), Path("data/external")]:
+    for search_dir in [Path("data/models"), Path("results"), Path("data/external")]:
         if search_dir.exists():
-            found_files.extend([str(p) for p in search_dir.rglob("*.npz") if not p.name.startswith(".")])
+            found_files.extend(
+                [str(p) for p in search_dir.rglob("*.npz") if not p.name.startswith(".") and ".trash" not in p.parts]
+            )
     return sorted(found_files)
 
 
 def _handle_theoretical_dummy_eval() -> None:
     """Render and execute the theoretical dummy evaluation form."""
     col1, col2 = st.columns(2)
-    pixels = col1.number_input("Total Pixels", min_value=1000, value=1000000, step=100000)
-    ratio = col2.slider("Anomaly Ratio", min_value=0.001, max_value=0.200, value=0.015, step=0.005)
+    pixels = col1.number_input("Total Pixels", value=1_000_000, step=100_000)
+    ratio = col2.slider("Synthetic Anomaly Ratio", min_value=0.001, max_value=0.05, value=0.015, step=0.001)
 
     if not st.button("Run Theoretical Evaluation"):
         return
@@ -325,9 +327,222 @@ def render_dummy_evaluation_tab() -> None:
 
 
 def render_baseline_patchcore_tab() -> None:
-    """Render the Patchcore anomaly detection evaluation tab."""
+    """Render the Patchcore anomaly detection evaluation tab with registry and caching support."""
     st.header("Patchcore Anomaly Detection & Evaluation")
-    st.markdown("Run Patchcore model training and evaluation on MVTec AD dataset (Image & Pixel level).")
+    st.markdown(
+        "Run Patchcore feature-memory-bank anomaly detection and evaluation on MVTec AD dataset "
+        "(Image & Pixel level) with automated caching, model versioning, and soft-delete recovery."
+    )
+
+    # ── Model Registry Table ──────────────────────────────────────────────────────
+    st.subheader("Model Registry (Cached Patchcore Models)")
+    registry_path = Path("data/models/patchcore")
+    cached_models: list[dict[str, Any]] = []
+    if registry_path.exists():
+        for meta_file in registry_path.rglob("metadata.json"):
+            if ".trash" in meta_file.parts:
+                continue
+            try:
+                with open(meta_file, encoding="utf-8") as f:
+                    meta = json.load(f)
+                    ts_str = meta.get("timestamp", "")
+                    created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
+                    prep_list = meta.get("preprocessing_steps", [])
+                    prep_names = [s.get("name", "") for s in prep_list] if isinstance(prep_list, list) else []
+                    prep_display = ", ".join(prep_names) if prep_names else "None"
+                    cached_models.append(
+                        {
+                            "Category": meta.get("category", "unknown"),
+                            "Hash": meta.get("hash", meta_file.parent.name),
+                            "Backbone": meta.get("backbone", "resnet18"),
+                            "Coreset Ratio": meta.get("coreset_sampling_ratio", 0.1),
+                            "Preprocessing": prep_display,
+                            "Created": created_display,
+                            "_raw_timestamp": ts_str,
+                            "_raw_preprocessing_steps": prep_list,
+                        }
+                    )
+            except Exception:
+                pass
+
+    selected_model_hash: str | None = None
+    selected_model_meta: dict[str, Any] | None = None
+    selected_model_hashes: list[str] = []
+    load_selected_clicked = False
+
+    if cached_models:
+        cached_models.sort(key=lambda x: str(x.get("_raw_timestamp", "")), reverse=True)
+        display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
+        df_models = pd.DataFrame(display_models)
+
+        selection = st.dataframe(
+            df_models,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            key="patchcore_registry_selection",
+        )
+
+        selected_rows: list[int] = []
+        if selection is not None:
+            if isinstance(selection, dict):
+                selected_rows = selection.get("selection", {}).get("rows", [])
+            else:
+                sel_attr = getattr(selection, "selection", None)
+                if isinstance(sel_attr, dict):
+                    selected_rows = sel_attr.get("rows", [])
+                elif hasattr(sel_attr, "rows"):
+                    selected_rows = getattr(sel_attr, "rows", [])
+
+        selected_model_metas = [cached_models[r] for r in selected_rows if 0 <= r < len(cached_models)]
+        selected_model_hashes = [str(m.get("Hash")) for m in selected_model_metas]
+
+        if selected_model_hashes:
+            if len(selected_model_hashes) == 1:
+                selected_model_meta = selected_model_metas[0]
+                selected_model_hash = selected_model_hashes[0]
+
+                if st.session_state.get("_last_patchcore_selected_hash") != selected_model_hash:
+                    st.session_state["_last_patchcore_selected_hash"] = selected_model_hash
+                    st.session_state["b_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                    st.session_state["b_backbone"] = str(selected_model_meta.get("Backbone", "resnet18"))
+                    st.session_state["b_coreset_ratio"] = float(selected_model_meta.get("Coreset Ratio", 0.1))
+
+                    raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                    if isinstance(raw_prep, list):
+                        st.session_state["patchcore_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                        st.session_state["patchcore_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                        st.session_state["patchcore_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
+                st.success(
+                    f"Selected cached Patchcore model: **`{selected_model_hash}`** ("
+                    f"Category: `{selected_model_meta.get('Category')}`, "
+                    f"Backbone: `{selected_model_meta.get('Backbone')}`, "
+                    f"Coreset Ratio: `{selected_model_meta.get('Coreset Ratio')}`, "
+                    f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
+                    f"Created: `{selected_model_meta.get('Created')}`)"
+                )
+                col_load, col_del, _ = st.columns([2, 1, 3])
+                load_selected_clicked = col_load.button(
+                    f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                    type="primary",
+                    key="btn_load_patchcore_selected",
+                )
+                with col_del.popover("🗑️ Delete Model", help=f"Move Patchcore model {selected_model_hash} to Trash"):
+                    st.warning(f"Move Patchcore model `{selected_model_hash}` to Trash (can be restored)?")
+                    if st.button("Move to Trash", type="primary", key="btn_confirm_delete_patchcore_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path, soft_delete=True):
+                            st.session_state.pop("_last_patchcore_selected_hash", None)
+                            st.success(f"Patchcore model `{selected_model_hash}` moved to Trash (reversible).")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete Patchcore model `{selected_model_hash}`.")
+            else:
+                st.warning(f"Selected **{len(selected_model_hashes)} models**: `{', '.join(selected_model_hashes)}`")
+                col_del_multi, _ = st.columns([2, 4])
+                with col_del_multi.popover(
+                    f"🗑️ Delete {len(selected_model_hashes)} Models",
+                    help=f"Move {len(selected_model_hashes)} selected Patchcore models to Trash",
+                ):
+                    st.warning(f"Move **{len(selected_model_hashes)}** selected Patchcore models to Trash?")
+                    st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
+                    if st.button(
+                        f"Move to Trash ({len(selected_model_hashes)} models)",
+                        type="primary",
+                        key="btn_confirm_delete_patchcore_multi",
+                    ):
+                        deleted_cnt = 0
+                        for h in selected_model_hashes:
+                            if delete_cached_model(h, registry_base=registry_path, soft_delete=True):
+                                deleted_cnt += 1
+                        st.session_state.pop("_last_patchcore_selected_hash", None)
+                        st.success(f"Moved {deleted_cnt} Patchcore model(s) to Trash (reversible).")
+                        st.rerun()
+        else:
+            st.info(
+                "💡 **Interactive Patchcore Registry:** Click on any row above to select, load, or delete that "
+                "cached model. The pipeline always loads the newest matching cached model automatically when available."
+            )
+    else:
+        st.caption("No cached Patchcore models found in registry.")
+
+    # ── Trash & Restoration Section ───────────────────────────────────────────────
+    trashed_models = list_trashed_models(registry_base=registry_path)
+    if trashed_models:
+        with st.expander(f"🗑️ Trash / Recently Deleted ({len(trashed_models)} models)", expanded=False):
+            st.caption("Soft-deleted Patchcore models are safely preserved here and can be restored at any time.")
+            trashed_display = []
+            for tm in trashed_models:
+                ts_raw = tm.get("timestamp", "")
+                trashed_display.append(
+                    {
+                        "Category": tm.get("category", "unknown"),
+                        "Hash": tm.get("hash", "unknown"),
+                        "Backbone": tm.get("backbone", "resnet18"),
+                        "Coreset Ratio": tm.get("coreset_sampling_ratio", 0.1),
+                        "Created": ts_raw[:19].replace("T", " ") if ts_raw else "Unknown",
+                    }
+                )
+            df_trashed = pd.DataFrame(trashed_display)
+            trash_selection = st.dataframe(
+                df_trashed,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="patchcore_trash_selection",
+            )
+
+            trashed_sel_rows: list[int] = []
+            if trash_selection is not None:
+                if isinstance(trash_selection, dict):
+                    trashed_sel_rows = trash_selection.get("selection", {}).get("rows", [])
+                else:
+                    sel_attr = getattr(trash_selection, "selection", None)
+                    if isinstance(sel_attr, dict):
+                        trashed_sel_rows = sel_attr.get("rows", [])
+                    elif hasattr(sel_attr, "rows"):
+                        trashed_sel_rows = getattr(sel_attr, "rows", [])
+
+            trashed_selected_hashes = [
+                str(trashed_models[r].get("hash")) for r in trashed_sel_rows if 0 <= r < len(trashed_models)
+            ]
+
+            col_rest, col_purge, _ = st.columns([2, 2, 4])
+            if trashed_selected_hashes:
+                if col_rest.button(
+                    f"♻️ Restore Selected ({len(trashed_selected_hashes)})",
+                    type="primary",
+                    key="btn_restore_patchcore_selected",
+                ):
+                    restored_cnt = 0
+                    for th in trashed_selected_hashes:
+                        if restore_cached_model(th, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored {restored_cnt} Patchcore model(s) back to registry!")
+                    st.rerun()
+            else:
+                if col_rest.button("♻️ Restore All Trashed", key="btn_restore_patchcore_all"):
+                    restored_cnt = 0
+                    for tm in trashed_models:
+                        th_val = str(tm.get("hash", ""))
+                        if th_val and restore_cached_model(th_val, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored all {restored_cnt} Patchcore model(s) back to registry!")
+                    st.rerun()
+
+            with col_purge.popover(
+                "⚠️ Empty Trash (Permanent)",
+                help="Permanently delete all Patchcore models in Trash",
+            ):
+                st.error("Are you sure you want to permanently delete these models? This cannot be undone.")
+                if st.button("Yes, Empty Trash", type="primary", key="btn_purge_patchcore_trash"):
+                    cnt = purge_trash(registry_base=registry_path)
+                    st.success(f"Permanently purged {cnt} Patchcore model(s) from disk.")
+                    st.rerun()
+
+    st.divider()
 
     st.session_state.setdefault("b_root", "data/raw/mvtec_ad")
     data_root = st.text_input("Dataset Root Directory", key="b_root")
@@ -360,10 +575,29 @@ def render_baseline_patchcore_tab() -> None:
     st.session_state.setdefault("b_heatmap", False)
     run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", key="b_heatmap")
 
-    if not st.button("Run Patchcore Evaluation Pipeline"):
+    force_retrain = st.checkbox(
+        "Force Retrain (Ignore Cache)",
+        value=False,
+        key="patchcore_force_retrain",
+        help="Check this to force re-running model training even if an identical cached run exists in the registry.",
+    )
+
+    col_btn, _ = st.columns([2, 4])
+    run_clicked = col_btn.button("Run Patchcore Evaluation Pipeline", key="btn_run_patchcore")
+
+    if not (run_clicked or load_selected_clicked):
         return
 
-    with st.spinner("Fitting model and evaluating Image & Pixel level metrics..."):
+    active_hash = selected_model_hash if load_selected_clicked else None
+    active_force_retrain = False if load_selected_clicked else force_retrain
+
+    spinner_msg = (
+        f"Loading cached Patchcore model `{active_hash}` and evaluating..."
+        if load_selected_clicked
+        else "Fitting Patchcore model and evaluating Image & Pixel level metrics..."
+    )
+
+    with st.spinner(spinner_msg):
         payload = {
             "data_root": data_root,
             "category": category,
@@ -371,6 +605,8 @@ def render_baseline_patchcore_tab() -> None:
             "backbone": backbone,
             "coreset_sampling_ratio": coreset_ratio,
             "run_heatmap": run_heatmap,
+            "force_retrain": active_force_retrain,
+            "model_hash": active_hash,
         }
         data = make_api_request("/api/pipelines/baseline", payload, timeout=300)
 
