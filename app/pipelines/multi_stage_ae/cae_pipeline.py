@@ -233,6 +233,8 @@ def find_cached_model(
     # 2. Otherwise, search all models and find those matching hyperparameters
     candidates: list[tuple[float, Path, dict[str, Any]]] = []
     for meta_file in base_path.rglob("metadata.json"):
+        if ".trash" in meta_file.parts:
+            continue
         model_dir = meta_file.parent
         model_file = model_dir / "model.keras"
         if not model_file.exists():
@@ -292,15 +294,23 @@ def find_cached_model(
     return newest_dir, newest_meta
 
 
-def delete_cached_model(model_hash: str, registry_base: str | Path = "data/models/keras_cae") -> bool:
+def delete_cached_model(
+    model_hash: str,
+    registry_base: str | Path = "data/models/keras_cae",
+    soft_delete: bool = True,
+) -> bool:
     """Safely delete a cached model directory from the model registry.
+
+    When soft_delete is True (default), moves the model to a .trash/ recovery directory,
+    enabling non-destructive undo and restore operations.
 
     Args:
         model_hash: The unique 12-character hex hash of the model to delete.
         registry_base: Base directory path for the model registry.
+        soft_delete: If True, moves the model to .trash/; if False, permanently deletes.
 
     Returns:
-        True if the model was found and successfully deleted, False otherwise.
+        True if the model was found and successfully deleted/trashed, False otherwise.
     """
     if not model_hash or not isinstance(model_hash, str) or len(model_hash) < 4:
         return False
@@ -310,19 +320,122 @@ def delete_cached_model(model_hash: str, registry_base: str | Path = "data/model
         return False
 
     target_dir = (base_path / model_hash).resolve()
-    # Safety guard: ensure target_dir is strictly a child of base_path
-    if not target_dir.is_relative_to(base_path) or target_dir == base_path:
+    # Safety guard: ensure target_dir is strictly a direct child of base_path (not .trash or outside)
+    if not target_dir.is_relative_to(base_path) or target_dir == base_path or target_dir.name == ".trash":
         logger.warning("Attempted invalid model deletion outside registry: %s", target_dir)
         return False
 
-    if target_dir.exists() and target_dir.is_dir():
-        import shutil
+    if not (target_dir.exists() and target_dir.is_dir()):
+        return False
 
-        shutil.rmtree(target_dir)
-        logger.info("Deleted cached model directory: %s", target_dir)
+    import shutil
+
+    if soft_delete:
+        trash_dir = base_path / ".trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir = trash_dir / model_hash
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir)
+        shutil.move(str(target_dir), str(dest_dir))
+        logger.info("Moved cached model directory to trash: %s -> %s", target_dir, dest_dir)
         return True
 
-    return False
+    shutil.rmtree(target_dir)
+    logger.info("Permanently deleted cached model directory: %s", target_dir)
+    return True
+
+
+def restore_cached_model(
+    model_hash: str,
+    registry_base: str | Path = "data/models/keras_cae",
+) -> bool:
+    """Restore a previously soft-deleted model from the .trash/ recovery directory.
+
+    Args:
+        model_hash: The unique 12-character hex hash of the model to restore.
+        registry_base: Base directory path for the model registry.
+
+    Returns:
+        True if the model was found in .trash and restored, False otherwise.
+    """
+    if not model_hash or not isinstance(model_hash, str) or len(model_hash) < 4:
+        return False
+
+    base_path = Path(registry_base).resolve()
+    trash_dir = base_path / ".trash"
+    source_dir = (trash_dir / model_hash).resolve()
+    dest_dir = (base_path / model_hash).resolve()
+
+    if not source_dir.exists() or not source_dir.is_dir():
+        return False
+
+    import shutil
+
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    shutil.move(str(source_dir), str(dest_dir))
+    logger.info("Restored model directory from trash: %s -> %s", source_dir, dest_dir)
+    return True
+
+
+def list_trashed_models(registry_base: str | Path = "data/models/keras_cae") -> list[dict[str, Any]]:
+    """List all models currently held in the .trash/ recovery directory.
+
+    Args:
+        registry_base: Base directory path for the model registry.
+
+    Returns:
+        List of metadata dictionaries for all trashed models.
+    """
+    base_path = Path(registry_base).resolve()
+    trash_dir = base_path / ".trash"
+    trashed: list[dict[str, Any]] = []
+    if not trash_dir.exists():
+        return trashed
+
+    for meta_file in trash_dir.rglob("metadata.json"):
+        try:
+            with open(meta_file, encoding="utf-8") as f:
+                meta = json.load(f)
+                meta["hash"] = meta.get("hash", meta_file.parent.name)
+                trashed.append(meta)
+        except Exception:
+            trashed.append({"hash": meta_file.parent.name})
+    return trashed
+
+
+def purge_trash(
+    registry_base: str | Path = "data/models/keras_cae",
+    model_hash: str | None = None,
+) -> int:
+    """Permanently delete models from the .trash/ recovery directory.
+
+    Args:
+        registry_base: Base directory path for the model registry.
+        model_hash: Optional specific model hash to purge. If None, empties the entire trash.
+
+    Returns:
+        Number of model directories permanently deleted.
+    """
+    base_path = Path(registry_base).resolve()
+    trash_dir = base_path / ".trash"
+    if not trash_dir.exists():
+        return 0
+
+    import shutil
+
+    purged_count = 0
+    if model_hash:
+        target = trash_dir / model_hash
+        if target.exists() and target.is_dir():
+            shutil.rmtree(target)
+            purged_count += 1
+    else:
+        for child in list(trash_dir.iterdir()):
+            if child.is_dir():
+                shutil.rmtree(child)
+                purged_count += 1
+    return purged_count
 
 
 def stitch_crops(

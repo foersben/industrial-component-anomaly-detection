@@ -10,7 +10,12 @@ import requests
 import streamlit as st
 
 from app.pipelines.evaluation.visualization import render_evaluation_curves
-from app.pipelines.multi_stage_ae.cae_pipeline import delete_cached_model
+from app.pipelines.multi_stage_ae.cae_pipeline import (
+    delete_cached_model,
+    list_trashed_models,
+    purge_trash,
+    restore_cached_model,
+)
 
 BACKEND_URL = "http://127.0.0.1:8000"
 
@@ -350,6 +355,8 @@ def render_keras_cae_tab() -> None:
     cached_models: list[dict[str, Any]] = []
     if registry_path.exists():
         for meta_file in registry_path.rglob("metadata.json"):
+            if ".trash" in meta_file.parts:
+                continue
             try:
                 with open(meta_file, encoding="utf-8") as f:
                     meta = json.load(f)
@@ -447,12 +454,12 @@ def render_keras_cae_tab() -> None:
                     type="primary",
                     key="btn_load_kcae_selected",
                 )
-                with col_del.popover("🗑️ Delete Model", help=f"Delete model {selected_model_hash} from registry"):
-                    st.warning(f"Permanently delete model `{selected_model_hash}` from disk?")
-                    if st.button("Confirm Delete", type="primary", key="btn_confirm_delete_single"):
-                        if delete_cached_model(selected_model_hash, registry_base=registry_path):
+                with col_del.popover("🗑️ Delete Model", help=f"Move model {selected_model_hash} to Trash"):
+                    st.warning(f"Move model `{selected_model_hash}` to Trash (can be restored)?")
+                    if st.button("Move to Trash", type="primary", key="btn_confirm_delete_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path, soft_delete=True):
                             st.session_state.pop("_last_kcae_selected_hash", None)
-                            st.success(f"Model `{selected_model_hash}` deleted successfully.")
+                            st.success(f"Model `{selected_model_hash}` moved to Trash (reversible).")
                             st.rerun()
                         else:
                             st.error(f"Failed to delete model `{selected_model_hash}`.")
@@ -461,21 +468,21 @@ def render_keras_cae_tab() -> None:
                 col_del_multi, _ = st.columns([2, 4])
                 with col_del_multi.popover(
                     f"🗑️ Delete {len(selected_model_hashes)} Models",
-                    help=f"Permanently delete {len(selected_model_hashes)} selected models from registry",
+                    help=f"Move {len(selected_model_hashes)} selected models to Trash",
                 ):
-                    st.warning(f"Permanently delete **{len(selected_model_hashes)}** selected models from disk?")
+                    st.warning(f"Move **{len(selected_model_hashes)}** selected models to Trash?")
                     st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
                     if st.button(
-                        f"Confirm Delete ({len(selected_model_hashes)} models)",
+                        f"Move to Trash ({len(selected_model_hashes)} models)",
                         type="primary",
                         key="btn_confirm_delete_multi",
                     ):
                         deleted_cnt = 0
                         for h in selected_model_hashes:
-                            if delete_cached_model(h, registry_base=registry_path):
+                            if delete_cached_model(h, registry_base=registry_path, soft_delete=True):
                                 deleted_cnt += 1
                         st.session_state.pop("_last_kcae_selected_hash", None)
-                        st.success(f"Successfully deleted {deleted_cnt} model(s).")
+                        st.success(f"Moved {deleted_cnt} model(s) to Trash (reversible).")
                         st.rerun()
         else:
             st.info(
@@ -485,33 +492,118 @@ def render_keras_cae_tab() -> None:
     else:
         st.caption("No cached models found in registry.")
 
+    # ── Trash & Restoration Section ───────────────────────────────────────────────
+    trashed_models = list_trashed_models(registry_base=registry_path)
+    if trashed_models:
+        with st.expander(f"🗑️ Trash / Recently Deleted ({len(trashed_models)} models)", expanded=False):
+            st.caption("Soft-deleted models are safely preserved here and can be restored at any time.")
+            trashed_display = []
+            for tm in trashed_models:
+                ts_raw = tm.get("timestamp", "")
+                trashed_display.append(
+                    {
+                        "Category": tm.get("category", "unknown"),
+                        "Hash": tm.get("hash", "unknown"),
+                        "Img Size": tm.get("img_size", 128),
+                        "Latent": tm.get("latent_channels", tm.get("latent_dim", 32)),
+                        "Epochs": tm.get("epochs", 20),
+                        "Created": ts_raw[:19].replace("T", " ") if ts_raw else "Unknown",
+                    }
+                )
+            df_trashed = pd.DataFrame(trashed_display)
+            trash_selection = st.dataframe(
+                df_trashed,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="kcae_trash_selection",
+            )
+
+            trashed_sel_rows: list[int] = []
+            if trash_selection is not None:
+                if isinstance(trash_selection, dict):
+                    trashed_sel_rows = trash_selection.get("selection", {}).get("rows", [])
+                else:
+                    sel_attr = getattr(trash_selection, "selection", None)
+                    if isinstance(sel_attr, dict):
+                        trashed_sel_rows = sel_attr.get("rows", [])
+                    elif hasattr(sel_attr, "rows"):
+                        trashed_sel_rows = getattr(sel_attr, "rows", [])
+
+            trashed_selected_hashes = [
+                str(trashed_models[r].get("hash")) for r in trashed_sel_rows if 0 <= r < len(trashed_models)
+            ]
+
+            col_rest, col_purge, _ = st.columns([2, 2, 4])
+            if trashed_selected_hashes:
+                if col_rest.button(
+                    f"♻️ Restore Selected ({len(trashed_selected_hashes)})",
+                    type="primary",
+                    key="btn_restore_selected",
+                ):
+                    restored_cnt = 0
+                    for th in trashed_selected_hashes:
+                        if restore_cached_model(th, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored {restored_cnt} model(s) back to registry!")
+                    st.rerun()
+            else:
+                if col_rest.button("♻️ Restore All Trashed", key="btn_restore_all"):
+                    restored_cnt = 0
+                    for tm in trashed_models:
+                        th_val = str(tm.get("hash", ""))
+                        if th_val and restore_cached_model(th_val, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored all {restored_cnt} model(s) back to registry!")
+                    st.rerun()
+
+            with col_purge.popover(
+                "⚠️ Empty Trash (Permanent)", help="Permanently delete all models in trash from disk"
+            ):
+                st.warning("This will PERMANENTLY erase all models currently in the trash directory.")
+                if st.button("Confirm Empty Trash", type="primary", key="btn_confirm_purge_trash"):
+                    purged = purge_trash(registry_base=registry_path)
+                    st.success(f"Permanently erased {purged} model(s).")
+                    st.rerun()
+
     st.divider()
 
+    # Initialize session state defaults
+    st.session_state.setdefault("kcae_root", "data/raw/mvtec_ad")
+    st.session_state.setdefault("kcae_cat", "bottle")
+    st.session_state.setdefault("kcae_epochs", 20)
+    st.session_state.setdefault("kcae_latent", 32)
+    st.session_state.setdefault("kcae_img_size", 128)
+    st.session_state.setdefault("kcae_batch", 16)
+    st.session_state.setdefault("kcae_mask_ratio", 0.25)
+    st.session_state.setdefault("kcae_mask", True)
+    st.session_state.setdefault("kcae_clahe", False)
+    st.session_state.setdefault("kcae_gaussian", False)
+
     col1, col2 = st.columns(2)
-    data_root = col1.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="kcae_root")
-    category = col2.text_input("Category Name", value="bottle", key="kcae_cat")
+    data_root = col1.text_input("Dataset Root Directory", key="kcae_root")
+    category = col2.text_input("Category Name", key="kcae_cat")
 
     st.subheader("Training Hyperparameters")
     c1, c2, c3, c4 = st.columns(4)
-    epochs = c1.number_input("Epochs", min_value=1, max_value=100, value=20, step=5, key="kcae_epochs")
-    latent_channels = c2.number_input(
-        "Latent Channels", min_value=8, max_value=256, value=32, step=8, key="kcae_latent"
-    )
-    img_size = c3.number_input("Image Size", min_value=64, max_value=256, value=128, step=16, key="kcae_img_size")
-    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, value=16, step=4, key="kcae_batch")
+    epochs = c1.number_input("Epochs", min_value=1, max_value=100, step=5, key="kcae_epochs")
+    latent_channels = c2.number_input("Latent Channels", min_value=8, max_value=256, step=8, key="kcae_latent")
+    img_size = c3.number_input("Image Size", min_value=64, max_value=256, step=16, key="kcae_img_size")
+    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, step=4, key="kcae_batch")
 
     with st.expander("Advanced Hyperparameters"):
         ac1, ac2, ac3 = st.columns(3)
-        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, 0.25, 0.05, key="kcae_mask_ratio")
+        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, step=0.05, key="kcae_mask_ratio")
         threshold_method = ac2.selectbox("Threshold Method", ["quantile", "mahalanobis"])
         k_fraction = ac3.number_input(
             "Top-K Fraction", min_value=0.001, max_value=0.050, value=0.002, step=0.001, format="%.3f"
         )
 
     st.subheader("Preprocessing Options")
-    use_seg = st.checkbox("Apply Otsu+Canny Foreground Masking (BGRP-G)", value=True, key="kcae_mask")
-    use_clahe = st.checkbox("Apply CLAHE", value=False, key="kcae_clahe")
-    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False, key="kcae_gaussian")
+    use_seg = st.checkbox("Apply Otsu+Canny Foreground Masking (BGRP-G)", key="kcae_mask")
+    use_clahe = st.checkbox("Apply CLAHE", key="kcae_clahe")
+    use_gaussian = st.checkbox("Apply Gaussian Blur", key="kcae_gaussian")
 
     preprocessing_steps = []
     if use_seg:
