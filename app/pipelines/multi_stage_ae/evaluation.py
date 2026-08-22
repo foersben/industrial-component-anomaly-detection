@@ -302,7 +302,7 @@ def evaluate_cae(
         flat_masks = []
         for mask in gt_masks:
             if mask is not None and np.any(mask > 0):
-                flat_masks.append(mask.astype(np.uint8).flatten())
+                flat_masks.append((mask > 0).astype(np.uint8).flatten())
             else:
                 flat_masks.append(np.zeros((h, w), dtype=np.uint8).flatten())
 
