@@ -1,0 +1,2514 @@
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+import optuna
+
+from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
+
+logger = logging.getLogger(__name__)
+
+TEXTURE_CATEGORIES = {"carpet", "grid", "leather", "tile", "wood"}
+
+
+def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/raw/mvtec_ad") -> float:
+    """Optuna objective function for optimizing Keras CAE hyperparameters.
+
+    Args:
+        trial: Optuna trial object.
+        category_name: MVTec category name to optimize.
+        data_root: Path to the MVTec AD dataset.
+
+    Returns:
+        Pixel AUPIMO score to maximize.
+    """
+    # 1. Hyperparameter Search Space
+    latent_channels = trial.suggest_categorical("latent_channels", [16, 32, 64, 128])
+    apply_clahe = trial.suggest_categorical("apply_clahe", [True, False])
+    apply_blur = trial.suggest_categorical("apply_blur", [True, False])
+
+    blur_ksize = 5
+    if apply_blur:
+        blur_ksize = trial.suggest_categorical("blur_ksize", [3, 5, 7])
+
+    # Type-Specific Logic for MVTec categories
+    if category_name in TEXTURE_CATEGORIES:
+        apply_foreground_mask = False
+    else:
+        apply_foreground_mask = trial.suggest_categorical("apply_foreground_mask", [True, False])
+
+    # Build preprocessing steps
+    preprocessing_steps = []
+    if apply_foreground_mask:
+        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+    if apply_clahe:
+        preprocessing_steps.append({"name": "clahe", "params": {}})
+    if apply_blur:
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {"ksize": blur_ksize}})
+
+    # We use fewer epochs and a smaller batch size to quickly prune bad trials
+    epochs = 20
+    batch_size = 16
+
+    try:
+        results = run_keras_cae_pipeline(
+            data_root=data_root,
+            category=category_name,
+            latent_channels=latent_channels,
+            preprocessing_steps=preprocessing_steps,
+            epochs=epochs,
+            batch_size=batch_size,
+            force_retrain=True,  # Force retrain so it explores the space
+            trial=trial,  # Pass trial down to trigger native pruning
+        )
+    except optuna.exceptions.TrialPruned:
+        raise
+    except Exception as e:
+        logger.error("Trial failed during execution: %s", e)
+        raise optuna.exceptions.TrialPruned() from e
+
+    # Extract the target metric to maximize
+    pixel_aupimo = results.get("metrics", {}).get("pixel_aupimo")
+
+    if pixel_aupimo is None:
+        raise ValueError("Pixel AUPIMO score not found in results.")
+
+    return float(pixel_aupimo)
+
+
+def run_study(category_name: str, n_trials: int = 15, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
+    """Run the Optuna study and save the best parameters."""
+    study_name = f"keras_cae_{category_name}"
+
+    # We want to MAXIMIZE Pixel AUPIMO
+    study = optuna.create_study(
+        study_name=study_name,
+        direction="maximize",
+        pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=5, interval_steps=1),
+    )
+
+    study.optimize(lambda trial: objective(trial, category_name, data_root), n_trials=n_trials)
+
+    best_params = study.best_params
+
+    # Map to nested schema
+    is_texture = category_name in TEXTURE_CATEGORIES
+    use_mask = False if is_texture else best_params.get("apply_foreground_mask", False)
+
+    cfg = {
+        "target_metric": "pixel_aupimo",
+        "score": study.best_value,
+        "preprocessing": {
+            "use_foreground_mask": use_mask,
+            "use_clahe": best_params.get("apply_clahe", False),
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [8, 8],
+            "use_gaussian_blur": best_params.get("apply_blur", False),
+            "blur_ksize": best_params.get("blur_ksize", 5),
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": best_params.get("latent_channels", 32),
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16,
+        },
+    }
+
+    # Save to JSON registry
+    registry_path = Path("data/hyperparameters/keras_cae_best.json")
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if registry_path.exists():
+        with open(registry_path, encoding="utf-8") as f:
+            registry = json.load(f)
+    else:
+        registry = {}
+
+    registry[category_name] = cfg
+
+    with open(registry_path, "w", encoding="utf-8") as f:
+        json.dump(registry, f, indent=4)
+
+    logger.info("Study finished. Best Pixel AUPIMO: %.4f", study.best_value)
+    logger.info("Best Params: %s", cfg)
+
+    return cfg
+
+
+if __name__ == "__main__":
+    import argparse
+
+    logging.basicConfig(level=logging.INFO)
+
+    parser = argparse.ArgumentParser(description="Run Optuna study for Keras CAE")
+    parser.add_argument("--category", type=str, required=True, help="MVTec category name")
+    parser.add_argument("--n-trials", type=int, default=10, help="Number of trials to run")
+    parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Dataset root directory")
+
+    args = parser.parse_args()
+    run_study(args.category, n_trials=args.n_trials, data_root=args.data_root)
+"""Category-Adaptive Optuna Optimization for PatchCore."""
+
+import json
+from pathlib import Path
+from typing import Any
+
+import optuna
+import torch
+from anomalib.data import MVTecAD
+from anomalib.engine import Engine
+from anomalib.models import Patchcore
+
+from app.core.logger import logger
+from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
+from app.pipelines.preprocessing.factory import build_pipeline_from_configs
+
+# MVTec AD Categorization
+TEXTURES = {"carpet", "grid", "leather", "tile", "wood"}
+OBJECTS = {
+    "bottle",
+    "cable",
+    "capsule",
+    "hazelnut",
+    "metal_nut",
+    "pill",
+    "screw",
+    "toothbrush",
+    "transistor",
+    "zipper",
+}
+
+
+def _evaluate_patchcore(
+    category_name: str,
+    backbone: str,
+    feature_layers: tuple[str, ...],
+    coreset_ratio: float,
+    num_neighbors: int,
+    use_clahe: bool,
+    use_gaussian_blur: bool,
+    use_foreground_mask: bool,
+    data_root: str = "data/raw/mvtec_ad",
+) -> float:
+    """Evaluates a Patchcore configuration and returns the Pixel AUPIMO."""
+    # Build preprocessing pipeline
+    preprocessing_steps = []
+    if use_foreground_mask:
+        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+    if use_clahe:
+        preprocessing_steps.append({"name": "clahe", "params": {}})
+    if use_gaussian_blur:
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+
+    proc_pipeline = build_pipeline_from_configs(preprocessing_steps)
+    transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
+
+    # Initialize datamodule
+    datamodule = MVTecAD(
+        root=data_root,
+        category=category_name,
+        train_batch_size=16,
+        eval_batch_size=16,
+    )
+    datamodule.setup()
+
+    # Assign transforms
+    if hasattr(datamodule, "train_data") and datamodule.train_data:
+        datamodule.train_data.transform = transform_adapter  # type: ignore[attr-defined]
+    if hasattr(datamodule, "test_data") and datamodule.test_data:
+        datamodule.test_data.transform = transform_adapter  # type: ignore[attr-defined]
+
+    # Initialize model
+    model = Patchcore(
+        backbone=backbone,
+        layers=feature_layers,
+        coreset_sampling_ratio=coreset_ratio,
+        num_neighbors=num_neighbors,
+    )
+
+    # Run engine (No epochs for patchcore fit, just feature extraction)
+    engine = Engine(accelerator="gpu", devices=1)
+
+    try:
+        engine.fit(model, datamodule)
+
+        # We need the AUPIMO pixel metric. extract_and_save_pr_metrics provides this.
+        # It's better to just run standard engine.test if we only care about AUPIMO,
+        # but Anomalib engine test returns dictionaries. Let's just use engine.test directly
+        test_results = engine.test(model=model, datamodule=datamodule)
+        if test_results and len(test_results) > 0:
+            return float(test_results[0].get("pixel_AUPIMO", 0.0))
+        return 0.0
+    except Exception as e:
+        logger.error("Trial failed with error: %s", e)
+        raise optuna.exceptions.TrialPruned() from e
+    finally:
+        # Prevent OOM between trials
+        torch.cuda.empty_cache()
+
+
+def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/raw/mvtec_ad") -> float:
+    """Optuna objective function for tuning Patchcore."""
+    is_texture = category_name in TEXTURES
+
+    # Backbone & Layers
+    backbone = trial.suggest_categorical("backbone", ["resnet18", "wide_resnet50_2"])
+
+    # Layers (Patchcore expects sequence of strings)
+    layer_config = trial.suggest_categorical("feature_layers", ["l2_l3", "l2_l3_l4"])
+    feature_layers: tuple[str, ...]
+    if layer_config == "l2_l3":
+        feature_layers = ("layer2", "layer3")
+    else:
+        feature_layers = ("layer2", "layer3", "layer4")
+
+    # Coreset Sampling
+    coreset_ratio = trial.suggest_float("coreset_sampling_ratio", 0.001, 0.20, log=True)
+
+    # Nearest Neighbors
+    num_neighbors = trial.suggest_int("num_neighbors", 1, 9)
+
+    # Preprocessing
+    use_clahe = trial.suggest_categorical("use_clahe", [True, False])
+    use_gaussian_blur = trial.suggest_categorical("use_gaussian_blur", [True, False])
+
+    if is_texture:
+        use_foreground_mask = False
+    else:
+        use_foreground_mask = trial.suggest_categorical("use_foreground_mask", [True, False])
+
+    return _evaluate_patchcore(
+        category_name=category_name,
+        backbone=backbone,
+        feature_layers=feature_layers,
+        coreset_ratio=coreset_ratio,
+        num_neighbors=num_neighbors,
+        use_clahe=use_clahe,
+        use_gaussian_blur=use_gaussian_blur,
+        use_foreground_mask=use_foreground_mask,
+        data_root=data_root,
+    )
+
+
+def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
+    """Runs an Optuna study for Patchcore and returns the best configuration."""
+    study_name = f"patchcore_{category_name}"
+    study = optuna.create_study(
+        study_name=study_name,
+        direction="maximize",
+        pruner=optuna.pruners.MedianPruner(),
+    )
+
+    study.optimize(lambda t: objective(t, category_name, data_root), n_trials=n_trials)
+
+    best_trial = study.best_trial
+    logger.info("Best trial for %s:", category_name)
+    logger.info("  Value (Pixel AUPIMO): %f", best_trial.value)
+    logger.info("  Params: ")
+    for key, value in best_trial.params.items():
+        logger.info("    %s: %s", key, value)
+
+    is_texture = category_name in TEXTURES
+
+    cfg: dict[str, Any] = {
+        "target_metric": "pixel_aupimo",
+        "score": best_trial.value,
+        "preprocessing": {
+            "use_foreground_mask": False if is_texture else best_trial.params.get("use_foreground_mask", False),
+            "use_clahe": best_trial.params["use_clahe"],
+            "use_gaussian_blur": best_trial.params["use_gaussian_blur"],
+        },
+        "model_hyperparameters": {
+            "backbone": best_trial.params["backbone"],
+            "feature_layers": best_trial.params["feature_layers"],
+            "coreset_sampling_ratio": best_trial.params["coreset_sampling_ratio"],
+            "num_neighbors": best_trial.params["num_neighbors"],
+        },
+    }
+    return cfg
+
+
+if __name__ == "__main__":
+    # Example local run
+    best_cfg = run_study(category_name="bottle", n_trials=2)
+
+    out_path = Path("data/hyperparameters/patchcore_best.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if out_path.exists():
+        with open(out_path, encoding="utf-8") as f:
+            full_registry = json.load(f)
+    else:
+        full_registry = {}
+
+    full_registry["bottle"] = best_cfg
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(full_registry, f, indent=2)
+"""End-to-end orchestrator for the Keras CAE anomaly detection pipeline.
+
+This module ties together all the modular components developed in this package
+into a single, configurable pipeline that can be triggered from the API.
+
+Data Flow
+=========
+See the ASCII diagram below for the complete pipeline flow:
+
+    [MVTec Dataset]
+          │
+          ▼
+    ┌────────────────────────────────┐
+    │ 1. Data Loading                │  build_mvtec_manifest + filter by category
+    │    (framework-agnostic, numpy) │
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 2. Foreground Extraction       │  OtsuCannySegmentor → BGRP-G masking
+    │    (segmentation.py)           │  Eliminates background noise from scoring
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 3. Category-Aware Augmentation │  get_augmenter(category) → applied to TRAIN only
+    │    (augmentation.py)           │  Texture: heavy spatial; Object: light photometric
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 4. Normalise to [0, 1]         │  Divide by 255
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 5. Build & Train Keras CAE     │  ELU activations, AdamW, SSIM+MSE loss
+    │    (cae_keras.py)              │  With Masked Image Modeling (patch masking)
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 6. Score Test Images           │  Top-K pooling (image-level) +
+    │    (scoring.py)                │  Pixel error maps (pixel-level)
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 7. Adaptive Threshold          │  Calibrated from normal image scores
+    │    (scoring.py)                │  quantile or Mahalanobis method
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 8. Full Evaluation             │  Image AUROC + Pixel AUPIMO (FPR 1e-5..1e-4)
+    │    (evaluation.py)             │  + Accuracy / Precision / Recall
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │ 9. [Optional] SHAP XAI         │  SLIC superpixels + KernelExplainer
+    │    (explainability.py)         │  Attribution: red=anomaly, blue=normal
+    └──────────────┬─────────────────┘
+                   │
+                   ▼
+    [Results Dictionary → API → Streamlit UI]
+"""
+
+import hashlib
+import json
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from PIL import Image
+
+from app.domain.data import build_mvtec_manifest
+from app.pipelines.evaluation.cae_metrics import evaluate_cae
+from app.pipelines.evaluation.scoring import compute_adaptive_threshold, compute_image_scores
+from app.pipelines.modelling.keras_cae.cae_keras import _require_tf, build_cae, train_cae
+from app.pipelines.preprocessing import PreprocessingPipeline, build_pipeline_from_configs
+from app.pipelines.preprocessing.augmentation import augment_batch, get_augmenter
+
+logger = logging.getLogger(__name__)
+
+
+def _load_images_as_numpy(paths: list[Any], img_size: int, pipeline: PreprocessingPipeline | None = None) -> np.ndarray:
+    """Load, resize, and convert a list of image paths to a batched numpy array.
+
+    Args:
+        paths: List of absolute file paths to image files.
+        img_size: Target size for resizing (both width and height, square images assumed).
+        pipeline: Optional preprocessing pipeline to apply to each image.
+
+    Returns:
+        Numpy array of uint8 RGB images, shape (N, img_size, img_size, 3), values in [0, 255].
+    """
+    images: list[np.ndarray] = []
+    for path in paths:
+        with Image.open(path) as pil_img:
+            resized = pil_img.convert("RGB").resize((img_size, img_size), Image.Resampling.LANCZOS)
+            img_array = np.array(resized, dtype=np.uint8)
+
+        if pipeline is not None and len(pipeline) > 0:
+            img_array = pipeline(img_array)
+
+        images.append(img_array)
+
+    return np.stack(images, axis=0)  # (N, H, W, 3)
+
+
+def _load_masks_as_numpy(mask_paths: list[Any], img_size: int) -> list[np.ndarray | None]:
+    """Load ground truth defect masks for pixel-level evaluation.
+
+    Masks are resized and binarised (thresholded at 127) to produce clean binary arrays.
+    Handles None, pandas NaN (float), and invalid paths gracefully.
+
+    Args:
+        mask_paths: List of mask file paths. May contain None or NaN for images with no defect mask.
+        img_size: Target size for mask resizing.
+
+    Returns:
+        List of 2D binary numpy arrays (0 = normal, 1 = defect) or None for no-mask images.
+    """
+    masks: list[np.ndarray | None] = []
+    for mask_path in mask_paths:
+        if (
+            mask_path is None
+            or not isinstance(mask_path, (str, Path))
+            or not str(mask_path).strip()
+            or str(mask_path).lower() in ("nan", "none")
+            or not Path(mask_path).exists()
+        ):
+            masks.append(None)
+        else:
+            with Image.open(mask_path) as pil_mask:
+                resized = pil_mask.resize((img_size, img_size), Image.Resampling.NEAREST).convert("L")
+                mask_array = (np.array(resized, dtype=np.uint8) > 127).astype(np.uint8)
+            masks.append(mask_array)
+    return masks
+
+
+def extract_crops(images: np.ndarray, crop_size: int, crop_stride: int) -> np.ndarray:
+    """Extract overlapping crops from a batch of images.
+
+    Args:
+        images: Array of shape (N, H, W, C).
+        crop_size: Size of the square crop.
+        crop_stride: Stride between crops.
+
+    Returns:
+        Array of shape (N * num_crops, crop_size, crop_size, C).
+    """
+    _, h, w, c = images.shape
+    crops = []
+    for i in range(0, h - crop_size + 1, crop_stride):
+        for j in range(0, w - crop_size + 1, crop_stride):
+            crops.append(images[:, i : i + crop_size, j : j + crop_size, :])
+
+    crops_stack = np.stack(crops, axis=1)
+    return crops_stack.reshape(-1, crop_size, crop_size, c)
+
+
+def _normalize_preprocessing_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Normalize preprocessing step configurations for deterministic comparison and hashing."""
+    if not steps:
+        return []
+    normalized: list[dict[str, Any]] = []
+    for s in steps:
+        name = str(s.get("name", ""))
+        params = dict(s.get("params", {})) if isinstance(s.get("params"), dict) else {}
+        normalized.append({"name": name, "params": params})
+    normalized.sort(key=lambda x: x["name"])
+    return normalized
+
+
+def find_cached_model(
+    category: str,
+    img_size: int,
+    crop_size: int = 64,
+    crop_stride: int = 32,
+    latent_channels: int = 32,
+    epochs: int = 20,
+    batch_size: int = 16,
+    mask_ratio: float = 0.25,
+    mask_patch_size: int = 8,
+    preprocessing_steps: list[dict[str, Any]] | None = None,
+    target_hash: str | None = None,
+    registry_base: Path | str = "data/models/keras_cae",
+) -> tuple[Path, dict[str, Any]] | None:
+    """Find the newest cached model matching either a specific hash or the given hyperparameters.
+
+    Args:
+        category: Component category name.
+        img_size: Spatial image dimension.
+        crop_size: Crop dimension.
+        crop_stride: Crop sliding stride.
+        latent_channels: Bottleneck latent channels.
+        epochs: Number of epochs.
+        batch_size: Batch size.
+        mask_ratio: Mask ratio for MIM.
+        mask_patch_size: Mask patch size for MIM.
+        preprocessing_steps: Optional preprocessing step configurations.
+        target_hash: Optional exact model hash to search for.
+        registry_base: Path to the keras_cae model registry.
+
+    Returns:
+        Tuple of (model_dir, metadata_dict) if found, else None.
+    """
+    base_path = Path(registry_base)
+    if not base_path.exists():
+        return None
+
+    # 1. If explicit target_hash is given, look for exact directory
+    if target_hash:
+        target_dir = base_path / target_hash
+        model_file = target_dir / "model.keras"
+        meta_file = target_dir / "metadata.json"
+        if model_file.exists():
+            meta: dict[str, Any] = {}
+            if meta_file.exists():
+                try:
+                    with open(meta_file, encoding="utf-8") as f:
+                        meta = json.load(f)
+                except Exception:
+                    pass
+            return target_dir, meta
+
+    norm_req_prep = _normalize_preprocessing_steps(preprocessing_steps)
+
+    # 2. Otherwise, search all models and find those matching hyperparameters
+    candidates: list[tuple[float, Path, dict[str, Any]]] = []
+    for meta_file in base_path.rglob("metadata.json"):
+        if ".trash" in meta_file.parts:
+            continue
+        model_dir = meta_file.parent
+        model_file = model_dir / "model.keras"
+        if not model_file.exists():
+            continue
+
+        try:
+            with open(meta_file, encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            continue
+
+        # Check parameter compatibility
+        if meta.get("category") != category:
+            continue
+        if meta.get("img_size") != img_size:
+            continue
+        meta_latent = meta.get("latent_channels", meta.get("latent_dim", 32))
+        if meta_latent != latent_channels:
+            continue
+        if meta.get("epochs") != epochs:
+            continue
+        if meta.get("batch_size") != batch_size:
+            continue
+        if abs(float(meta.get("mask_ratio", 0.25)) - mask_ratio) > 1e-3:
+            continue
+        if meta.get("crop_size", 64) != crop_size:
+            continue
+        if meta.get("crop_stride", 32) != crop_stride:
+            continue
+        if meta.get("mask_patch_size", 8) != mask_patch_size:
+            continue
+
+        # Check preprocessing steps compatibility
+        meta_prep = _normalize_preprocessing_steps(meta.get("preprocessing_steps"))
+        if meta_prep != norm_req_prep:
+            continue
+
+        # Determine timestamp / mtime for sorting newest first
+        ts_str = meta.get("timestamp", "")
+        try:
+            if ts_str:
+                dt = datetime.fromisoformat(ts_str)
+                ts = dt.timestamp()
+            else:
+                ts = model_file.stat().st_mtime
+        except Exception:
+            ts = model_file.stat().st_mtime
+
+        candidates.append((ts, model_dir, meta))
+
+    if not candidates:
+        return None
+
+    # Sort descending by timestamp (newest first)
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    _, newest_dir, newest_meta = candidates[0]
+    return newest_dir, newest_meta
+
+
+def delete_cached_model(
+    model_hash: str,
+    registry_base: str | Path = "data/models/keras_cae",
+    soft_delete: bool = True,
+) -> bool:
+    """Safely delete a cached model directory from the model registry.
+
+    When soft_delete is True (default), moves the model to a .trash/ recovery directory,
+    enabling non-destructive undo and restore operations.
+
+    Args:
+        model_hash: The unique 12-character hex hash of the model to delete.
+        registry_base: Base directory path for the model registry.
+        soft_delete: If True, moves the model to .trash/; if False, permanently deletes.
+
+    Returns:
+        True if the model was found and successfully deleted/trashed, False otherwise.
+    """
+    if not model_hash or not isinstance(model_hash, str) or len(model_hash) < 4:
+        return False
+
+    base_path = Path(registry_base).resolve()
+    if not base_path.exists():
+        return False
+
+    target_dir = (base_path / model_hash).resolve()
+    # Safety guard: ensure target_dir is strictly a direct child of base_path (not .trash or outside)
+    if not target_dir.is_relative_to(base_path) or target_dir == base_path or target_dir.name == ".trash":
+        logger.warning("Attempted invalid model deletion outside registry: %s", target_dir)
+        return False
+
+    if not (target_dir.exists() and target_dir.is_dir()):
+        return False
+
+    import shutil
+
+    if soft_delete:
+        trash_dir = base_path / ".trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir = trash_dir / model_hash
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir)
+        shutil.move(str(target_dir), str(dest_dir))
+        logger.info("Moved cached model directory to trash: %s -> %s", target_dir, dest_dir)
+        return True
+
+    shutil.rmtree(target_dir)
+    logger.info("Permanently deleted cached model directory: %s", target_dir)
+    return True
+
+
+def restore_cached_model(
+    model_hash: str,
+    registry_base: str | Path = "data/models/keras_cae",
+) -> bool:
+    """Restore a previously soft-deleted model from the .trash/ recovery directory.
+
+    Args:
+        model_hash: The unique 12-character hex hash of the model to restore.
+        registry_base: Base directory path for the model registry.
+
+    Returns:
+        True if the model was found in .trash and restored, False otherwise.
+    """
+    if not model_hash or not isinstance(model_hash, str) or len(model_hash) < 4:
+        return False
+
+    base_path = Path(registry_base).resolve()
+    trash_dir = base_path / ".trash"
+    source_dir = (trash_dir / model_hash).resolve()
+    dest_dir = (base_path / model_hash).resolve()
+
+    if not source_dir.exists() or not source_dir.is_dir():
+        return False
+
+    import shutil
+
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    shutil.move(str(source_dir), str(dest_dir))
+    logger.info("Restored model directory from trash: %s -> %s", source_dir, dest_dir)
+    return True
+
+
+def list_trashed_models(registry_base: str | Path = "data/models/keras_cae") -> list[dict[str, Any]]:
+    """List all models currently held in the .trash/ recovery directory.
+
+    Args:
+        registry_base: Base directory path for the model registry.
+
+    Returns:
+        List of metadata dictionaries for all trashed models.
+    """
+    base_path = Path(registry_base).resolve()
+    trash_dir = base_path / ".trash"
+    trashed: list[dict[str, Any]] = []
+    if not trash_dir.exists():
+        return trashed
+
+    for meta_file in trash_dir.rglob("metadata.json"):
+        try:
+            with open(meta_file, encoding="utf-8") as f:
+                meta = json.load(f)
+                meta["hash"] = meta.get("hash", meta_file.parent.name)
+                trashed.append(meta)
+        except Exception:
+            trashed.append({"hash": meta_file.parent.name})
+    return trashed
+
+
+def purge_trash(
+    registry_base: str | Path = "data/models/keras_cae",
+    model_hash: str | None = None,
+) -> int:
+    """Permanently delete models from the .trash/ recovery directory.
+
+    Args:
+        registry_base: Base directory path for the model registry.
+        model_hash: Optional specific model hash to purge. If None, empties the entire trash.
+
+    Returns:
+        Number of model directories permanently deleted.
+    """
+    base_path = Path(registry_base).resolve()
+    trash_dir = base_path / ".trash"
+    if not trash_dir.exists():
+        return 0
+
+    import shutil
+
+    purged_count = 0
+    if model_hash:
+        target = trash_dir / model_hash
+        if target.exists() and target.is_dir():
+            shutil.rmtree(target)
+            purged_count += 1
+    else:
+        for child in list(trash_dir.iterdir()):
+            if child.is_dir():
+                shutil.rmtree(child)
+                purged_count += 1
+    return purged_count
+
+
+def stitch_crops(
+    crops: np.ndarray, n_images: int, img_h: int, img_w: int, crop_size: int, crop_stride: int
+) -> np.ndarray:
+    """Stitch overlapping crops back into full images by averaging overlapping regions."""
+    c = crops.shape[-1]
+    reconstructed = np.zeros((n_images, img_h, img_w, c), dtype=np.float32)
+    counts = np.zeros((n_images, img_h, img_w, 1), dtype=np.float32)
+
+    num_crops = crops.shape[0] // n_images
+    crops_reshaped = crops.reshape(n_images, num_crops, crop_size, crop_size, c)
+
+    idx = 0
+    for i in range(0, img_h - crop_size + 1, crop_stride):
+        for j in range(0, img_w - crop_size + 1, crop_stride):
+            reconstructed[:, i : i + crop_size, j : j + crop_size, :] += crops_reshaped[:, idx]
+            counts[:, i : i + crop_size, j : j + crop_size, :] += 1.0
+            idx += 1
+
+    counts = np.maximum(counts, 1.0)
+    return reconstructed / counts
+
+
+def run_keras_cae_pipeline(
+    data_root: str = "data/raw/mvtec_ad",
+    category: str = "bottle",
+    img_size: int = 256,
+    crop_size: int = 64,
+    crop_stride: int = 32,
+    latent_channels: int = 32,
+    epochs: int = 20,
+    batch_size: int = 16,
+    mask_ratio: float = 0.25,
+    mask_patch_size: int = 8,
+    threshold_method: str = "quantile",
+    k_fraction: float = 0.002,
+    preprocessing_steps: list[dict[str, Any]] | None = None,
+    run_heatmap: bool = False,
+    force_retrain: bool = False,
+    model_hash: str | None = None,
+    trial: Any | None = None,
+) -> dict[str, Any]:
+    """Run the complete Keras CAE anomaly detection pipeline for one MVTec category.
+
+    This is the main entry point called by the FastAPI endpoint. It:
+    1. Resolves cached model or configures new training parameters.
+    2. Loads train (normal only) and test images as numpy arrays using exact parameters.
+    3. Applies modular preprocessing transforms consistent with model state.
+    4. Normalises images to [0, 1].
+    5. Builds and trains the Keras CAE with MIM + SSIM+MSE + AdamW (or loads from cache).
+    6. Scores all test images using Top-K pooling.
+    7. Computes an adaptive threshold from normal test scores.
+    8. Evaluates with image-level AUROC and pixel-level AUPIMO.
+    9. Optionally computes Reconstruction Error Heatmap overlays for every anomalous test image.
+
+    Args:
+        data_root: Path to the MVTec AD dataset root directory.
+        category: MVTec category to train and evaluate on (e.g., 'bottle', 'wood').
+        img_size: Size (height and width) to resize base images to.
+        crop_size: Size of the sliding window crops extracted from the base image.
+        crop_stride: Stride of the sliding window.
+        latent_channels: Number of channels in the convolutional bottleneck.
+        epochs: Number of training epochs.
+        batch_size: Training batch size (number of crops, not full images).
+        mask_ratio: Fraction of patches to mask during Masked Image Modeling training.
+        mask_patch_size: Side length of each masked region within a crop.
+        threshold_method: ``"quantile"`` or ``"mahalanobis"`` for adaptive threshold.
+        k_fraction: Top-K fraction for image-level anomaly score pooling.
+        preprocessing_steps: Optional configuration list for preprocessing transforms.
+        run_heatmap: Whether to compute Reconstruction Error heatmap overlays for anomalous images.
+        force_retrain: If True, bypass the cache and force training of a new model.
+        model_hash: Optional specific model hash to load directly from registry.
+        trial: Optional Optuna trial for hyperparameter optimization and pruning.
+
+    Returns:
+        Dictionary with all results (metrics, scores, heatmap, optional anomaly heatmaps).
+    """
+    tf = _require_tf()
+
+    # ── 1. Cache Resolution (Pre-Dataset Loading) ──────────────────────────────
+    cached = (
+        find_cached_model(
+            category=category,
+            img_size=img_size,
+            crop_size=crop_size,
+            crop_stride=crop_stride,
+            latent_channels=latent_channels,
+            epochs=epochs,
+            batch_size=batch_size,
+            mask_ratio=mask_ratio,
+            mask_patch_size=mask_patch_size,
+            preprocessing_steps=preprocessing_steps,
+            target_hash=model_hash,
+        )
+        if not force_retrain
+        else None
+    )
+
+    loss_history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
+
+    if cached is not None:
+        registry_dir, meta = cached
+        resolved_hash = meta.get("hash", registry_dir.name)
+        model_path = registry_dir / "model.keras"
+        logger.info(
+            "Found newest cached model matching parameters (Hash: %s, Dir: %s). Loading from disk...",
+            resolved_hash,
+            registry_dir,
+        )
+        model = tf.keras.models.load_model(model_path, compile=False)
+        loss_history = meta.get("loss_history", loss_history)
+        model_hash = resolved_hash
+
+        # Extract and align hyperparameters strictly with cached model metadata
+        category = str(meta.get("category", category))
+        img_size = int(meta.get("img_size", img_size))
+        crop_size = int(meta.get("crop_size", crop_size))
+        crop_stride = int(meta.get("crop_stride", crop_stride))
+        latent_channels = int(meta.get("latent_channels", meta.get("latent_dim", latent_channels)))
+        epochs = int(meta.get("epochs", epochs))
+        batch_size = int(meta.get("batch_size", batch_size))
+        mask_ratio = float(meta.get("mask_ratio", mask_ratio))
+        mask_patch_size = int(meta.get("mask_patch_size", mask_patch_size))
+        threshold_method = str(meta.get("threshold_method", threshold_method))
+        k_fraction = float(meta.get("k_fraction", k_fraction))
+        if "preprocessing_steps" in meta and meta.get("preprocessing_steps") is not None:
+            preprocessing_steps = meta.get("preprocessing_steps")
+    else:
+        norm_prep = _normalize_preprocessing_steps(preprocessing_steps)
+        prep_str = json.dumps(norm_prep, sort_keys=True)
+        hp_string = (
+            f"{category}_{img_size}_{crop_size}_{crop_stride}_{latent_channels}_"
+            f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}_{prep_str}"
+        )
+        model_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
+        registry_dir = Path("data/models/keras_cae") / model_hash
+        model_path = registry_dir / "model.keras"
+        meta_path = registry_dir / "metadata.json"
+
+    logger.info("=== Keras CAE Pipeline: category='%s', img_size=%d, hash='%s' ===", category, img_size, model_hash)
+
+    # ── 2. Load Dataset Manifest ────────────────────────────────────────────────
+    manifest = build_mvtec_manifest(data_root)
+    cat = manifest[manifest["product"] == category].copy()
+
+    if cat.empty:
+        raise ValueError(f"No images found for category '{category}' in '{data_root}'")
+
+    from sklearn.model_selection import train_test_split
+
+    full_train_df = cat[(cat["split"] == "train") & (~cat["is_anomaly"])].copy()
+    test_df = cat[cat["split"] == "test"].copy()
+
+    # Reserve 15% of the normal training data for validation to prevent test set leakage
+    train_df, val_df = train_test_split(full_train_df, test_size=0.15, random_state=42)
+
+    train_paths = train_df["path"].tolist()
+    val_paths = val_df["path"].tolist()
+    test_paths = test_df["path"].tolist()
+    test_labels = test_df["is_anomaly"].astype(int).to_numpy()
+    mask_paths = test_df["mask_path"].tolist()
+
+    logger.info("Train (normal): %d | Val (normal): %d | Test: %d", len(train_paths), len(val_paths), len(test_paths))
+
+    # ── 3. Preprocessing ────────────────────────────────────────────────────────
+    pipeline = build_pipeline_from_configs(preprocessing_steps)
+    if len(pipeline) > 0:
+        logger.info("Applying %d preprocessing steps.", len(pipeline))
+
+    train_images_uint8 = _load_images_as_numpy(train_paths, img_size, pipeline)
+    val_images_uint8 = _load_images_as_numpy(val_paths, img_size, pipeline)
+    test_images_uint8 = _load_images_as_numpy(test_paths, img_size, pipeline)
+
+    # ── 4. Category-Aware Augmentation (Training Only) ─────────────────────────
+    augmenter = get_augmenter(category)
+    # Augment training data: double the training set with one augmented copy
+    augmented = augment_batch(train_images_uint8, augmenter)
+    train_images_uint8 = np.concatenate([train_images_uint8, augmented], axis=0)
+    logger.info("After augmentation: %d training images.", len(train_images_uint8))
+
+    # ── 5. Normalise to [0, 1] ──────────────────────────────────────────────────
+    train_images = train_images_uint8.astype(np.float32) / 255.0
+    test_images = test_images_uint8.astype(np.float32) / 255.0
+
+    # ── 6. Build & Train Keras CAE (if not cached) ──────────────────────────────
+    logger.info("Extracting overlapping %dx%d crops for training...", crop_size, crop_size)
+    train_crops = extract_crops(train_images, crop_size, crop_stride)
+
+    val_good_images = val_images_uint8.astype(np.float32) / 255.0
+    val_good_crops = extract_crops(val_good_images, crop_size, crop_stride) if len(val_good_images) > 0 else None
+    val_an_crops = None  # No anomalous images used during validation tuning
+
+    dataset_split = {
+        "train_normal": len(train_paths),
+        "val_normal": len(val_paths),
+        "test_total": len(test_paths),
+        "test_normal": int(sum(1 for label_val in test_labels if label_val == 0)),
+        "test_anomalous": int(sum(1 for label_val in test_labels if label_val == 1)),
+    }
+
+    if cached is None:
+        logger.info("No cache found (or force_retrain=True). Training new model (Hash: %s)...", model_hash)
+        model = build_cae(crop_size=crop_size, latent_channels=latent_channels)
+        loss_history = train_cae(
+            model=model,
+            train_images=train_crops,
+            epochs=epochs,
+            batch_size=batch_size,
+            mask_ratio=mask_ratio,
+            patch_size=mask_patch_size,
+            val_good_images=val_good_crops,
+            val_anomalous_images=val_an_crops,
+            trial=trial,
+        )
+
+        # Save model and metadata to registry
+        registry_dir.mkdir(parents=True, exist_ok=True)
+        model.save(model_path)
+        metadata = {
+            "hash": model_hash,
+            "category": category,
+            "img_size": img_size,
+            "crop_size": crop_size,
+            "crop_stride": crop_stride,
+            "latent_channels": latent_channels,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "mask_ratio": mask_ratio,
+            "mask_patch_size": mask_patch_size,
+            "threshold_method": threshold_method,
+            "k_fraction": k_fraction,
+            "preprocessing_steps": preprocessing_steps or [],
+            "dataset_split": dataset_split,
+            "loss_history": loss_history,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=4)
+        logger.info("Saved model and metadata to %s", registry_dir)
+
+    # ── 6. Compute Adaptive Threshold on Normal Test Images ─────────────────────
+    logger.info("Extracting crops for val_good images and predicting...")
+    val_good_reconstructed_crops = model.predict(val_good_crops, batch_size=batch_size, verbose=0)
+    val_good_reconstructed = stitch_crops(
+        val_good_reconstructed_crops, len(val_good_images), img_size, img_size, crop_size, crop_stride
+    )
+
+    normal_scores, _ = compute_image_scores(
+        model, val_good_images, k_fraction=k_fraction, reconstructions=val_good_reconstructed
+    )
+    threshold = compute_adaptive_threshold(normal_scores, method=threshold_method)  # type: ignore[arg-type]
+
+    # ── 7. Full Evaluation ──────────────────────────────────────────────────────
+    logger.info("Extracting crops for all test images and predicting...")
+    test_crops = extract_crops(test_images, crop_size, crop_stride)
+    test_reconstructed_crops = model.predict(test_crops, batch_size=batch_size, verbose=0)
+    test_reconstructed = stitch_crops(
+        test_reconstructed_crops, len(test_images), img_size, img_size, crop_size, crop_stride
+    )
+
+    gt_masks = _load_masks_as_numpy(mask_paths, img_size)
+    results = evaluate_cae(
+        model=model,
+        test_images=test_images,
+        test_labels=test_labels,
+        gt_masks=gt_masks,
+        threshold=threshold,
+        k_fraction=k_fraction,
+        output_dir=registry_dir,
+        reconstructions=test_reconstructed,
+    )
+    t_aupimo_min = 0.0
+    aupimo_recall = 0.0
+    pixel_file = registry_dir / "pixel_metrics.npz"
+    if pixel_file.exists():
+        try:
+            data = np.load(pixel_file)
+            if "t_aupimo_min" in data:
+                t_aupimo_min = float(data["t_aupimo_min"])
+            if "aupimo" in data:
+                aupimo_recall = float(data["aupimo"])
+        except Exception:
+            pass
+
+    results["image_level"] = {
+        "auroc": results.get("auroc", 0.0),
+        "f1_score": results.get("f1_score", 0.0),
+        "precision": results.get("precision", 0.0),
+        "recall": results.get("recall", 0.0),
+        "threshold": threshold,
+        "metrics_path": str(registry_dir / "image_metrics.npz"),
+    }
+    results["pixel_level"] = {
+        "auroc": results.get("pixel_auroc", results.get("auroc", 0.0)),
+        "f1_score": results.get("pixel_f1", results.get("f1_score", 0.0)),
+        "aupimo_score": results.get("aupimo", 0.0),
+        "threshold_limit": t_aupimo_min,
+        "tpr_at_limit": aupimo_recall,
+        "fpr_lower_bound": 1e-5,
+        "fpr_upper_bound": 1e-4,
+        "t_aupimo_min": t_aupimo_min,
+        "aupimo": results.get("aupimo", 0.0),
+        "metrics_path": str(pixel_file),
+    }
+    results["final_train_loss"] = loss_history["train"][-1] if loss_history["train"] else 0.0
+    results["category"] = category
+    results["epochs"] = epochs
+    results["model_hash"] = model_hash
+    results["loss_history"] = loss_history
+
+    # Pass through metadata, hyperparameters, and dataset split for UI/API consumption
+    active_meta = cached[1] if cached is not None else metadata
+    results["metadata"] = active_meta
+    results["preprocessing_steps"] = (
+        active_meta.get("preprocessing_steps")
+        if active_meta and "preprocessing_steps" in active_meta
+        else (preprocessing_steps or [])
+    )
+    results["hyperparameters"] = {
+        "crop_size": active_meta.get("crop_size", crop_size) if active_meta else crop_size,
+        "crop_stride": active_meta.get("crop_stride", crop_stride) if active_meta else crop_stride,
+        "latent_channels": (
+            active_meta.get("latent_channels", active_meta.get("latent_dim", latent_channels))
+            if active_meta
+            else latent_channels
+        ),
+        "epochs": active_meta.get("epochs", epochs) if active_meta else epochs,
+        "batch_size": active_meta.get("batch_size", batch_size) if active_meta else batch_size,
+        "mask_ratio": active_meta.get("mask_ratio", mask_ratio) if active_meta else mask_ratio,
+        "mask_patch_size": active_meta.get("mask_patch_size", mask_patch_size) if active_meta else mask_patch_size,
+        "threshold_method": active_meta.get("threshold_method", threshold_method) if active_meta else threshold_method,
+        "k_fraction": active_meta.get("k_fraction", k_fraction) if active_meta else k_fraction,
+        "img_size": active_meta.get("img_size", img_size) if active_meta else img_size,
+    }
+    results["dataset_split"] = active_meta.get("dataset_split", dataset_split) if active_meta else dataset_split
+
+    # Include anomalous image indices so the UI can offer a SHAP image selector
+    anomalous_indices = [int(idx_num) for idx_num, lbl in enumerate(test_labels) if lbl == 1]
+    results["anomalous_indices"] = anomalous_indices
+    results["total_test_images"] = len(test_images)
+
+    # Serialise numpy arrays for JSON transport via FastAPI
+    results["scores"] = results["scores"].tolist()
+    results.pop("error_maps", None)  # Large arrays: exclude from API response
+
+    # ── 8. [Optional] Reconstruction Error Heatmap XAI ─────────────────────────
+    # Computes a smoothed error heatmap for every anomalous test image.
+    if run_heatmap and anomalous_indices:
+        logger.info("Computing Reconstruction Error Heatmap for %d anomalous images...", len(anomalous_indices))
+        from app.pipelines.evaluation.heatmaps import (
+            compute_error_heatmap,
+            overlay_ground_truth,
+            overlay_heatmap,
+        )
+
+        heatmap_overlays: dict[int, dict[str, list[Any]]] = {}
+        for idx in anomalous_indices:
+            img_float = test_images[idx]
+            img_uint8 = (img_float * 255).astype(np.uint8)
+            try:
+                recon_float = test_reconstructed[idx] if test_reconstructed is not None else None
+                result = compute_error_heatmap(model, img_float, sigma=3.0, reconstruction=recon_float)
+                hm_overlay = overlay_heatmap(img_uint8, result["heatmap"], alpha=0.4)
+                gt_and_heatmap = overlay_ground_truth(hm_overlay, gt_masks[idx])
+
+                heatmap_overlays[idx] = {"heatmap": hm_overlay.tolist(), "gt_and_heatmap": gt_and_heatmap.tolist()}
+            except Exception as exc:
+                logger.warning("Error Heatmap failed for image %d: %s", idx, exc)
+
+        results["heatmap_overlays"] = heatmap_overlays
+
+    return results
+"""Streamlit UI app."""
+
+import json
+import warnings
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import requests
+import streamlit as st
+
+from app.pipelines.evaluation.visualization import render_evaluation_curves
+from app.pipelines.modelling.keras_cae.cae_pipeline import (
+    delete_cached_model,
+    list_trashed_models,
+    purge_trash,
+    restore_cached_model,
+)
+
+BACKEND_URL = "http://127.0.0.1:8000"
+
+# Suppress timm deprecation warnings
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*timm.*")
+warnings.filterwarnings("ignore", category=FutureWarning, module=".*timm.*")
+
+
+def make_api_request(endpoint: str, payload: dict[str, Any], timeout: int | None = 10) -> Any:
+    """Helper to handle repetitive POST requests and error catching.
+
+    Args:
+        endpoint: The API endpoint to call.
+        payload: The payload to send to the API.
+        timeout: The timeout for the request.
+
+    Returns:
+        The response from the API.
+    """
+    try:
+        res = requests.post(f"{BACKEND_URL}{endpoint}", json=payload, timeout=timeout)
+        res.raise_for_status()
+        return res.json()
+    except requests.exceptions.ReadTimeout:
+        st.error("Request timed out. This process might take longer.")
+    except requests.exceptions.ConnectionError:
+        st.error("Backend unreachable. Ensure FastAPI server is running.")
+    except requests.exceptions.RequestException as e:
+        st.error(f"API Error: {e}")
+    return None
+
+
+def _display_metrics_row(metrics: dict[str, Any]) -> None:
+    """Helper to render 3-column metric cards (Accuracy, Precision, Recall).
+
+    Args:
+        metrics: The metrics to display.
+    """
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Accuracy", f"{metrics.get('accuracy', 0) * 100:.2f}%")
+    col2.metric("Precision", f"{metrics.get('precision', 0):.2f}")
+    col3.metric("Recall", f"{metrics.get('recall', 0):.2f}")
+
+
+def _display_level_metrics(title: str, metrics: dict[str, Any], level_type: str = "image") -> None:
+    """Helper to render level-specific metrics (Image or Pixel).
+
+    Args:
+        title: The title of the metrics.
+        metrics: The metrics to display.
+        level_type: Type of level ('image' or 'pixel').
+    """
+    st.subheader(title)
+    if level_type == "pixel":
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Pixel AUROC", f"{metrics.get('auroc', 0.0):.4f}")
+        aupimo_score = metrics.get("aupimo_score", metrics.get("aupimo", 0.0))
+        m2.metric("AUPIMO Score", f"{aupimo_score:.4f}")
+        m3.metric("Pixel F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
+    else:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Image AUROC", f"{metrics.get('auroc', 0.0):.4f}")
+        m2.metric("F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
+        m3.metric("Precision", f"{metrics.get('precision', 0.0):.4f}")
+
+    st.caption(f"Saved: `{metrics.get('metrics_path', '')}`")
+
+
+def _render_model_run_overview(results: dict[str, Any], model_type: str = "cae") -> None:
+    """Render a comprehensive overview of active preprocessing, hyperparameters, and dataset split.
+
+    Args:
+        results: Results dictionary returned from the pipeline or model evaluation.
+        model_type: Type of model evaluated ('cae' or 'patchcore').
+    """
+    with st.expander("📋 Model Run Overview (Preprocessing, Hyperparameters & Dataset Split)", expanded=True):
+        col_prep, col_hp, col_split = st.columns(3)
+
+        # ── 1. Preprocessing Configuration ──
+        with col_prep:
+            st.markdown("#### 🔧 Preprocessing")
+            prep_steps = results.get("preprocessing_steps")
+            if prep_steps is None and "metadata" in results and isinstance(results["metadata"], dict):
+                prep_steps = results["metadata"].get("preprocessing_steps")
+
+            if prep_steps is not None and isinstance(prep_steps, list):
+                if len(prep_steps) == 0:
+                    st.markdown("⚪ **None** *(Raw unmodified images)*")
+                else:
+                    for s in prep_steps:
+                        name = str(s.get("name", "Unknown Step"))
+                        if name == "foreground_mask":
+                            st.markdown("🟢 **Foreground Mask** *(Otsu + Canny)*")
+                        elif name == "clahe":
+                            st.markdown("🟢 **CLAHE** *(Contrast Equalization)*")
+                        elif name == "gaussian_blur":
+                            st.markdown("🟢 **Gaussian Blur** *(Denoising)*")
+                        else:
+                            st.markdown(f"🟢 **`{name}`**")
+            else:
+                st.info("⚠️ *Preprocessing configuration was not recorded with this legacy model run.*")
+
+        # ── 2. Hyperparameters ──
+        with col_hp:
+            st.markdown("#### ⚙️ Hyperparameters")
+            if model_type == "cae":
+                hp = results.get("hyperparameters") or (
+                    results.get("metadata") if isinstance(results.get("metadata"), dict) else None
+                )
+                if hp and isinstance(hp, dict):
+                    st.markdown(f"- **Category:** `{hp.get('category', results.get('category', 'N/A'))}`")
+                    st.markdown(f"- **Epochs:** `{hp.get('epochs', results.get('epochs', 'N/A'))}`")
+                    st.markdown(f"- **Batch Size:** `{hp.get('batch_size', 'N/A')}`")
+                    img_sz = hp.get("img_size", 128)
+                    st.markdown(f"- **Image Size:** `{img_sz}x{img_sz}`")
+                    crop_sz = hp.get("crop_size", 64)
+                    crop_str = hp.get("crop_stride", 32)
+                    st.markdown(f"- **Crop Size / Stride:** `{crop_sz}x{crop_sz}` *(stride: {crop_str})*")
+                    latent = hp.get("latent_channels", hp.get("latent_dim", "N/A"))
+                    st.markdown(f"- **Latent Channels:** `{latent}`")
+                    mask_r = hp.get("mask_ratio", 0.25)
+                    try:
+                        mask_pct = float(mask_r) * 100
+                    except (ValueError, TypeError):
+                        mask_pct = 25.0
+                    st.markdown(f"- **Masking (MIM):** `{mask_pct:.0f}%` *(patch: {hp.get('mask_patch_size', 8)})*")
+                    st.markdown(f"- **Thresholding:** `{hp.get('threshold_method', 'quantile_95')}`")
+                else:
+                    st.info("⚠️ *Hyperparameter details were not recorded with this legacy model run.*")
+            else:
+                hp = results.get("hyperparameters", {})
+                if hp and isinstance(hp, dict) and len(hp) > 0:
+                    st.markdown(f"- **Category:** `{results.get('category', 'N/A')}`")
+                    st.markdown(f"- **Backbone:** `{hp.get('backbone', 'resnet18')}`")
+                    st.markdown(f"- **Coreset Ratio:** `{hp.get('coreset_sampling_ratio', 0.1)}`")
+                    st.markdown(f"- **FPR Limit:** `{hp.get('fpr_limit', 1e-4)}`")
+                    st.markdown(f"- **Batch Size:** `{hp.get('train_batch_size', 16)}`")
+                else:
+                    st.info("⚠️ *Hyperparameters were not recorded with this legacy model run.*")
+
+        # ── 3. Dataset Split ──
+        with col_split:
+            st.markdown("#### 📊 Dataset Partition Split")
+            split = results.get("dataset_split") or (
+                results.get("metadata", {}).get("dataset_split") if isinstance(results.get("metadata"), dict) else None
+            )
+            if split and isinstance(split, dict) and len(split) > 0:
+                if model_type == "cae":
+                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+                    st.markdown(f"- **Validation (Normal, 15%):** `{split.get('val_normal', 'N/A')}`")
+                    test_tot = split.get("test_total", "N/A")
+                    test_norm = split.get("test_normal")
+                    test_anom = split.get("test_anomalous")
+                    if test_norm is not None and test_anom is not None:
+                        st.markdown(f"- **Test Total:** `{test_tot}` *({test_norm} normal, {test_anom} anomalous)*")
+                    else:
+                        st.markdown(f"- **Test Total:** `{test_tot}`")
+                else:
+                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+                    st.markdown(f"- **Test Total:** `{split.get('test_total', 'N/A')}`")
+            else:
+                st.info("⚠️ *Dataset partition sample counts were not recorded with this legacy model run.*")
+    st.divider()
+
+
+def _render_evaluation_summary(results: dict[str, Any], model_type: str = "cae") -> None:
+    """Render structured Image-Level and Pixel-Level evaluation metric cards and dynamic info boxes.
+
+    Args:
+        results: Dictionary containing image_level and pixel_level evaluation metrics.
+        model_type: Type of model evaluated ('cae' or 'patchcore').
+    """
+    _render_model_run_overview(results, model_type=model_type)
+
+    if "image_level" in results and "pixel_level" in results:
+        col_img, col_pix = st.columns(2)
+        img_metrics = results.get("image_level", {})
+        pix_metrics = results.get("pixel_level", {})
+
+        with col_img:
+            _display_level_metrics("Image-Level (Classification)", img_metrics, level_type="image")
+            image_threshold = float(img_metrics.get("threshold", results.get("threshold", 0.0)))
+            image_precision = float(img_metrics.get("precision", results.get("precision", 0.0)))
+            image_recall = float(img_metrics.get("recall", results.get("recall", 0.0)))
+
+            st.info(
+                f"**Image-Level Classification**\n"
+                f"* **Threshold:** The model uses an anomaly score threshold of **{image_threshold:.4f}**, "
+                f"which represents the 95th percentile of normal validation images.\n"
+                f"* **Precision:** At this threshold, the model achieves a Precision of "
+                f"**{image_precision * 100:.1f}%**. This means out of all components flagged as defective, "
+                f"{image_precision * 100:.1f}% are truly defective (minimal false alarms/wasted parts).\n"
+                f"* **Recall:** The model achieves a Recall of **{image_recall * 100:.1f}%**, meaning it successfully "
+                f"catches {image_recall * 100:.1f}% of all actual defective components on the line."
+            )
+
+        with col_pix:
+            _display_level_metrics("Pixel-Level (Localization)", pix_metrics, level_type="pixel")
+            aupimo_score = float(pix_metrics.get("aupimo_score", pix_metrics.get("aupimo", results.get("aupimo", 0.0))))
+            fpr_lower_bound = float(pix_metrics.get("fpr_lower_bound", 1e-05))
+            fpr_upper_bound = float(pix_metrics.get("fpr_upper_bound", 1e-04))
+            threshold_limit = float(pix_metrics.get("threshold_limit", pix_metrics.get("t_aupimo_min", 0.0)))
+            tpr_at_limit = float(
+                pix_metrics.get("tpr_at_limit", pix_metrics.get("aupimo_recall", pix_metrics.get("aupimo", 0.0)))
+            )
+            fpr_denom = fpr_lower_bound if fpr_lower_bound > 0 else 1e-5
+
+            st.info(
+                f"**Pixel-Level Localization (AUPIMO)**\n"
+                f"AUPIMO (Area Under the Per-Image Measurement Overlap) evaluates how well the model localizes "
+                f"defects across a strictly controlled False Positive Rate (FPR) range "
+                f"(from {fpr_lower_bound} to {fpr_upper_bound}).\n\n"
+                f"* **Overall Score:** An AUPIMO score of **{aupimo_score:.4f}** means that, on average across "
+                f"this strict trust range, the model successfully highlights **{aupimo_score * 100:.1f}%** "
+                f"of the actual defective pixel area.\n"
+                f"* **Industrial Threshold Limit:** To guarantee highly reliable defect localization with fewer than "
+                f"1 false alarm per {int(1 / fpr_denom):,} normal pixels, the model calculates a strict "
+                f"binarization threshold of **{threshold_limit:.4f}**.\n"
+                f"* **Reliability:** If deployed at this strict threshold, the model catches "
+                f"**{tpr_at_limit * 100:.2f}%** of the actual anomalous pixels, meaning any pixel flagged "
+                f"is guaranteed to be a defect with >99.99% confidence."
+            )
+
+        st.divider()
+
+        if "metrics_path" in img_metrics:
+            render_evaluation_curves(img_metrics["metrics_path"])
+
+        st.divider()
+
+        if "metrics_path" in pix_metrics:
+            render_evaluation_curves(pix_metrics["metrics_path"])
+    else:
+        st.subheader("Evaluation Metrics")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("AUROC (Image)", f"{results.get('auroc', 0.0):.4f}")
+        m2.metric("AUPIMO Score", f"{results.get('aupimo', 0.0):.4f}")
+        m3.metric("Accuracy", f"{results.get('accuracy', 0.0) * 100:.2f}%")
+        m4.metric("Precision", f"{results.get('precision', 0.0):.4f}")
+        m5.metric("Recall", f"{results.get('recall', 0.0):.4f}")
+
+
+def _find_metric_files() -> list[str]:
+    """Search for saved metric .npz files in default results directories.
+
+    Returns:
+        A list of metric file paths.
+    """
+    found_files: list[str] = []
+    for search_dir in [Path("data/models"), Path("results"), Path("data/external")]:
+        if search_dir.exists():
+            found_files.extend(
+                [str(p) for p in search_dir.rglob("*.npz") if not p.name.startswith(".") and ".trash" not in p.parts]
+            )
+    return sorted(found_files)
+
+
+def _handle_theoretical_dummy_eval() -> None:
+    """Render and execute the theoretical dummy evaluation form."""
+    col1, col2 = st.columns(2)
+    pixels = col1.number_input("Total Pixels", value=1_000_000, step=100_000)
+    ratio = col2.slider("Synthetic Anomaly Ratio", min_value=0.001, max_value=0.05, value=0.015, step=0.001)
+
+    if not st.button("Run Theoretical Evaluation"):
+        return
+
+    payload = {"mode": "theoretical", "pixels": pixels, "anomaly_ratio": ratio}
+    data = make_api_request("/api/pipelines/dummy", payload)
+    if data:
+        st.success(data.get("message", "Success"))
+        st.metric("Dummy Accuracy", f"{data.get('accuracy', 0) * 100:.2f}%")
+
+
+def _handle_real_dummy_eval() -> None:
+    """Render and execute the real dataset dummy evaluation form."""
+    data_root = st.text_input("Dataset Root Path", value="data/raw/mvtec_ad")
+    category = st.text_input("Category", value="bottle")
+
+    if not st.button("Run Real Dataset Evaluation"):
+        return
+
+    payload = {"mode": "real", "data_root": data_root, "category": category}
+    data = make_api_request("/api/pipelines/dummy", payload, timeout=60)
+    if not data:
+        return
+
+    st.success(data.get("message", "Success"))
+    results = data.get("results", {})
+
+    if "error" in results:
+        st.error(results["error"])
+        return
+
+    st.text_area("Evaluation Summary Output", value=results.get("summary", ""), height=160)
+    _display_metrics_row(results)
+
+
+def render_dummy_evaluation_tab() -> None:
+    """Render the dummy classifier evaluation tab."""
+    st.header("Dummy Classifier (Accuracy Paradox)")
+    st.markdown("Evaluate a dummy classifier predicting all normal pixels on synthetic or real data.")
+
+    mode = st.radio("Evaluation Mode", options=["theoretical", "real"], horizontal=True)
+
+    if mode == "theoretical":
+        _handle_theoretical_dummy_eval()
+    else:
+        _handle_real_dummy_eval()
+
+
+def render_baseline_patchcore_tab() -> None:
+    """Render the Patchcore anomaly detection evaluation tab with registry and caching support."""
+    st.header("Patchcore Anomaly Detection & Evaluation")
+    st.markdown(
+        "Run Patchcore feature-memory-bank anomaly detection and evaluation on MVTec AD dataset "
+        "(Image & Pixel level) with automated caching, model versioning, and soft-delete recovery."
+    )
+
+    # ── Model Registry Table ──────────────────────────────────────────────────────
+    st.subheader("Model Registry (Cached Patchcore Models)")
+    registry_path = Path("data/models/patchcore")
+    cached_models: list[dict[str, Any]] = []
+    if registry_path.exists():
+        for meta_file in registry_path.rglob("metadata.json"):
+            if ".trash" in meta_file.parts:
+                continue
+            try:
+                with open(meta_file, encoding="utf-8") as f:
+                    meta = json.load(f)
+                    ts_str = meta.get("timestamp", "")
+                    created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
+                    prep_list = meta.get("preprocessing_steps", [])
+                    prep_names = [s.get("name", "") for s in prep_list] if isinstance(prep_list, list) else []
+                    prep_display = ", ".join(prep_names) if prep_names else "None"
+                    cached_models.append(
+                        {
+                            "Category": meta.get("category", "unknown"),
+                            "Hash": meta.get("hash", meta_file.parent.name),
+                            "Backbone": meta.get("backbone", "resnet18"),
+                            "Coreset Ratio": meta.get("coreset_sampling_ratio", 0.1),
+                            "Preprocessing": prep_display,
+                            "Created": created_display,
+                            "_raw_timestamp": ts_str,
+                            "_raw_preprocessing_steps": prep_list,
+                        }
+                    )
+            except Exception:
+                pass
+
+    selected_model_hash: str | None = None
+    selected_model_meta: dict[str, Any] | None = None
+    selected_model_hashes: list[str] = []
+    load_selected_clicked = False
+
+    if cached_models:
+        cached_models.sort(key=lambda x: str(x.get("_raw_timestamp", "")), reverse=True)
+        display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
+        df_models = pd.DataFrame(display_models)
+
+        selection = st.dataframe(
+            df_models,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            key="patchcore_registry_selection",
+        )
+
+        selected_rows: list[int] = []
+        if selection is not None:
+            if isinstance(selection, dict):
+                selected_rows = selection.get("selection", {}).get("rows", [])
+            else:
+                sel_attr = getattr(selection, "selection", None)
+                if isinstance(sel_attr, dict):
+                    selected_rows = sel_attr.get("rows", [])
+                elif hasattr(sel_attr, "rows"):
+                    selected_rows = getattr(sel_attr, "rows", [])
+
+        selected_model_metas = [cached_models[r] for r in selected_rows if 0 <= r < len(cached_models)]
+        selected_model_hashes = [str(m.get("Hash")) for m in selected_model_metas]
+
+        if selected_model_hashes:
+            if len(selected_model_hashes) == 1:
+                selected_model_meta = selected_model_metas[0]
+                selected_model_hash = selected_model_hashes[0]
+
+                if st.session_state.get("_last_patchcore_selected_hash") != selected_model_hash:
+                    st.session_state["_last_patchcore_selected_hash"] = selected_model_hash
+                    st.session_state["b_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                    st.session_state["b_backbone"] = str(selected_model_meta.get("Backbone", "resnet18"))
+                    st.session_state["b_coreset_ratio"] = float(selected_model_meta.get("Coreset Ratio", 0.1))
+
+                    raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                    if isinstance(raw_prep, list):
+                        st.session_state["patchcore_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                        st.session_state["patchcore_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                        st.session_state["patchcore_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
+                st.success(
+                    f"Selected cached Patchcore model: **`{selected_model_hash}`** ("
+                    f"Category: `{selected_model_meta.get('Category')}`, "
+                    f"Backbone: `{selected_model_meta.get('Backbone')}`, "
+                    f"Coreset Ratio: `{selected_model_meta.get('Coreset Ratio')}`, "
+                    f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
+                    f"Created: `{selected_model_meta.get('Created')}`)"
+                )
+                col_load, col_del, _ = st.columns([2, 1, 3])
+                load_selected_clicked = col_load.button(
+                    f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                    type="primary",
+                    key="btn_load_patchcore_selected",
+                )
+                with col_del.popover("🗑️ Delete Model", help=f"Move Patchcore model {selected_model_hash} to Trash"):
+                    st.warning(f"Move Patchcore model `{selected_model_hash}` to Trash (can be restored)?")
+                    if st.button("Move to Trash", type="primary", key="btn_confirm_delete_patchcore_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path, soft_delete=True):
+                            st.session_state.pop("_last_patchcore_selected_hash", None)
+                            st.success(f"Patchcore model `{selected_model_hash}` moved to Trash (reversible).")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete Patchcore model `{selected_model_hash}`.")
+            else:
+                st.warning(f"Selected **{len(selected_model_hashes)} models**: `{', '.join(selected_model_hashes)}`")
+                col_del_multi, _ = st.columns([2, 4])
+                with col_del_multi.popover(
+                    f"🗑️ Delete {len(selected_model_hashes)} Models",
+                    help=f"Move {len(selected_model_hashes)} selected Patchcore models to Trash",
+                ):
+                    st.warning(f"Move **{len(selected_model_hashes)}** selected Patchcore models to Trash?")
+                    st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
+                    if st.button(
+                        f"Move to Trash ({len(selected_model_hashes)} models)",
+                        type="primary",
+                        key="btn_confirm_delete_patchcore_multi",
+                    ):
+                        deleted_cnt = 0
+                        for h in selected_model_hashes:
+                            if delete_cached_model(h, registry_base=registry_path, soft_delete=True):
+                                deleted_cnt += 1
+                        st.session_state.pop("_last_patchcore_selected_hash", None)
+                        st.success(f"Moved {deleted_cnt} Patchcore model(s) to Trash (reversible).")
+                        st.rerun()
+        else:
+            st.info(
+                "💡 **Interactive Patchcore Registry:** Click on any row above to select, load, or delete that "
+                "cached model. The pipeline always loads the newest matching cached model automatically when available."
+            )
+    else:
+        st.caption("No cached Patchcore models found in registry.")
+
+    # ── Trash & Restoration Section ───────────────────────────────────────────────
+    trashed_models = list_trashed_models(registry_base=registry_path)
+    if trashed_models:
+        with st.expander(f"🗑️ Trash / Recently Deleted ({len(trashed_models)} models)", expanded=False):
+            st.caption("Soft-deleted Patchcore models are safely preserved here and can be restored at any time.")
+            trashed_display = []
+            for tm in trashed_models:
+                ts_raw = tm.get("timestamp", "")
+                trashed_display.append(
+                    {
+                        "Category": tm.get("category", "unknown"),
+                        "Hash": tm.get("hash", "unknown"),
+                        "Backbone": tm.get("backbone", "resnet18"),
+                        "Coreset Ratio": tm.get("coreset_sampling_ratio", 0.1),
+                        "Created": ts_raw[:19].replace("T", " ") if ts_raw else "Unknown",
+                    }
+                )
+            df_trashed = pd.DataFrame(trashed_display)
+            trash_selection = st.dataframe(
+                df_trashed,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="patchcore_trash_selection",
+            )
+
+            trashed_sel_rows: list[int] = []
+            if trash_selection is not None:
+                if isinstance(trash_selection, dict):
+                    trashed_sel_rows = trash_selection.get("selection", {}).get("rows", [])
+                else:
+                    sel_attr = getattr(trash_selection, "selection", None)
+                    if isinstance(sel_attr, dict):
+                        trashed_sel_rows = sel_attr.get("rows", [])
+                    elif hasattr(sel_attr, "rows"):
+                        trashed_sel_rows = getattr(sel_attr, "rows", [])
+
+            trashed_selected_hashes = [
+                str(trashed_models[r].get("hash")) for r in trashed_sel_rows if 0 <= r < len(trashed_models)
+            ]
+
+            col_rest, col_purge, _ = st.columns([2, 2, 4])
+            if trashed_selected_hashes:
+                if col_rest.button(
+                    f"♻️ Restore Selected ({len(trashed_selected_hashes)})",
+                    type="primary",
+                    key="btn_restore_patchcore_selected",
+                ):
+                    restored_cnt = 0
+                    for th in trashed_selected_hashes:
+                        if restore_cached_model(th, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored {restored_cnt} Patchcore model(s) back to registry!")
+                    st.rerun()
+            else:
+                if col_rest.button("♻️ Restore All Trashed", key="btn_restore_patchcore_all"):
+                    restored_cnt = 0
+                    for tm in trashed_models:
+                        th_val = str(tm.get("hash", ""))
+                        if th_val and restore_cached_model(th_val, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored all {restored_cnt} Patchcore model(s) back to registry!")
+                    st.rerun()
+
+            with col_purge.popover(
+                "⚠️ Empty Trash (Permanent)",
+                help="Permanently delete all Patchcore models in Trash",
+            ):
+                st.error("Are you sure you want to permanently delete these models? This cannot be undone.")
+                if st.button("Yes, Empty Trash", type="primary", key="btn_purge_patchcore_trash"):
+                    cnt = purge_trash(registry_base=registry_path)
+                    st.success(f"Permanently purged {cnt} Patchcore model(s) from disk.")
+                    st.rerun()
+
+    st.divider()
+
+    st.session_state.setdefault("b_root", "data/raw/mvtec_ad")
+    data_root = st.text_input("Dataset Root Directory", key="b_root")
+
+    st.session_state.setdefault("b_cat", "bottle")
+    st.session_state.setdefault("b_backbone", "resnet18")
+    st.session_state.setdefault("b_feature_layers", "l2_l3")
+    st.session_state.setdefault("b_coreset_ratio", 0.1)
+    st.session_state.setdefault("b_num_neighbors", 9)
+    st.session_state.setdefault("patchcore_mask", False)
+    st.session_state.setdefault("patchcore_clahe", False)
+    st.session_state.setdefault("patchcore_gaussian", False)
+
+    def load_patchcore_optuna_defaults() -> None:
+        selected_cat = st.session_state.b_cat
+        registry_path = Path("data/hyperparameters/patchcore_best.json")
+        if registry_path.exists():
+            with open(registry_path, encoding="utf-8") as f:
+                registry = json.load(f)
+
+            if selected_cat in registry:
+                cfg = registry[selected_cat]
+                if "preprocessing" not in cfg:
+                    prep = cfg
+                    hp = cfg
+                else:
+                    prep = cfg.get("preprocessing", {})
+                    hp = cfg.get("model_hyperparameters", {})
+
+                if "backbone" in hp:
+                    st.session_state.b_backbone = hp["backbone"]
+                if "feature_layers" in hp:
+                    layers = hp["feature_layers"]
+                    st.session_state.b_feature_layers = "l2_l3_l4" if "layer4" in layers else "l2_l3"
+                if "coreset_sampling_ratio" in hp:
+                    st.session_state.b_coreset_ratio = float(hp["coreset_sampling_ratio"])
+                if "num_neighbors" in hp:
+                    st.session_state.b_num_neighbors = int(hp["num_neighbors"])
+
+                if "use_clahe" in prep:
+                    st.session_state.patchcore_clahe = prep["use_clahe"]
+                if "use_gaussian_blur" in prep:
+                    st.session_state.patchcore_gaussian = prep["use_gaussian_blur"]
+                if "use_foreground_mask" in prep:
+                    st.session_state.patchcore_mask = prep["use_foreground_mask"]
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    category = st.selectbox(
+        "Category Name", options=mvtec_categories, key="b_cat", on_change=load_patchcore_optuna_defaults
+    )
+
+    st.subheader("Model Configuration")
+    c1, c2, c3, c4 = st.columns(4)
+    backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"], key="b_backbone")
+    feature_layers_str = c2.selectbox("Feature Layers", ["l2_l3", "l2_l3_l4"], key="b_feature_layers")
+    feature_layers = ["layer2", "layer3", "layer4"] if feature_layers_str == "l2_l3_l4" else ["layer2", "layer3"]
+    coreset_ratio = c3.slider(
+        "Coreset Sampling Ratio", min_value=0.001, max_value=0.2, step=0.005, format="%.3f", key="b_coreset_ratio"
+    )
+    num_neighbors = c4.slider("Nearest Neighbors", min_value=1, max_value=20, step=1, key="b_num_neighbors")
+
+    st.subheader("Preprocessing Options")
+    use_mask = st.checkbox("Apply Otsu+Canny Foreground Masking (zeros out background)", key="patchcore_mask")
+    st.session_state.setdefault("patchcore_clahe", False)
+    use_clahe = st.checkbox("Apply CLAHE", key="patchcore_clahe")
+    st.session_state.setdefault("patchcore_gaussian", False)
+    use_gaussian = st.checkbox("Apply Gaussian Blur", key="patchcore_gaussian")
+
+    preprocessing_steps = []
+    if use_mask:
+        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+    if use_clahe:
+        preprocessing_steps.append({"name": "clahe", "params": {}})
+    if use_gaussian:
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+
+    st.session_state.setdefault("b_heatmap", False)
+    run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", key="b_heatmap")
+
+    force_retrain = st.checkbox(
+        "Force Retrain (Ignore Cache)",
+        value=False,
+        key="patchcore_force_retrain",
+        help="Check this to force re-running model training even if an identical cached run exists in the registry.",
+    )
+
+    col_btn, _ = st.columns([2, 4])
+    run_clicked = col_btn.button("Run Patchcore Evaluation Pipeline", key="btn_run_patchcore")
+
+    if not (run_clicked or load_selected_clicked):
+        return
+
+    active_hash = selected_model_hash if load_selected_clicked else None
+    active_force_retrain = False if load_selected_clicked else force_retrain
+    active_prep = (
+        selected_model_meta.get("_raw_preprocessing_steps", preprocessing_steps)
+        if load_selected_clicked and selected_model_meta
+        else preprocessing_steps
+    )
+
+    spinner_msg = (
+        f"Loading cached Patchcore model `{active_hash}` and evaluating..."
+        if load_selected_clicked
+        else "Fitting Patchcore model and evaluating Image & Pixel level metrics..."
+    )
+
+    with st.spinner(spinner_msg):
+        payload = {
+            "data_root": data_root,
+            "category": category,
+            "backbone": backbone,
+            "feature_layers": feature_layers,
+            "coreset_sampling_ratio": coreset_ratio,
+            "num_neighbors": num_neighbors,
+            "preprocessing_steps": active_prep,
+            "run_heatmap": run_heatmap,
+            "force_retrain": active_force_retrain,
+            "model_hash": active_hash,
+        }
+        data = make_api_request("/api/pipelines/baseline", payload, timeout=300)
+
+        if not data:
+            return
+
+        st.success(data.get("message", "Success"))
+        results = data.get("results", {})
+
+        if isinstance(results, dict):
+            _render_evaluation_summary(results, model_type="patchcore")
+
+            # Additional Parity for PatchCore
+            pixel_metrics = results.get("pixel_level", {})
+            metrics_path = pixel_metrics.get("metrics_path")
+            if metrics_path:
+                render_evaluation_curves(metrics_path)
+
+            _render_heatmap_explorer(results)
+        else:
+            st.text_area("Results Summary", value=str(results), height=180)
+
+
+def render_autoencoder_tab() -> None:
+    """Render the Convolutional Autoencoder baseline evaluation tab."""
+    st.header("Convolutional Autoencoder Anomaly Detection")
+    st.markdown(
+        "Train a minimal Convolutional autoencoder on normal samples and "
+        "evaluate reconstruction error on test anomalies."
+    )
+
+    col1, col2 = st.columns(2)
+    st.session_state.setdefault("ae_root", "data/raw/mvtec_ad")
+    data_root = col1.text_input("Dataset Root Directory", key="ae_root")
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    st.session_state.setdefault("ae_cat", "bottle")
+    category = col2.selectbox("Category Name", options=mvtec_categories, key="ae_cat")
+
+    col_e, col_b, col_l, col_s = st.columns(4)
+    st.session_state.setdefault("ae_epochs", 5)
+    epochs = col_e.number_input("Epochs", min_value=1, max_value=50, step=1, key="ae_epochs")
+    st.session_state.setdefault("ae_batch", 16)
+    batch_size = col_b.number_input("Batch Size", min_value=1, max_value=64, step=4, key="ae_batch")
+    st.session_state.setdefault("ae_latent", 64)
+    latent_dim = col_l.number_input("Latent Dim", min_value=8, max_value=256, step=8, key="ae_latent")
+    st.session_state.setdefault("ae_size", 64)
+    img_size = col_s.number_input("Image Size", min_value=32, max_value=128, step=16, key="ae_size")
+
+    if not st.button("Run Autoencoder Training & Evaluation"):
+        return
+
+    with st.spinner("Training Autoencoder and evaluating on multi-class anomalies..."):
+        payload = {
+            "data_root": data_root,
+            "category": category,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "latent_dim": latent_dim,
+            "img_size": img_size,
+        }
+        data = make_api_request("/api/pipelines/autoencoder", payload, timeout=180)
+
+        if not data:
+            return
+
+        st.success(data.get("message", "Success"))
+        results = data.get("results", {})
+
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        col_m1.metric("AUROC", f"{results.get('auroc', 0.0):.4f}")
+        col_m2.metric("Accuracy", f"{results.get('accuracy', 0.0) * 100:.2f}%")
+        col_m3.metric("Precision", f"{results.get('precision', 0.0):.2f}")
+        col_m4.metric("Recall", f"{results.get('recall', 0.0):.2f}")
+
+        st.caption(
+            f"Decision Threshold (95th percentile normal): `{results.get('threshold', 0.0):.6f}` | "
+            f"Final Training Loss: `{results.get('final_train_loss', 0.0):.6f}`"
+        )
+
+        if report := results.get("report"):
+            st.subheader("Classification Report")
+            st.code(report, language="text")
+
+
+def render_keras_cae_tab() -> None:
+    """Render the state-of-the-art Keras CAE anomaly detection tab.
+
+    This tab exposes the full research-grade pipeline:
+    ELU activations, Masked Image Modeling, SSIM+MSE loss, AdamW optimiser,
+    Top-K pooling, adaptive thresholds, AUPIMO pixel evaluation, and optional Reconstruction Error Heatmaps.
+    """
+    st.header("State-of-the-Art Keras CAE")
+    st.markdown(
+        "Trains a from-scratch Convolutional Autoencoder with **ELU activations**, "
+        "**Masked Image Modeling**, combined **SSIM+MSE loss**, and **AdamW** optimiser. "
+        "Evaluates using **Top-K pooling** and **AUPIMO** at industrially strict FPR bounds."
+    )
+
+    # ── Model Registry Table ──────────────────────────────────────────────────────
+    st.subheader("Model Registry (Cached Models)")
+    registry_path = Path("data/models/keras_cae")
+    cached_models: list[dict[str, Any]] = []
+    if registry_path.exists():
+        for meta_file in registry_path.rglob("metadata.json"):
+            if ".trash" in meta_file.parts:
+                continue
+            try:
+                with open(meta_file, encoding="utf-8") as f:
+                    meta = json.load(f)
+                    ts_str = meta.get("timestamp", "")
+                    created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
+                    prep_list = meta.get("preprocessing_steps", [])
+                    prep_names = [s.get("name", "") for s in prep_list] if isinstance(prep_list, list) else []
+                    prep_display = ", ".join(prep_names) if prep_names else "None"
+                    cached_models.append(
+                        {
+                            "Category": meta.get("category", "unknown"),
+                            "Hash": meta.get("hash", meta_file.parent.name),
+                            "Img Size": meta.get("img_size", 128),
+                            "Latent": meta.get("latent_channels", meta.get("latent_dim", 32)),
+                            "Epochs": meta.get("epochs", 20),
+                            "Batch": meta.get("batch_size", 16),
+                            "Mask Ratio": meta.get("mask_ratio", 0.25),
+                            "Preprocessing": prep_display,
+                            "Created": created_display,
+                            "_raw_timestamp": ts_str,
+                            "_raw_preprocessing_steps": prep_list,
+                        }
+                    )
+            except Exception:
+                pass
+
+    selected_model_hash: str | None = None
+    selected_model_meta: dict[str, Any] | None = None
+    selected_model_hashes: list[str] = []
+    load_selected_clicked = False
+
+    if cached_models:
+        # Sort newest first
+        cached_models.sort(key=lambda x: str(x.get("_raw_timestamp", "")), reverse=True)
+        display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
+        df_models = pd.DataFrame(display_models)
+
+        selection = st.dataframe(
+            df_models,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            key="kcae_registry_selection",
+        )
+
+        selected_rows: list[int] = []
+        if selection is not None:
+            if isinstance(selection, dict):
+                selected_rows = selection.get("selection", {}).get("rows", [])
+            else:
+                sel_attr = getattr(selection, "selection", None)
+                if isinstance(sel_attr, dict):
+                    selected_rows = sel_attr.get("rows", [])
+                elif hasattr(sel_attr, "rows"):
+                    selected_rows = getattr(sel_attr, "rows", [])
+
+        selected_model_metas = [cached_models[r] for r in selected_rows if 0 <= r < len(cached_models)]
+        selected_model_hashes = [str(m.get("Hash")) for m in selected_model_metas]
+
+        if selected_model_hashes:
+            if len(selected_model_hashes) == 1:
+                selected_model_meta = selected_model_metas[0]
+                selected_model_hash = selected_model_hashes[0]
+
+                # Sync inputs with selected model if selection changed
+                if st.session_state.get("_last_kcae_selected_hash") != selected_model_hash:
+                    st.session_state["_last_kcae_selected_hash"] = selected_model_hash
+                    st.session_state["kcae_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                    st.session_state["kcae_epochs"] = int(selected_model_meta.get("Epochs", 20))
+                    st.session_state["kcae_latent"] = int(selected_model_meta.get("Latent", 32))
+                    st.session_state["kcae_img_size"] = int(selected_model_meta.get("Img Size", 128))
+                    st.session_state["kcae_batch"] = int(selected_model_meta.get("Batch", 16))
+                    st.session_state["kcae_mask_ratio"] = float(selected_model_meta.get("Mask Ratio", 0.25))
+
+                    # Sync preprocessing checkboxes with the cached model's preprocessing configuration
+                    raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                    if isinstance(raw_prep, list):
+                        st.session_state["kcae_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                        st.session_state["kcae_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                        st.session_state["kcae_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
+                st.success(
+                    f"Selected cached model: **`{selected_model_hash}`** ("
+                    f"Category: `{selected_model_meta.get('Category')}`, "
+                    f"Img Size: `{selected_model_meta.get('Img Size')}`, "
+                    f"Latent: `{selected_model_meta.get('Latent')}`, "
+                    f"Epochs: `{selected_model_meta.get('Epochs')}`, "
+                    f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
+                    f"Created: `{selected_model_meta.get('Created')}`)"
+                )
+                col_load, col_del, _ = st.columns([2, 1, 3])
+                load_selected_clicked = col_load.button(
+                    f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                    type="primary",
+                    key="btn_load_kcae_selected",
+                )
+                with col_del.popover("🗑️ Delete Model", help=f"Move model {selected_model_hash} to Trash"):
+                    st.warning(f"Move model `{selected_model_hash}` to Trash (can be restored)?")
+                    if st.button("Move to Trash", type="primary", key="btn_confirm_delete_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path, soft_delete=True):
+                            st.session_state.pop("_last_kcae_selected_hash", None)
+                            st.success(f"Model `{selected_model_hash}` moved to Trash (reversible).")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete model `{selected_model_hash}`.")
+            else:
+                st.warning(f"Selected **{len(selected_model_hashes)} models**: `{', '.join(selected_model_hashes)}`")
+                col_del_multi, _ = st.columns([2, 4])
+                with col_del_multi.popover(
+                    f"🗑️ Delete {len(selected_model_hashes)} Models",
+                    help=f"Move {len(selected_model_hashes)} selected models to Trash",
+                ):
+                    st.warning(f"Move **{len(selected_model_hashes)}** selected models to Trash?")
+                    st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
+                    if st.button(
+                        f"Move to Trash ({len(selected_model_hashes)} models)",
+                        type="primary",
+                        key="btn_confirm_delete_multi",
+                    ):
+                        deleted_cnt = 0
+                        for h in selected_model_hashes:
+                            if delete_cached_model(h, registry_base=registry_path, soft_delete=True):
+                                deleted_cnt += 1
+                        st.session_state.pop("_last_kcae_selected_hash", None)
+                        st.success(f"Moved {deleted_cnt} model(s) to Trash (reversible).")
+                        st.rerun()
+        else:
+            st.info(
+                "💡 **Interactive Model Registry:** Click on any row above to select, load, or delete that "
+                "cached model. The pipeline always loads the newest matching cached model automatically when available."
+            )
+    else:
+        st.caption("No cached models found in registry.")
+
+    # ── Trash & Restoration Section ───────────────────────────────────────────────
+    trashed_models = list_trashed_models(registry_base=registry_path)
+    if trashed_models:
+        with st.expander(f"🗑️ Trash / Recently Deleted ({len(trashed_models)} models)", expanded=False):
+            st.caption("Soft-deleted models are safely preserved here and can be restored at any time.")
+            trashed_display = []
+            for tm in trashed_models:
+                ts_raw = tm.get("timestamp", "")
+                trashed_display.append(
+                    {
+                        "Category": tm.get("category", "unknown"),
+                        "Hash": tm.get("hash", "unknown"),
+                        "Img Size": tm.get("img_size", 128),
+                        "Latent": tm.get("latent_channels", tm.get("latent_dim", 32)),
+                        "Epochs": tm.get("epochs", 20),
+                        "Created": ts_raw[:19].replace("T", " ") if ts_raw else "Unknown",
+                    }
+                )
+            df_trashed = pd.DataFrame(trashed_display)
+            trash_selection = st.dataframe(
+                df_trashed,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="kcae_trash_selection",
+            )
+
+            trashed_sel_rows: list[int] = []
+            if trash_selection is not None:
+                if isinstance(trash_selection, dict):
+                    trashed_sel_rows = trash_selection.get("selection", {}).get("rows", [])
+                else:
+                    sel_attr = getattr(trash_selection, "selection", None)
+                    if isinstance(sel_attr, dict):
+                        trashed_sel_rows = sel_attr.get("rows", [])
+                    elif hasattr(sel_attr, "rows"):
+                        trashed_sel_rows = getattr(sel_attr, "rows", [])
+
+            trashed_selected_hashes = [
+                str(trashed_models[r].get("hash")) for r in trashed_sel_rows if 0 <= r < len(trashed_models)
+            ]
+
+            col_rest, col_purge, _ = st.columns([2, 2, 4])
+            if trashed_selected_hashes:
+                if col_rest.button(
+                    f"♻️ Restore Selected ({len(trashed_selected_hashes)})",
+                    type="primary",
+                    key="btn_restore_selected",
+                ):
+                    restored_cnt = 0
+                    for th in trashed_selected_hashes:
+                        if restore_cached_model(th, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored {restored_cnt} model(s) back to registry!")
+                    st.rerun()
+            else:
+                if col_rest.button("♻️ Restore All Trashed", key="btn_restore_all"):
+                    restored_cnt = 0
+                    for tm in trashed_models:
+                        th_val = str(tm.get("hash", ""))
+                        if th_val and restore_cached_model(th_val, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored all {restored_cnt} model(s) back to registry!")
+                    st.rerun()
+
+            with col_purge.popover(
+                "⚠️ Empty Trash (Permanent)", help="Permanently delete all models in trash from disk"
+            ):
+                st.warning("This will PERMANENTLY erase all models currently in the trash directory.")
+                if st.button("Confirm Empty Trash", type="primary", key="btn_confirm_purge_trash"):
+                    purged = purge_trash(registry_base=registry_path)
+                    st.success(f"Permanently erased {purged} model(s).")
+                    st.rerun()
+
+    st.divider()
+
+    # Initialize session state defaults
+    st.session_state.setdefault("kcae_root", "data/raw/mvtec_ad")
+    st.session_state.setdefault("kcae_cat", "bottle")
+    st.session_state.setdefault("kcae_epochs", 20)
+    st.session_state.setdefault("kcae_latent", 32)
+    st.session_state.setdefault("kcae_img_size", 128)
+    st.session_state.setdefault("kcae_batch", 16)
+    st.session_state.setdefault("kcae_mask_ratio", 0.25)
+    st.session_state.setdefault("kcae_mask", True)
+    st.session_state.setdefault("kcae_clahe", False)
+    st.session_state.setdefault("kcae_gaussian", False)
+
+    def load_optuna_defaults() -> None:
+        selected_cat = st.session_state.kcae_cat
+        registry_path = Path("data/hyperparameters/keras_cae_best.json")
+        if registry_path.exists():
+            with open(registry_path, encoding="utf-8") as f:
+                registry = json.load(f)
+
+            if selected_cat in registry:
+                cfg = registry[selected_cat]
+                # Backward compatibility for flat schema just in case
+                if "preprocessing" not in cfg:
+                    prep = cfg
+                    hp = cfg
+                else:
+                    prep = cfg.get("preprocessing", {})
+                    hp = cfg.get("model_hyperparameters", {})
+
+                if "latent_dim" in hp:
+                    st.session_state.kcae_latent = hp["latent_dim"]
+                elif "latent_channels" in hp:
+                    st.session_state.kcae_latent = hp["latent_channels"]
+
+                if "use_clahe" in prep:
+                    st.session_state.kcae_clahe = prep["use_clahe"]
+                elif "apply_clahe" in prep:
+                    st.session_state.kcae_clahe = prep["apply_clahe"]
+
+                if "use_gaussian_blur" in prep:
+                    st.session_state.kcae_gaussian = prep["use_gaussian_blur"]
+                elif "apply_blur" in prep:
+                    st.session_state.kcae_gaussian = prep["apply_blur"]
+
+                if "use_foreground_mask" in prep:
+                    st.session_state.kcae_mask = prep["use_foreground_mask"]
+                elif "apply_foreground_mask" in prep:
+                    st.session_state.kcae_mask = prep["apply_foreground_mask"]
+
+    col1, col2 = st.columns(2)
+    data_root = col1.text_input("Dataset Root Directory", key="kcae_root")
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    category = col2.selectbox("Category Name", options=mvtec_categories, key="kcae_cat", on_change=load_optuna_defaults)
+
+    st.subheader("Training Hyperparameters")
+    c1, c2, c3, c4 = st.columns(4)
+    epochs = c1.number_input("Epochs", min_value=1, max_value=100, step=5, key="kcae_epochs")
+    latent_channels = c2.number_input("Latent Channels", min_value=8, max_value=256, step=8, key="kcae_latent")
+    img_size = c3.number_input("Image Size", min_value=64, max_value=256, step=16, key="kcae_img_size")
+    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, step=4, key="kcae_batch")
+
+    with st.expander("Advanced Hyperparameters"):
+        ac1, ac2, ac3 = st.columns(3)
+        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, step=0.05, key="kcae_mask_ratio")
+        threshold_method = ac2.selectbox("Threshold Method", ["quantile", "mahalanobis"])
+        k_fraction = ac3.number_input(
+            "Top-K Fraction", min_value=0.001, max_value=0.050, value=0.002, step=0.001, format="%.3f"
+        )
+
+    st.subheader("Preprocessing Options")
+    use_seg = st.checkbox("Apply Otsu+Canny Foreground Masking (BGRP-G)", key="kcae_mask")
+    use_clahe = st.checkbox("Apply CLAHE", key="kcae_clahe")
+    use_gaussian = st.checkbox("Apply Gaussian Blur", key="kcae_gaussian")
+
+    preprocessing_steps = []
+    if use_seg:
+        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+    if use_clahe:
+        preprocessing_steps.append({"name": "clahe", "params": {}})
+    if use_gaussian:
+        preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+
+    st.subheader("Execution")
+    force_retrain = st.checkbox("Force Retrain Model (bypass cache even if hyperparameters match)", value=False)
+
+    run_pipeline_clicked = st.button("Run Keras CAE Pipeline")
+
+    if not (load_selected_clicked or run_pipeline_clicked):
+        return
+
+    active_hash = selected_model_hash if load_selected_clicked else None
+    active_force_retrain = False if load_selected_clicked else force_retrain
+    active_prep = (
+        selected_model_meta.get("_raw_preprocessing_steps", preprocessing_steps)
+        if load_selected_clicked and selected_model_meta
+        else preprocessing_steps
+    )
+
+    with st.spinner("Executing Keras CAE pipeline and evaluating..."):
+        payload = {
+            "data_root": data_root,
+            "category": category,
+            "img_size": img_size,
+            "latent_channels": latent_channels,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "mask_ratio": mask_ratio,
+            "threshold_method": threshold_method,
+            "k_fraction": k_fraction,
+            "preprocessing_steps": active_prep,
+            "run_heatmap": True,  # Automatically compute heatmaps
+            "force_retrain": active_force_retrain,
+            "model_hash": active_hash,
+        }
+        data = make_api_request("/api/pipelines/keras_cae", payload, timeout=None)
+
+    if not data:
+        return
+
+    st.success("Pipeline completed successfully!")
+    results = data.get("results", {})
+
+    # ── Metrics ──────────────────────────────────────────────────────────────────
+    _render_evaluation_summary(results)
+
+    st.caption(
+        f"Adaptive Threshold: `{results.get('threshold', 0.0):.6f}` | "
+        f"Final Training Loss: `{results.get('final_train_loss', 0.0):.6f}`"
+    )
+
+    # ── Loss Curve ───────────────────────────────────────────────────────────────
+    if loss_history := results.get("loss_history"):
+        if isinstance(loss_history, dict):
+            clean_history = {k: v for k, v in loss_history.items() if isinstance(v, list) and len(v) > 0}
+            if clean_history:
+                st.subheader("Training Loss Curve")
+                df_loss = pd.DataFrame({k: pd.Series(v) for k, v in clean_history.items()})
+                st.line_chart(df_loss)
+
+    # ── Heatmap Explorer ───────────────────────────────────────────────
+    _render_heatmap_explorer(results)
+
+
+def _render_heatmap_explorer(results: dict[str, Any]) -> None:
+    """Render the Reconstruction Error Heatmap explorer below the evaluation results.
+
+    Shows a gallery of error heatmap overlays for every detected anomalous image.
+    The user can trigger computation by clicking a single button; results are
+    shown in a responsive grid so all anomalous images are visible at once.
+    """
+    anomalous_indices: list[int] = results.get("anomalous_indices", [])
+    if not anomalous_indices:
+        return
+
+    st.divider()
+    with st.expander(
+        f"Anomaly Heatmap Explorer — {len(anomalous_indices)} anomalous image(s) found",
+        expanded=True,
+    ):
+        st.markdown("""
+        The model processes test images and generates a pixel-wise **Anomaly Map**. High values indicate that the model
+        believes those specific pixels are defective based on what it learned from normal components.
+
+        **Red / warm** — high anomaly score → likely a defect
+        **Blue / cool** — low anomaly score → looks normal to the model
+        """)
+
+        # Check if we have Heatmap results from the pipeline run
+        existing_overlays: dict[Any, Any] = results.get("heatmap_overlays", {})
+
+        if existing_overlays:
+            _render_heatmap_gallery(existing_overlays, anomalous_indices)
+        else:
+            st.info("No heatmaps were computed.")
+
+
+def _render_heatmap_gallery(overlays: dict[Any, Any], anomalous_indices: list[int]) -> None:
+    """Render a grid of Error heatmap overlays for all anomalous images.
+
+    Displays two rectangular areas (grids) side-by-side:
+    - Left Grid: Original image + Model Prediction Heatmap
+    - Right Grid: Ground Truth Mask + Model Prediction Heatmap
+    """
+    import numpy as np
+
+    st.success(f"Heatmaps computed for {len(overlays)} image(s).")
+
+    indices = [i for i in anomalous_indices if str(i) in overlays or i in overlays]
+    if not indices:
+        return
+
+    main_col1, main_col2 = st.columns(2)
+    cols_per_row = 2
+
+    with main_col1:
+        st.subheader("Prediction Heatmap")
+        for row_start in range(0, len(indices), cols_per_row):
+            row_indices = indices[row_start : row_start + cols_per_row]
+            cols = st.columns(len(row_indices))
+            for col, idx in zip(cols, row_indices, strict=False):
+                overlay_data = overlays.get(idx) or overlays.get(str(idx))
+                if isinstance(overlay_data, dict) and "heatmap" in overlay_data:
+                    hm_arr = np.array(overlay_data["heatmap"], dtype=np.uint8)
+                    col.image(hm_arr, caption=f"Image #{idx}", width="stretch")
+                elif isinstance(overlay_data, list):
+                    # Fallback
+                    col.image(np.array(overlay_data, dtype=np.uint8), caption=f"Image #{idx}")
+
+    with main_col2:
+        st.subheader("Ground Truth + Heatmap")
+        for row_start in range(0, len(indices), cols_per_row):
+            row_indices = indices[row_start : row_start + cols_per_row]
+            cols = st.columns(len(row_indices))
+            for col, idx in zip(cols, row_indices, strict=False):
+                overlay_data = overlays.get(idx) or overlays.get(str(idx))
+                if isinstance(overlay_data, dict):
+                    if "gt_and_heatmap" in overlay_data:
+                        gt_hm_arr = np.array(overlay_data["gt_and_heatmap"], dtype=np.uint8)
+                        col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
+                    elif "gt_overlay" in overlay_data:
+                        # Fallback for previous run format
+                        gt_hm_arr = np.array(overlay_data["gt_overlay"], dtype=np.uint8)
+                        col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
+
+    st.caption(
+        "Heatmaps derived directly from the per-pixel Mean Squared Error between the original "
+        "image and the autoencoder's reconstruction, slightly smoothed with a Gaussian filter."
+    )
+
+
+def render_evaluation_guide_tab() -> None:
+    """Render the evaluation guide for beginners."""
+    st.header("Evaluation Guide & Metrics Interpretation")
+    st.markdown("""
+    When evaluating an anomaly detection model in an industrial setting, classical metrics like **Accuracy**
+    can be incredibly misleading. This guide explains exactly how to read the metrics generated by the pipelines.
+
+    ---
+
+    ### 1. The Accuracy Paradox
+    In industrial manufacturing, anomalies are rare (e.g., 99% of components are good, 1% are defective).
+    If a "dummy" model blindly guesses that **every** component is good, it will achieve **99% Accuracy**.
+    - **Why it's bad:** The model entirely missed the 1% of defective parts, rendering it useless for quality control.
+    - **Takeaway:** Never trust Accuracy alone when evaluating an anomaly detection model.
+
+    ---
+
+    ### 2. Precision and Recall
+    These metrics give you a clearer picture than Accuracy, especially when dealing with rare defects.
+    - **Precision:** Out of all the components the model *flagged* as defective, how many were *actually* defective?
+      - *High Precision = Very few false alarms.*
+    - **Recall:** Out of all the *actually* defective components, how many did the model successfully *flag*?
+      - *High Recall = Very few escaped defects (missed anomalies).*
+
+    In industry, we usually prioritize **Recall** (we cannot let a broken part reach a customer).
+    However, if Precision is too low, the operator will be overwhelmed with false alarms and might turn the system off.
+
+    ---
+
+    ### 3. AUROC (Area Under the Receiver Operating Characteristic Curve)
+    *Used for: Image-Level Evaluation (Is the entire component defective or not?)*
+
+    The AUROC score measures how well the model separates the "Good" scores from the "Defective" scores
+    across *all possible threshold values*.
+
+    **⚠️ The Imbalance Trap:**
+    In real factories, 99.9% of components are good, and 0.1% are bad. In such extreme class imbalances, AUROC
+    is notoriously deceptive. A model can achieve a 0.95 AUROC but still have a terrible Precision (firing false
+    alarms constantly) because the massive number of True Negatives drowns out the False Positives.
+
+    **Why do we still use it?**
+    1. **Benchmarking:** Academic test sets (like MVTec AD) artificially balance the test images (e.g.,
+       20 good, 60 bad), making Image-Level AUROC acceptable for literature comparison.
+    2. **Top-K Pooling:** We do not use the maximum pixel error as the image score. Max-pooling fails because
+       a single dead camera pixel causes a false positive. We use **Top-K Pooling** (averaging the worst ~30
+       pixels), which ensures the image score reflects a *cluster* of defects, making the Image-Level AUROC
+       much more robust to noise.
+
+    *For real-world deployment, rely on **F1-Score** or **PR-AUC** (Precision-Recall AUC) instead of AUROC.*
+
+    ### 4. AUPIMO (Area Under Per-Image Overlap)
+    *Used for: Pixel-Level Evaluation (Where exactly is the defect on the component?)*
+
+    Standard pixel evaluation metrics (like PRO-score) evaluate the model up to a 30% False Positive Rate (FPR).
+    In an industrial factory making 10,000 parts a day, a 30% false alarm rate means throwing away
+    3,000 perfect components. This is unacceptable.
+
+    **AUPIMO** measures how well the model isolates defective pixels under extremely strict,
+    realistic industrial constraints (FPR between 1e-5 and 1e-4).
+    - **FPR 1e-5:** Equals 1 false alarm per 100,000 normal parts.
+    - **What a Good Score Looks Like:** Because the FPR restriction is so brutal, AUPIMO scores are
+      naturally lower than AUROC. A score above `0.20` is considered excellent, and anything above `0.05`
+      is generally highly usable for precise localization.
+    """)
+
+
+def main() -> None:
+    """Main Streamlit application entry point."""
+    st.set_page_config(page_title="Industrial Anomaly Detection", layout="wide")
+    st.title("Industrial Component Anomaly Detection Dashboard")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            "Evaluation Guide",
+            "Dummy Classifier Evaluation",
+            "Convolutional Autoencoder Evaluation",
+            "Patchcore Evaluation (Image & Pixel Level)",
+            "Keras CAE (State-of-the-Art)",
+        ]
+    )
+
+    with tab1:
+        render_evaluation_guide_tab()
+    with tab2:
+        render_dummy_evaluation_tab()
+    with tab3:
+        render_autoencoder_tab()
+    with tab4:
+        render_baseline_patchcore_tab()
+    with tab5:
+        render_keras_cae_tab()
+
+
+if __name__ == "__main__":
+    main()
