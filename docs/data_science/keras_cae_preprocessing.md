@@ -55,7 +55,7 @@ graph LR
     style OA fill:#a84,color:#fff
 ```
 
-**Implementation**: [`augmentation.py`](../../app/pipelines/multi_stage_ae/augmentation.py)
+**Implementation**: [`augmentation.py`](../../app/pipelines/preprocessing/augmentation.py)
 
 ---
 
@@ -63,7 +63,7 @@ graph LR
 
 ### Part A - The Image Loading Pipeline
 
-Before any segmentation or training, every image passes through a precise loading pipeline implemented in [`cae_pipeline.py: _load_images_as_numpy`](../../app/pipelines/multi_stage_ae/cae_pipeline.py#L90-L121). The choices made here are invisible but have downstream consequences on everything the network learns. Getting them wrong silently corrupts the entire detector.
+Before any segmentation or training, every image passes through a precise loading pipeline implemented in [`cae_pipeline.py: _load_images_as_numpy`](../../app/pipelines/modelling/keras_cae/cae_pipeline.py#L90-L121). The choices made here are invisible but have downstream consequences on everything the network learns. Getting them wrong silently corrupts the entire detector.
 
 #### `pil_img.convert("RGB")` - Why force three channels?
 
@@ -122,7 +122,7 @@ You might ask: if we are zeroing out the background anyway, why not reduce to a 
 **BGRP-G** = **B**ack**G**round **R**e**P**lacement to **G**reyscale/Black.
 It refers to the strategy of segmenting the component from the background and replacing the background with a solid, guaranteed out-of-distribution colour - solid black (all channels zero) in our case.
 
-**Implementation**: [`segmentation.py`](../../app/pipelines/multi_stage_ae/segmentation.py)
+**Implementation**: [`segmentation.py`](../../app/pipelines/preprocessing/segmentation.py)
 
 ### Why Industrial Images Need Background Removal
 

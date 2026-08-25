@@ -22,7 +22,7 @@ class ForegroundMaskStep(BasePreprocessingStep):
         self.morph_kernel_size = morph_kernel_size
         self.canny_sigma = canny_sigma
 
-        from app.pipelines.multi_stage_ae.segmentation import OtsuCannySegmentor
+        from app.pipelines.preprocessing.segmentation import OtsuCannySegmentor
 
         self.segmentor = OtsuCannySegmentor(morph_kernel_size=self.morph_kernel_size, canny_sigma=self.canny_sigma)
 

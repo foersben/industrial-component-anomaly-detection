@@ -9,7 +9,7 @@ tags: [keras, autoencoder, documentation]
 
 > **Part of the Keras CAE documentation series.** Start at the [Architecture Overview](keras_cae_architecture.md) if you are new to this pipeline.
 
-This page covers **Steps 3-6**: the encoder-decoder network structure, why identity mapping is a fatal problem, the SSIM+MSE loss function, and the AdamW optimizer. All code lives in [`cae_keras.py`](../../app/pipelines/multi_stage_ae/cae_keras.py) - the model definition (`build_cae`), the MIM masking (`apply_patch_masking`), the loss function, and the training loop are all in this single file.
+This page covers **Steps 3-6**: the encoder-decoder network structure, why identity mapping is a fatal problem, the SSIM+MSE loss function, and the AdamW optimizer. All code lives in [`cae_keras.py`](../../app/pipelines/modelling/keras_cae/cae_keras.py) - the model definition (`build_cae`), the MIM masking (`apply_patch_masking`), the loss function, and the training loop are all in this single file.
 
 ---
 
@@ -90,7 +90,7 @@ graph TD
 
 ## Step 4: Masked Image Modeling (MIM)
 
-**Implementation**: [`cae_keras.py: apply_patch_masking`](../../app/pipelines/multi_stage_ae/cae_keras.py#L312-L364) and the `train_cae` training loop in the same file.
+**Implementation**: [`cae_keras.py: apply_patch_masking`](../../app/pipelines/modelling/keras_cae/cae_keras.py#L312-L364) and the `train_cae` training loop in the same file.
 
 There is no separate `cae_dataset.py` - all training-time data augmentation (masking, shuffling) happens directly within the `train_cae` training loop in `cae_keras.py`.
 

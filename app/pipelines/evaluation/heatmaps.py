@@ -57,7 +57,7 @@ def compute_error_heatmap(
         - ``"heatmap"``: Normalised error heatmap, shape (H, W), float32 in [0, 1].
           Higher values = regions with greater reconstruction error.
     """
-    from app.pipelines.multi_stage_ae.scoring import compute_pixel_error_map
+    from app.pipelines.evaluation.scoring import compute_pixel_error_map
 
     # 1. Obtain reconstruction
     if reconstruction is None:

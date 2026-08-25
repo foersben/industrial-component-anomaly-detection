@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.pipelines.modelling.autoencoder import run_autoencoder_pipeline
 from app.pipelines.modelling.baseline import run_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
-from app.pipelines.multi_stage_ae.cae_pipeline import run_keras_cae_pipeline
+from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 
 # Suppress timm deprecation warnings emitted by downstream libraries
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*timm.*")
@@ -57,6 +57,8 @@ class BaselineEvaluationRequest(BaseModel):
     backbone: str = "resnet18"
     coreset_sampling_ratio: float = 0.1
     run_heatmap: bool = False
+    force_retrain: bool = False
+    model_hash: str | None = None
 
 
 class AutoencoderEvaluationRequest(BaseModel):
@@ -149,6 +151,8 @@ def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
         backbone=req.backbone,
         coreset_sampling_ratio=req.coreset_sampling_ratio,
         run_heatmap=req.run_heatmap,
+        force_retrain=req.force_retrain,
+        model_hash=req.model_hash,
     )
     return {
         "status": "success",
@@ -219,6 +223,7 @@ class KerasCAERequest(BaseModel):
     preprocessing_steps: list[dict[str, Any]] | None = None
     run_heatmap: bool = False
     force_retrain: bool = False
+    model_hash: str | None = None
 
 
 @app.post("/api/pipelines/keras_cae")
@@ -250,6 +255,7 @@ def run_keras_cae_endpoint(req: KerasCAERequest) -> dict[str, Any]:
         preprocessing_steps=req.preprocessing_steps,
         run_heatmap=req.run_heatmap,
         force_retrain=req.force_retrain,
+        model_hash=req.model_hash,
     )
     return {
         "status": "success",

@@ -10,6 +10,12 @@ import requests
 import streamlit as st
 
 from app.pipelines.evaluation.visualization import render_evaluation_curves
+from app.pipelines.modelling.keras_cae.cae_pipeline import (
+    delete_cached_model,
+    list_trashed_models,
+    purge_trash,
+    restore_cached_model,
+)
 
 BACKEND_URL = "http://127.0.0.1:8000"
 
@@ -54,23 +60,202 @@ def _display_metrics_row(metrics: dict[str, Any]) -> None:
     col3.metric("Recall", f"{metrics.get('recall', 0):.2f}")
 
 
-def _display_level_metrics(title: str, metrics: dict[str, Any]) -> None:
+def _display_level_metrics(title: str, metrics: dict[str, Any], level_type: str = "image") -> None:
     """Helper to render level-specific metrics (Image or Pixel).
 
     Args:
         title: The title of the metrics.
         metrics: The metrics to display.
+        level_type: Type of level ('image' or 'pixel').
     """
     st.subheader(title)
-    if "auroc" in metrics:
-        st.metric("AUROC", f"{metrics.get('auroc', 0.0):.4f}")
-
-    if "f1_score" in metrics:
-        st.metric("F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
-    elif "aupimo" in metrics:
-        st.metric("AUPIMO", f"{metrics.get('aupimo', 0.0):.4f}")
+    if level_type == "pixel":
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Pixel AUROC", f"{metrics.get('auroc', 0.0):.4f}")
+        aupimo_score = metrics.get("aupimo_score", metrics.get("aupimo", 0.0))
+        m2.metric("AUPIMO Score", f"{aupimo_score:.4f}")
+        m3.metric("Pixel F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
+    else:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Image AUROC", f"{metrics.get('auroc', 0.0):.4f}")
+        m2.metric("F1-Score", f"{metrics.get('f1_score', 0.0):.4f}")
+        m3.metric("Precision", f"{metrics.get('precision', 0.0):.4f}")
 
     st.caption(f"Saved: `{metrics.get('metrics_path', '')}`")
+
+
+def _render_model_run_overview(results: dict[str, Any], model_type: str = "cae") -> None:
+    """Render a comprehensive overview of active preprocessing, hyperparameters, and dataset split.
+
+    Args:
+        results: Results dictionary returned from the pipeline or model evaluation.
+        model_type: Type of model evaluated ('cae' or 'patchcore').
+    """
+    with st.expander("📋 Model Run Overview (Preprocessing, Hyperparameters & Dataset Split)", expanded=True):
+        col_prep, col_hp, col_split = st.columns(3)
+
+        # ── 1. Preprocessing Configuration ──
+        with col_prep:
+            st.markdown("#### 🔧 Preprocessing")
+            prep_steps = results.get("preprocessing_steps")
+            if prep_steps is None and "metadata" in results and isinstance(results["metadata"], dict):
+                prep_steps = results["metadata"].get("preprocessing_steps")
+
+            if prep_steps is not None and isinstance(prep_steps, list):
+                if len(prep_steps) == 0:
+                    st.markdown("⚪ **None** *(Raw unmodified images)*")
+                else:
+                    for s in prep_steps:
+                        name = str(s.get("name", "Unknown Step"))
+                        if name == "foreground_mask":
+                            st.markdown("🟢 **Foreground Mask** *(Otsu + Canny)*")
+                        elif name == "clahe":
+                            st.markdown("🟢 **CLAHE** *(Contrast Equalization)*")
+                        elif name == "gaussian_blur":
+                            st.markdown("🟢 **Gaussian Blur** *(Denoising)*")
+                        else:
+                            st.markdown(f"🟢 **`{name}`**")
+            else:
+                st.info("⚠️ *Preprocessing configuration was not recorded with this legacy model run.*")
+
+        # ── 2. Hyperparameters ──
+        with col_hp:
+            st.markdown("#### ⚙️ Hyperparameters")
+            if model_type == "cae":
+                hp = results.get("hyperparameters") or (
+                    results.get("metadata") if isinstance(results.get("metadata"), dict) else None
+                )
+                if hp and isinstance(hp, dict):
+                    st.markdown(f"- **Category:** `{hp.get('category', results.get('category', 'N/A'))}`")
+                    st.markdown(f"- **Epochs:** `{hp.get('epochs', results.get('epochs', 'N/A'))}`")
+                    st.markdown(f"- **Batch Size:** `{hp.get('batch_size', 'N/A')}`")
+                    img_sz = hp.get("img_size", 128)
+                    st.markdown(f"- **Image Size:** `{img_sz}x{img_sz}`")
+                    crop_sz = hp.get("crop_size", 64)
+                    crop_str = hp.get("crop_stride", 32)
+                    st.markdown(f"- **Crop Size / Stride:** `{crop_sz}x{crop_sz}` *(stride: {crop_str})*")
+                    latent = hp.get("latent_channels", hp.get("latent_dim", "N/A"))
+                    st.markdown(f"- **Latent Channels:** `{latent}`")
+                    mask_r = hp.get("mask_ratio", 0.25)
+                    try:
+                        mask_pct = float(mask_r) * 100
+                    except (ValueError, TypeError):
+                        mask_pct = 25.0
+                    st.markdown(f"- **Masking (MIM):** `{mask_pct:.0f}%` *(patch: {hp.get('mask_patch_size', 8)})*")
+                    st.markdown(f"- **Thresholding:** `{hp.get('threshold_method', 'quantile_95')}`")
+                else:
+                    st.info("⚠️ *Hyperparameter details were not recorded with this legacy model run.*")
+            else:
+                hp = results.get("hyperparameters", {})
+                if hp and isinstance(hp, dict) and len(hp) > 0:
+                    st.markdown(f"- **Category:** `{results.get('category', 'N/A')}`")
+                    st.markdown(f"- **Backbone:** `{hp.get('backbone', 'resnet18')}`")
+                    st.markdown(f"- **Coreset Ratio:** `{hp.get('coreset_sampling_ratio', 0.1)}`")
+                    st.markdown(f"- **FPR Limit:** `{hp.get('fpr_limit', 1e-4)}`")
+                    st.markdown(f"- **Batch Size:** `{hp.get('train_batch_size', 16)}`")
+                else:
+                    st.info("⚠️ *Hyperparameters were not recorded with this legacy model run.*")
+
+        # ── 3. Dataset Split ──
+        with col_split:
+            st.markdown("#### 📊 Dataset Partition Split")
+            split = results.get("dataset_split") or (
+                results.get("metadata", {}).get("dataset_split") if isinstance(results.get("metadata"), dict) else None
+            )
+            if split and isinstance(split, dict) and len(split) > 0:
+                if model_type == "cae":
+                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+                    st.markdown(f"- **Validation (Normal, 15%):** `{split.get('val_normal', 'N/A')}`")
+                    test_tot = split.get("test_total", "N/A")
+                    test_norm = split.get("test_normal")
+                    test_anom = split.get("test_anomalous")
+                    if test_norm is not None and test_anom is not None:
+                        st.markdown(f"- **Test Total:** `{test_tot}` *({test_norm} normal, {test_anom} anomalous)*")
+                    else:
+                        st.markdown(f"- **Test Total:** `{test_tot}`")
+                else:
+                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+                    st.markdown(f"- **Test Total:** `{split.get('test_total', 'N/A')}`")
+            else:
+                st.info("⚠️ *Dataset partition sample counts were not recorded with this legacy model run.*")
+    st.divider()
+
+
+def _render_evaluation_summary(results: dict[str, Any], model_type: str = "cae") -> None:
+    """Render structured Image-Level and Pixel-Level evaluation metric cards and dynamic info boxes.
+
+    Args:
+        results: Dictionary containing image_level and pixel_level evaluation metrics.
+        model_type: Type of model evaluated ('cae' or 'patchcore').
+    """
+    _render_model_run_overview(results, model_type=model_type)
+
+    if "image_level" in results and "pixel_level" in results:
+        col_img, col_pix = st.columns(2)
+        img_metrics = results.get("image_level", {})
+        pix_metrics = results.get("pixel_level", {})
+
+        with col_img:
+            _display_level_metrics("Image-Level (Classification)", img_metrics, level_type="image")
+            image_threshold = float(img_metrics.get("threshold", results.get("threshold", 0.0)))
+            image_precision = float(img_metrics.get("precision", results.get("precision", 0.0)))
+            image_recall = float(img_metrics.get("recall", results.get("recall", 0.0)))
+
+            st.info(
+                f"**Image-Level Classification**\n"
+                f"* **Threshold:** The model uses an anomaly score threshold of **{image_threshold:.4f}**, "
+                f"which represents the 95th percentile of normal validation images.\n"
+                f"* **Precision:** At this threshold, the model achieves a Precision of "
+                f"**{image_precision * 100:.1f}%**. This means out of all components flagged as defective, "
+                f"{image_precision * 100:.1f}% are truly defective (minimal false alarms/wasted parts).\n"
+                f"* **Recall:** The model achieves a Recall of **{image_recall * 100:.1f}%**, meaning it successfully "
+                f"catches {image_recall * 100:.1f}% of all actual defective components on the line."
+            )
+
+        with col_pix:
+            _display_level_metrics("Pixel-Level (Localization)", pix_metrics, level_type="pixel")
+            aupimo_score = float(pix_metrics.get("aupimo_score", pix_metrics.get("aupimo", results.get("aupimo", 0.0))))
+            fpr_lower_bound = float(pix_metrics.get("fpr_lower_bound", 1e-05))
+            fpr_upper_bound = float(pix_metrics.get("fpr_upper_bound", 1e-04))
+            threshold_limit = float(pix_metrics.get("threshold_limit", pix_metrics.get("t_aupimo_min", 0.0)))
+            tpr_at_limit = float(
+                pix_metrics.get("tpr_at_limit", pix_metrics.get("aupimo_recall", pix_metrics.get("aupimo", 0.0)))
+            )
+            fpr_denom = fpr_lower_bound if fpr_lower_bound > 0 else 1e-5
+
+            st.info(
+                f"**Pixel-Level Localization (AUPIMO)**\n"
+                f"AUPIMO (Area Under the Per-Image Measurement Overlap) evaluates how well the model localizes "
+                f"defects across a strictly controlled False Positive Rate (FPR) range "
+                f"(from {fpr_lower_bound} to {fpr_upper_bound}).\n\n"
+                f"* **Overall Score:** An AUPIMO score of **{aupimo_score:.4f}** means that, on average across "
+                f"this strict trust range, the model successfully highlights **{aupimo_score * 100:.1f}%** "
+                f"of the actual defective pixel area.\n"
+                f"* **Industrial Threshold Limit:** To guarantee highly reliable defect localization with fewer than "
+                f"1 false alarm per {int(1 / fpr_denom):,} normal pixels, the model calculates a strict "
+                f"binarization threshold of **{threshold_limit:.4f}**.\n"
+                f"* **Reliability:** If deployed at this strict threshold, the model catches "
+                f"**{tpr_at_limit * 100:.2f}%** of the actual anomalous pixels, meaning any pixel flagged "
+                f"is guaranteed to be a defect with >99.99% confidence."
+            )
+
+        st.divider()
+
+        if "metrics_path" in img_metrics:
+            render_evaluation_curves(img_metrics["metrics_path"])
+
+        st.divider()
+
+        if "metrics_path" in pix_metrics:
+            render_evaluation_curves(pix_metrics["metrics_path"])
+    else:
+        st.subheader("Evaluation Metrics")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("AUROC (Image)", f"{results.get('auroc', 0.0):.4f}")
+        m2.metric("AUPIMO Score", f"{results.get('aupimo', 0.0):.4f}")
+        m3.metric("Accuracy", f"{results.get('accuracy', 0.0) * 100:.2f}%")
+        m4.metric("Precision", f"{results.get('precision', 0.0):.4f}")
+        m5.metric("Recall", f"{results.get('recall', 0.0):.4f}")
 
 
 def _find_metric_files() -> list[str]:
@@ -80,17 +265,19 @@ def _find_metric_files() -> list[str]:
         A list of metric file paths.
     """
     found_files: list[str] = []
-    for search_dir in [Path("results"), Path("data/external")]:
+    for search_dir in [Path("data/models"), Path("results"), Path("data/external")]:
         if search_dir.exists():
-            found_files.extend([str(p) for p in search_dir.rglob("*.npz") if not p.name.startswith(".")])
+            found_files.extend(
+                [str(p) for p in search_dir.rglob("*.npz") if not p.name.startswith(".") and ".trash" not in p.parts]
+            )
     return sorted(found_files)
 
 
 def _handle_theoretical_dummy_eval() -> None:
     """Render and execute the theoretical dummy evaluation form."""
     col1, col2 = st.columns(2)
-    pixels = col1.number_input("Total Pixels", min_value=1000, value=1000000, step=100000)
-    ratio = col2.slider("Anomaly Ratio", min_value=0.001, max_value=0.200, value=0.015, step=0.005)
+    pixels = col1.number_input("Total Pixels", value=1_000_000, step=100_000)
+    ratio = col2.slider("Synthetic Anomaly Ratio", min_value=0.001, max_value=0.05, value=0.015, step=0.001)
 
     if not st.button("Run Theoretical Evaluation"):
         return
@@ -140,24 +327,305 @@ def render_dummy_evaluation_tab() -> None:
 
 
 def render_baseline_patchcore_tab() -> None:
-    """Render the Patchcore anomaly detection evaluation tab."""
+    """Render the Patchcore anomaly detection evaluation tab with registry and caching support."""
     st.header("Patchcore Anomaly Detection & Evaluation")
-    st.markdown("Run Patchcore model training and evaluation on MVTec AD dataset (Image & Pixel level).")
+    st.markdown(
+        "Run Patchcore feature-memory-bank anomaly detection and evaluation on MVTec AD dataset "
+        "(Image & Pixel level) with automated caching, model versioning, and soft-delete recovery."
+    )
 
-    data_root = st.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="b_root")
-    category = st.text_input("Category Name", value="bottle", key="b_cat")
+    # ── Model Registry Table ──────────────────────────────────────────────────────
+    st.subheader("Model Registry (Cached Patchcore Models)")
+    registry_path = Path("data/models/patchcore")
+    cached_models: list[dict[str, Any]] = []
+    if registry_path.exists():
+        for meta_file in registry_path.rglob("metadata.json"):
+            if ".trash" in meta_file.parts:
+                continue
+            try:
+                with open(meta_file, encoding="utf-8") as f:
+                    meta = json.load(f)
+                    ts_str = meta.get("timestamp", "")
+                    created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
+                    prep_list = meta.get("preprocessing_steps", [])
+                    prep_names = [s.get("name", "") for s in prep_list] if isinstance(prep_list, list) else []
+                    prep_display = ", ".join(prep_names) if prep_names else "None"
+                    cached_models.append(
+                        {
+                            "Category": meta.get("category", "unknown"),
+                            "Hash": meta.get("hash", meta_file.parent.name),
+                            "Backbone": meta.get("backbone", "resnet18"),
+                            "Coreset Ratio": meta.get("coreset_sampling_ratio", 0.1),
+                            "Preprocessing": prep_display,
+                            "Created": created_display,
+                            "_raw_timestamp": ts_str,
+                            "_raw_preprocessing_steps": prep_list,
+                        }
+                    )
+            except Exception:
+                pass
+
+    selected_model_hash: str | None = None
+    selected_model_meta: dict[str, Any] | None = None
+    selected_model_hashes: list[str] = []
+    load_selected_clicked = False
+
+    if cached_models:
+        cached_models.sort(key=lambda x: str(x.get("_raw_timestamp", "")), reverse=True)
+        display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
+        df_models = pd.DataFrame(display_models)
+
+        selection = st.dataframe(
+            df_models,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            key="patchcore_registry_selection",
+        )
+
+        selected_rows: list[int] = []
+        if selection is not None:
+            if isinstance(selection, dict):
+                selected_rows = selection.get("selection", {}).get("rows", [])
+            else:
+                sel_attr = getattr(selection, "selection", None)
+                if isinstance(sel_attr, dict):
+                    selected_rows = sel_attr.get("rows", [])
+                elif hasattr(sel_attr, "rows"):
+                    selected_rows = getattr(sel_attr, "rows", [])
+
+        selected_model_metas = [cached_models[r] for r in selected_rows if 0 <= r < len(cached_models)]
+        selected_model_hashes = [str(m.get("Hash")) for m in selected_model_metas]
+
+        if selected_model_hashes:
+            if len(selected_model_hashes) == 1:
+                selected_model_meta = selected_model_metas[0]
+                selected_model_hash = selected_model_hashes[0]
+
+                if st.session_state.get("_last_patchcore_selected_hash") != selected_model_hash:
+                    st.session_state["_last_patchcore_selected_hash"] = selected_model_hash
+                    st.session_state["b_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                    st.session_state["b_backbone"] = str(selected_model_meta.get("Backbone", "resnet18"))
+                    st.session_state["b_coreset_ratio"] = float(selected_model_meta.get("Coreset Ratio", 0.1))
+
+                    raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                    if isinstance(raw_prep, list):
+                        st.session_state["patchcore_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                        st.session_state["patchcore_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                        st.session_state["patchcore_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
+                st.success(
+                    f"Selected cached Patchcore model: **`{selected_model_hash}`** ("
+                    f"Category: `{selected_model_meta.get('Category')}`, "
+                    f"Backbone: `{selected_model_meta.get('Backbone')}`, "
+                    f"Coreset Ratio: `{selected_model_meta.get('Coreset Ratio')}`, "
+                    f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
+                    f"Created: `{selected_model_meta.get('Created')}`)"
+                )
+                col_load, col_del, _ = st.columns([2, 1, 3])
+                load_selected_clicked = col_load.button(
+                    f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                    type="primary",
+                    key="btn_load_patchcore_selected",
+                )
+                with col_del.popover("🗑️ Delete Model", help=f"Move Patchcore model {selected_model_hash} to Trash"):
+                    st.warning(f"Move Patchcore model `{selected_model_hash}` to Trash (can be restored)?")
+                    if st.button("Move to Trash", type="primary", key="btn_confirm_delete_patchcore_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path, soft_delete=True):
+                            st.session_state.pop("_last_patchcore_selected_hash", None)
+                            st.success(f"Patchcore model `{selected_model_hash}` moved to Trash (reversible).")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete Patchcore model `{selected_model_hash}`.")
+            else:
+                st.warning(f"Selected **{len(selected_model_hashes)} models**: `{', '.join(selected_model_hashes)}`")
+                col_del_multi, _ = st.columns([2, 4])
+                with col_del_multi.popover(
+                    f"🗑️ Delete {len(selected_model_hashes)} Models",
+                    help=f"Move {len(selected_model_hashes)} selected Patchcore models to Trash",
+                ):
+                    st.warning(f"Move **{len(selected_model_hashes)}** selected Patchcore models to Trash?")
+                    st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
+                    if st.button(
+                        f"Move to Trash ({len(selected_model_hashes)} models)",
+                        type="primary",
+                        key="btn_confirm_delete_patchcore_multi",
+                    ):
+                        deleted_cnt = 0
+                        for h in selected_model_hashes:
+                            if delete_cached_model(h, registry_base=registry_path, soft_delete=True):
+                                deleted_cnt += 1
+                        st.session_state.pop("_last_patchcore_selected_hash", None)
+                        st.success(f"Moved {deleted_cnt} Patchcore model(s) to Trash (reversible).")
+                        st.rerun()
+        else:
+            st.info(
+                "💡 **Interactive Patchcore Registry:** Click on any row above to select, load, or delete that "
+                "cached model. The pipeline always loads the newest matching cached model automatically when available."
+            )
+    else:
+        st.caption("No cached Patchcore models found in registry.")
+
+    # ── Trash & Restoration Section ───────────────────────────────────────────────
+    trashed_models = list_trashed_models(registry_base=registry_path)
+    if trashed_models:
+        with st.expander(f"🗑️ Trash / Recently Deleted ({len(trashed_models)} models)", expanded=False):
+            st.caption("Soft-deleted Patchcore models are safely preserved here and can be restored at any time.")
+            trashed_display = []
+            for tm in trashed_models:
+                ts_raw = tm.get("timestamp", "")
+                trashed_display.append(
+                    {
+                        "Category": tm.get("category", "unknown"),
+                        "Hash": tm.get("hash", "unknown"),
+                        "Backbone": tm.get("backbone", "resnet18"),
+                        "Coreset Ratio": tm.get("coreset_sampling_ratio", 0.1),
+                        "Created": ts_raw[:19].replace("T", " ") if ts_raw else "Unknown",
+                    }
+                )
+            df_trashed = pd.DataFrame(trashed_display)
+            trash_selection = st.dataframe(
+                df_trashed,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="patchcore_trash_selection",
+            )
+
+            trashed_sel_rows: list[int] = []
+            if trash_selection is not None:
+                if isinstance(trash_selection, dict):
+                    trashed_sel_rows = trash_selection.get("selection", {}).get("rows", [])
+                else:
+                    sel_attr = getattr(trash_selection, "selection", None)
+                    if isinstance(sel_attr, dict):
+                        trashed_sel_rows = sel_attr.get("rows", [])
+                    elif hasattr(sel_attr, "rows"):
+                        trashed_sel_rows = getattr(sel_attr, "rows", [])
+
+            trashed_selected_hashes = [
+                str(trashed_models[r].get("hash")) for r in trashed_sel_rows if 0 <= r < len(trashed_models)
+            ]
+
+            col_rest, col_purge, _ = st.columns([2, 2, 4])
+            if trashed_selected_hashes:
+                if col_rest.button(
+                    f"♻️ Restore Selected ({len(trashed_selected_hashes)})",
+                    type="primary",
+                    key="btn_restore_patchcore_selected",
+                ):
+                    restored_cnt = 0
+                    for th in trashed_selected_hashes:
+                        if restore_cached_model(th, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored {restored_cnt} Patchcore model(s) back to registry!")
+                    st.rerun()
+            else:
+                if col_rest.button("♻️ Restore All Trashed", key="btn_restore_patchcore_all"):
+                    restored_cnt = 0
+                    for tm in trashed_models:
+                        th_val = str(tm.get("hash", ""))
+                        if th_val and restore_cached_model(th_val, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored all {restored_cnt} Patchcore model(s) back to registry!")
+                    st.rerun()
+
+            with col_purge.popover(
+                "⚠️ Empty Trash (Permanent)",
+                help="Permanently delete all Patchcore models in Trash",
+            ):
+                st.error("Are you sure you want to permanently delete these models? This cannot be undone.")
+                if st.button("Yes, Empty Trash", type="primary", key="btn_purge_patchcore_trash"):
+                    cnt = purge_trash(registry_base=registry_path)
+                    st.success(f"Permanently purged {cnt} Patchcore model(s) from disk.")
+                    st.rerun()
+
+    st.divider()
+
+    st.session_state.setdefault("b_root", "data/raw/mvtec_ad")
+    data_root = st.text_input("Dataset Root Directory", key="b_root")
+
+    st.session_state.setdefault("b_cat", "bottle")
+    st.session_state.setdefault("b_backbone", "resnet18")
+    st.session_state.setdefault("b_feature_layers", "l2_l3")
+    st.session_state.setdefault("b_coreset_ratio", 0.1)
+    st.session_state.setdefault("b_num_neighbors", 9)
+    st.session_state.setdefault("patchcore_mask", False)
+    st.session_state.setdefault("patchcore_clahe", False)
+    st.session_state.setdefault("patchcore_gaussian", False)
+
+    def load_patchcore_optuna_defaults() -> None:
+        selected_cat = st.session_state.b_cat
+        registry_path = Path("data/hyperparameters/patchcore_best.json")
+        if registry_path.exists():
+            with open(registry_path, encoding="utf-8") as f:
+                registry = json.load(f)
+
+            if selected_cat in registry:
+                cfg = registry[selected_cat]
+                if "preprocessing" not in cfg:
+                    prep = cfg
+                    hp = cfg
+                else:
+                    prep = cfg.get("preprocessing", {})
+                    hp = cfg.get("model_hyperparameters", {})
+
+                if "backbone" in hp:
+                    st.session_state.b_backbone = hp["backbone"]
+                if "feature_layers" in hp:
+                    layers = hp["feature_layers"]
+                    st.session_state.b_feature_layers = "l2_l3_l4" if "layer4" in layers else "l2_l3"
+                if "coreset_sampling_ratio" in hp:
+                    st.session_state.b_coreset_ratio = float(hp["coreset_sampling_ratio"])
+                if "num_neighbors" in hp:
+                    st.session_state.b_num_neighbors = int(hp["num_neighbors"])
+
+                if "use_clahe" in prep:
+                    st.session_state.patchcore_clahe = prep["use_clahe"]
+                if "use_gaussian_blur" in prep:
+                    st.session_state.patchcore_gaussian = prep["use_gaussian_blur"]
+                if "use_foreground_mask" in prep:
+                    st.session_state.patchcore_mask = prep["use_foreground_mask"]
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    category = st.selectbox(
+        "Category Name", options=mvtec_categories, key="b_cat", on_change=load_patchcore_optuna_defaults
+    )
 
     st.subheader("Model Configuration")
-    c1, c2 = st.columns(2)
-    backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"])
-    coreset_ratio = c2.slider("Coreset Sampling Ratio", min_value=0.01, max_value=0.2, value=0.1, step=0.01)
+    c1, c2, c3, c4 = st.columns(4)
+    backbone = c1.selectbox("Backbone", ["resnet18", "wide_resnet50_2"], key="b_backbone")
+    feature_layers_str = c2.selectbox("Feature Layers", ["l2_l3", "l2_l3_l4"], key="b_feature_layers")
+    feature_layers = ["layer2", "layer3", "layer4"] if feature_layers_str == "l2_l3_l4" else ["layer2", "layer3"]
+    coreset_ratio = c3.slider(
+        "Coreset Sampling Ratio", min_value=0.001, max_value=0.2, step=0.005, format="%.3f", key="b_coreset_ratio"
+    )
+    num_neighbors = c4.slider("Nearest Neighbors", min_value=1, max_value=20, step=1, key="b_num_neighbors")
 
     st.subheader("Preprocessing Options")
-    use_mask = st.checkbox(
-        "Apply Otsu+Canny Foreground Masking (zeros out background)", value=False, key="patchcore_mask"
-    )
-    use_clahe = st.checkbox("Apply CLAHE", value=False, key="patchcore_clahe")
-    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False, key="patchcore_gaussian")
+    use_mask = st.checkbox("Apply Otsu+Canny Foreground Masking (zeros out background)", key="patchcore_mask")
+    st.session_state.setdefault("patchcore_clahe", False)
+    use_clahe = st.checkbox("Apply CLAHE", key="patchcore_clahe")
+    st.session_state.setdefault("patchcore_gaussian", False)
+    use_gaussian = st.checkbox("Apply Gaussian Blur", key="patchcore_gaussian")
 
     preprocessing_steps = []
     if use_mask:
@@ -167,19 +635,48 @@ def render_baseline_patchcore_tab() -> None:
     if use_gaussian:
         preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
 
-    run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", value=False)
+    st.session_state.setdefault("b_heatmap", False)
+    run_heatmap = st.checkbox("Compute Anomaly Heatmaps for anomalous images", key="b_heatmap")
 
-    if not st.button("Run Patchcore Evaluation Pipeline"):
+    force_retrain = st.checkbox(
+        "Force Retrain (Ignore Cache)",
+        value=False,
+        key="patchcore_force_retrain",
+        help="Check this to force re-running model training even if an identical cached run exists in the registry.",
+    )
+
+    col_btn, _ = st.columns([2, 4])
+    run_clicked = col_btn.button("Run Patchcore Evaluation Pipeline", key="btn_run_patchcore")
+
+    if not (run_clicked or load_selected_clicked):
         return
 
-    with st.spinner("Fitting model and evaluating Image & Pixel level metrics..."):
+    active_hash = selected_model_hash if load_selected_clicked else None
+    active_force_retrain = False if load_selected_clicked else force_retrain
+    active_prep = (
+        selected_model_meta.get("_raw_preprocessing_steps", preprocessing_steps)
+        if load_selected_clicked and selected_model_meta
+        else preprocessing_steps
+    )
+
+    spinner_msg = (
+        f"Loading cached Patchcore model `{active_hash}` and evaluating..."
+        if load_selected_clicked
+        else "Fitting Patchcore model and evaluating Image & Pixel level metrics..."
+    )
+
+    with st.spinner(spinner_msg):
         payload = {
             "data_root": data_root,
             "category": category,
-            "preprocessing_steps": preprocessing_steps,
             "backbone": backbone,
+            "feature_layers": feature_layers,
             "coreset_sampling_ratio": coreset_ratio,
+            "num_neighbors": num_neighbors,
+            "preprocessing_steps": active_prep,
             "run_heatmap": run_heatmap,
+            "force_retrain": active_force_retrain,
+            "model_hash": active_hash,
         }
         data = make_api_request("/api/pipelines/baseline", payload, timeout=300)
 
@@ -190,43 +687,13 @@ def render_baseline_patchcore_tab() -> None:
         results = data.get("results", {})
 
         if isinstance(results, dict):
-            col_img, col_pix = st.columns(2)
-            img_metrics = results.get("image_level", {})
-            pix_metrics = results.get("pixel_level", {})
+            _render_evaluation_summary(results, model_type="patchcore")
 
-            with col_img:
-                _display_level_metrics("Image-Level (Classification)", img_metrics)
-                prec = img_metrics.get("precision", 0.0) * 100
-                rec = img_metrics.get("recall", 0.0) * 100
-                if prec > 0 or rec > 0:
-                    st.info(
-                        "Using a strict threshold calculated only on normal test images, the model successfully "
-                        f"flagged **{rec:.1f}%** of the actual defects. When it fired an alarm, "
-                        f"it was correct **{prec:.1f}%** of the time."
-                    )
-            with col_pix:
-                _display_level_metrics("Pixel-Level (Localization)", pix_metrics)
-                aupimo_thresh = pix_metrics.get("t_aupimo_min", 0.0)
-                aupimo_score = pix_metrics.get("aupimo", 0.0)
-                if aupimo_thresh > 0:
-                    st.info(
-                        f"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as "
-                        f"**{aupimo_thresh:.4f}**. The model must exceed this high threshold to flag a pixel "
-                        f"without violating the FPR constraint.\n\n"
-                        f"At this threshold, the model finds **{aupimo_score * 100:.2f}%** "
-                        f"of the actual anomalous pixels, guaranteeing highly reliable defect localization "
-                        f"with fewer than 1 false alarm per 100,000 normal pixels."
-                    )
-
-            st.divider()
-
-            if "metrics_path" in img_metrics:
-                render_evaluation_curves(img_metrics["metrics_path"])
-
-            st.divider()
-
-            if "metrics_path" in pix_metrics:
-                render_evaluation_curves(pix_metrics["metrics_path"])
+            # Additional Parity for PatchCore
+            pixel_metrics = results.get("pixel_level", {})
+            metrics_path = pixel_metrics.get("metrics_path")
+            if metrics_path:
+                render_evaluation_curves(metrics_path)
 
             _render_heatmap_explorer(results)
         else:
@@ -242,14 +709,38 @@ def render_autoencoder_tab() -> None:
     )
 
     col1, col2 = st.columns(2)
-    data_root = col1.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="ae_root")
-    category = col2.text_input("Category Name", value="bottle", key="ae_cat")
+    st.session_state.setdefault("ae_root", "data/raw/mvtec_ad")
+    data_root = col1.text_input("Dataset Root Directory", key="ae_root")
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    st.session_state.setdefault("ae_cat", "bottle")
+    category = col2.selectbox("Category Name", options=mvtec_categories, key="ae_cat")
 
     col_e, col_b, col_l, col_s = st.columns(4)
-    epochs = col_e.number_input("Epochs", min_value=1, max_value=50, value=5, step=1)
-    batch_size = col_b.number_input("Batch Size", min_value=1, max_value=64, value=16, step=4)
-    latent_dim = col_l.number_input("Latent Dim", min_value=8, max_value=256, value=64, step=8)
-    img_size = col_s.number_input("Image Size", min_value=32, max_value=128, value=64, step=16)
+    st.session_state.setdefault("ae_epochs", 5)
+    epochs = col_e.number_input("Epochs", min_value=1, max_value=50, step=1, key="ae_epochs")
+    st.session_state.setdefault("ae_batch", 16)
+    batch_size = col_b.number_input("Batch Size", min_value=1, max_value=64, step=4, key="ae_batch")
+    st.session_state.setdefault("ae_latent", 64)
+    latent_dim = col_l.number_input("Latent Dim", min_value=8, max_value=256, step=8, key="ae_latent")
+    st.session_state.setdefault("ae_size", 64)
+    img_size = col_s.number_input("Image Size", min_value=32, max_value=128, step=16, key="ae_size")
 
     if not st.button("Run Autoencoder Training & Evaluation"):
         return
@@ -304,62 +795,313 @@ def render_keras_cae_tab() -> None:
     # ── Model Registry Table ──────────────────────────────────────────────────────
     st.subheader("Model Registry (Cached Models)")
     registry_path = Path("data/models/keras_cae")
-    cached_models = []
+    cached_models: list[dict[str, Any]] = []
     if registry_path.exists():
         for meta_file in registry_path.rglob("metadata.json"):
+            if ".trash" in meta_file.parts:
+                continue
             try:
                 with open(meta_file, encoding="utf-8") as f:
                     meta = json.load(f)
+                    ts_str = meta.get("timestamp", "")
+                    created_display = ts_str[:19].replace("T", " ") if ts_str else "Unknown"
+                    prep_list = meta.get("preprocessing_steps", [])
+                    prep_names = [s.get("name", "") for s in prep_list] if isinstance(prep_list, list) else []
+                    prep_display = ", ".join(prep_names) if prep_names else "None"
                     cached_models.append(
                         {
-                            "Category": meta.get("category"),
-                            "Hash": meta.get("hash"),
-                            "Img Size": meta.get("img_size"),
-                            "Latent": meta.get("latent_dim"),
-                            "Epochs": meta.get("epochs"),
-                            "Batch": meta.get("batch_size"),
-                            "Mask Ratio": meta.get("mask_ratio"),
-                            "Created": meta.get("timestamp", "")[:19].replace("T", " "),
+                            "Category": meta.get("category", "unknown"),
+                            "Hash": meta.get("hash", meta_file.parent.name),
+                            "Img Size": meta.get("img_size", 128),
+                            "Latent": meta.get("latent_channels", meta.get("latent_dim", 32)),
+                            "Epochs": meta.get("epochs", 20),
+                            "Batch": meta.get("batch_size", 16),
+                            "Mask Ratio": meta.get("mask_ratio", 0.25),
+                            "Preprocessing": prep_display,
+                            "Created": created_display,
+                            "_raw_timestamp": ts_str,
+                            "_raw_preprocessing_steps": prep_list,
                         }
                     )
             except Exception:
                 pass
 
+    selected_model_hash: str | None = None
+    selected_model_meta: dict[str, Any] | None = None
+    selected_model_hashes: list[str] = []
+    load_selected_clicked = False
+
     if cached_models:
-        df_models = pd.DataFrame(cached_models)
-        st.dataframe(df_models, width="stretch", hide_index=True)
-        st.info(
-            "If you run the pipeline with hyperparameters matching a cached model, "
-            "it will instantly load without retraining."
+        # Sort newest first
+        cached_models.sort(key=lambda x: str(x.get("_raw_timestamp", "")), reverse=True)
+        display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
+        df_models = pd.DataFrame(display_models)
+
+        selection = st.dataframe(
+            df_models,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="multi-row",
+            key="kcae_registry_selection",
         )
+
+        selected_rows: list[int] = []
+        if selection is not None:
+            if isinstance(selection, dict):
+                selected_rows = selection.get("selection", {}).get("rows", [])
+            else:
+                sel_attr = getattr(selection, "selection", None)
+                if isinstance(sel_attr, dict):
+                    selected_rows = sel_attr.get("rows", [])
+                elif hasattr(sel_attr, "rows"):
+                    selected_rows = getattr(sel_attr, "rows", [])
+
+        selected_model_metas = [cached_models[r] for r in selected_rows if 0 <= r < len(cached_models)]
+        selected_model_hashes = [str(m.get("Hash")) for m in selected_model_metas]
+
+        if selected_model_hashes:
+            if len(selected_model_hashes) == 1:
+                selected_model_meta = selected_model_metas[0]
+                selected_model_hash = selected_model_hashes[0]
+
+                # Sync inputs with selected model if selection changed
+                if st.session_state.get("_last_kcae_selected_hash") != selected_model_hash:
+                    st.session_state["_last_kcae_selected_hash"] = selected_model_hash
+                    st.session_state["kcae_cat"] = str(selected_model_meta.get("Category", "bottle"))
+                    st.session_state["kcae_epochs"] = int(selected_model_meta.get("Epochs", 20))
+                    st.session_state["kcae_latent"] = int(selected_model_meta.get("Latent", 32))
+                    st.session_state["kcae_img_size"] = int(selected_model_meta.get("Img Size", 128))
+                    st.session_state["kcae_batch"] = int(selected_model_meta.get("Batch", 16))
+                    st.session_state["kcae_mask_ratio"] = float(selected_model_meta.get("Mask Ratio", 0.25))
+
+                    # Sync preprocessing checkboxes with the cached model's preprocessing configuration
+                    raw_prep = selected_model_meta.get("_raw_preprocessing_steps", [])
+                    if isinstance(raw_prep, list):
+                        st.session_state["kcae_mask"] = any(s.get("name") == "foreground_mask" for s in raw_prep)
+                        st.session_state["kcae_clahe"] = any(s.get("name") == "clahe" for s in raw_prep)
+                        st.session_state["kcae_gaussian"] = any(s.get("name") == "gaussian_blur" for s in raw_prep)
+
+                st.success(
+                    f"Selected cached model: **`{selected_model_hash}`** ("
+                    f"Category: `{selected_model_meta.get('Category')}`, "
+                    f"Img Size: `{selected_model_meta.get('Img Size')}`, "
+                    f"Latent: `{selected_model_meta.get('Latent')}`, "
+                    f"Epochs: `{selected_model_meta.get('Epochs')}`, "
+                    f"Preprocessing: `{selected_model_meta.get('Preprocessing')}`, "
+                    f"Created: `{selected_model_meta.get('Created')}`)"
+                )
+                col_load, col_del, _ = st.columns([2, 1, 3])
+                load_selected_clicked = col_load.button(
+                    f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+                    type="primary",
+                    key="btn_load_kcae_selected",
+                )
+                with col_del.popover("🗑️ Delete Model", help=f"Move model {selected_model_hash} to Trash"):
+                    st.warning(f"Move model `{selected_model_hash}` to Trash (can be restored)?")
+                    if st.button("Move to Trash", type="primary", key="btn_confirm_delete_single"):
+                        if delete_cached_model(selected_model_hash, registry_base=registry_path, soft_delete=True):
+                            st.session_state.pop("_last_kcae_selected_hash", None)
+                            st.success(f"Model `{selected_model_hash}` moved to Trash (reversible).")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete model `{selected_model_hash}`.")
+            else:
+                st.warning(f"Selected **{len(selected_model_hashes)} models**: `{', '.join(selected_model_hashes)}`")
+                col_del_multi, _ = st.columns([2, 4])
+                with col_del_multi.popover(
+                    f"🗑️ Delete {len(selected_model_hashes)} Models",
+                    help=f"Move {len(selected_model_hashes)} selected models to Trash",
+                ):
+                    st.warning(f"Move **{len(selected_model_hashes)}** selected models to Trash?")
+                    st.markdown("\n".join(f"- `{h}`" for h in selected_model_hashes))
+                    if st.button(
+                        f"Move to Trash ({len(selected_model_hashes)} models)",
+                        type="primary",
+                        key="btn_confirm_delete_multi",
+                    ):
+                        deleted_cnt = 0
+                        for h in selected_model_hashes:
+                            if delete_cached_model(h, registry_base=registry_path, soft_delete=True):
+                                deleted_cnt += 1
+                        st.session_state.pop("_last_kcae_selected_hash", None)
+                        st.success(f"Moved {deleted_cnt} model(s) to Trash (reversible).")
+                        st.rerun()
+        else:
+            st.info(
+                "💡 **Interactive Model Registry:** Click on any row above to select, load, or delete that "
+                "cached model. The pipeline always loads the newest matching cached model automatically when available."
+            )
     else:
         st.caption("No cached models found in registry.")
 
+    # ── Trash & Restoration Section ───────────────────────────────────────────────
+    trashed_models = list_trashed_models(registry_base=registry_path)
+    if trashed_models:
+        with st.expander(f"🗑️ Trash / Recently Deleted ({len(trashed_models)} models)", expanded=False):
+            st.caption("Soft-deleted models are safely preserved here and can be restored at any time.")
+            trashed_display = []
+            for tm in trashed_models:
+                ts_raw = tm.get("timestamp", "")
+                trashed_display.append(
+                    {
+                        "Category": tm.get("category", "unknown"),
+                        "Hash": tm.get("hash", "unknown"),
+                        "Img Size": tm.get("img_size", 128),
+                        "Latent": tm.get("latent_channels", tm.get("latent_dim", 32)),
+                        "Epochs": tm.get("epochs", 20),
+                        "Created": ts_raw[:19].replace("T", " ") if ts_raw else "Unknown",
+                    }
+                )
+            df_trashed = pd.DataFrame(trashed_display)
+            trash_selection = st.dataframe(
+                df_trashed,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="kcae_trash_selection",
+            )
+
+            trashed_sel_rows: list[int] = []
+            if trash_selection is not None:
+                if isinstance(trash_selection, dict):
+                    trashed_sel_rows = trash_selection.get("selection", {}).get("rows", [])
+                else:
+                    sel_attr = getattr(trash_selection, "selection", None)
+                    if isinstance(sel_attr, dict):
+                        trashed_sel_rows = sel_attr.get("rows", [])
+                    elif hasattr(sel_attr, "rows"):
+                        trashed_sel_rows = getattr(sel_attr, "rows", [])
+
+            trashed_selected_hashes = [
+                str(trashed_models[r].get("hash")) for r in trashed_sel_rows if 0 <= r < len(trashed_models)
+            ]
+
+            col_rest, col_purge, _ = st.columns([2, 2, 4])
+            if trashed_selected_hashes:
+                if col_rest.button(
+                    f"♻️ Restore Selected ({len(trashed_selected_hashes)})",
+                    type="primary",
+                    key="btn_restore_selected",
+                ):
+                    restored_cnt = 0
+                    for th in trashed_selected_hashes:
+                        if restore_cached_model(th, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored {restored_cnt} model(s) back to registry!")
+                    st.rerun()
+            else:
+                if col_rest.button("♻️ Restore All Trashed", key="btn_restore_all"):
+                    restored_cnt = 0
+                    for tm in trashed_models:
+                        th_val = str(tm.get("hash", ""))
+                        if th_val and restore_cached_model(th_val, registry_base=registry_path):
+                            restored_cnt += 1
+                    st.success(f"Restored all {restored_cnt} model(s) back to registry!")
+                    st.rerun()
+
+            with col_purge.popover(
+                "⚠️ Empty Trash (Permanent)", help="Permanently delete all models in trash from disk"
+            ):
+                st.warning("This will PERMANENTLY erase all models currently in the trash directory.")
+                if st.button("Confirm Empty Trash", type="primary", key="btn_confirm_purge_trash"):
+                    purged = purge_trash(registry_base=registry_path)
+                    st.success(f"Permanently erased {purged} model(s).")
+                    st.rerun()
+
     st.divider()
 
+    # Initialize session state defaults
+    st.session_state.setdefault("kcae_root", "data/raw/mvtec_ad")
+    st.session_state.setdefault("kcae_cat", "bottle")
+    st.session_state.setdefault("kcae_epochs", 20)
+    st.session_state.setdefault("kcae_latent", 32)
+    st.session_state.setdefault("kcae_img_size", 128)
+    st.session_state.setdefault("kcae_batch", 16)
+    st.session_state.setdefault("kcae_mask_ratio", 0.25)
+    st.session_state.setdefault("kcae_mask", True)
+    st.session_state.setdefault("kcae_clahe", False)
+    st.session_state.setdefault("kcae_gaussian", False)
+
+    def load_optuna_defaults() -> None:
+        selected_cat = st.session_state.kcae_cat
+        registry_path = Path("data/hyperparameters/keras_cae_best.json")
+        if registry_path.exists():
+            with open(registry_path, encoding="utf-8") as f:
+                registry = json.load(f)
+
+            if selected_cat in registry:
+                cfg = registry[selected_cat]
+                # Backward compatibility for flat schema just in case
+                if "preprocessing" not in cfg:
+                    prep = cfg
+                    hp = cfg
+                else:
+                    prep = cfg.get("preprocessing", {})
+                    hp = cfg.get("model_hyperparameters", {})
+
+                if "latent_dim" in hp:
+                    st.session_state.kcae_latent = hp["latent_dim"]
+                elif "latent_channels" in hp:
+                    st.session_state.kcae_latent = hp["latent_channels"]
+
+                if "use_clahe" in prep:
+                    st.session_state.kcae_clahe = prep["use_clahe"]
+                elif "apply_clahe" in prep:
+                    st.session_state.kcae_clahe = prep["apply_clahe"]
+
+                if "use_gaussian_blur" in prep:
+                    st.session_state.kcae_gaussian = prep["use_gaussian_blur"]
+                elif "apply_blur" in prep:
+                    st.session_state.kcae_gaussian = prep["apply_blur"]
+
+                if "use_foreground_mask" in prep:
+                    st.session_state.kcae_mask = prep["use_foreground_mask"]
+                elif "apply_foreground_mask" in prep:
+                    st.session_state.kcae_mask = prep["apply_foreground_mask"]
+
     col1, col2 = st.columns(2)
-    data_root = col1.text_input("Dataset Root Directory", value="data/raw/mvtec_ad", key="kcae_root")
-    category = col2.text_input("Category Name", value="bottle", key="kcae_cat")
+    data_root = col1.text_input("Dataset Root Directory", key="kcae_root")
+
+    mvtec_categories = [
+        "bottle",
+        "cable",
+        "capsule",
+        "hazelnut",
+        "metal_nut",
+        "pill",
+        "screw",
+        "toothbrush",
+        "transistor",
+        "zipper",
+        "carpet",
+        "grid",
+        "leather",
+        "tile",
+        "wood",
+    ]
+    category = col2.selectbox("Category Name", options=mvtec_categories, key="kcae_cat", on_change=load_optuna_defaults)
 
     st.subheader("Training Hyperparameters")
     c1, c2, c3, c4 = st.columns(4)
-    epochs = c1.number_input("Epochs", min_value=1, max_value=100, value=20, step=5)
-    latent_channels = c2.number_input("Latent Channels", min_value=8, max_value=256, value=32, step=8)
-    img_size = c3.number_input("Image Size", min_value=64, max_value=256, value=128, step=16)
-    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, value=16, step=4)
+    epochs = c1.number_input("Epochs", min_value=1, max_value=100, step=5, key="kcae_epochs")
+    latent_channels = c2.number_input("Latent Channels", min_value=8, max_value=256, step=8, key="kcae_latent")
+    img_size = c3.number_input("Image Size", min_value=64, max_value=256, step=16, key="kcae_img_size")
+    batch_size = c4.number_input("Batch Size", min_value=4, max_value=64, step=4, key="kcae_batch")
 
     with st.expander("Advanced Hyperparameters"):
         ac1, ac2, ac3 = st.columns(3)
-        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, 0.25, 0.05)
+        mask_ratio = ac1.slider("Mask Ratio (MIM)", 0.0, 0.75, step=0.05, key="kcae_mask_ratio")
         threshold_method = ac2.selectbox("Threshold Method", ["quantile", "mahalanobis"])
         k_fraction = ac3.number_input(
             "Top-K Fraction", min_value=0.001, max_value=0.050, value=0.002, step=0.001, format="%.3f"
         )
 
     st.subheader("Preprocessing Options")
-    use_seg = st.checkbox("Apply Otsu+Canny Foreground Masking (BGRP-G)", value=True, key="kcae_mask")
-    use_clahe = st.checkbox("Apply CLAHE", value=False, key="kcae_clahe")
-    use_gaussian = st.checkbox("Apply Gaussian Blur", value=False, key="kcae_gaussian")
+    use_seg = st.checkbox("Apply Otsu+Canny Foreground Masking (BGRP-G)", key="kcae_mask")
+    use_clahe = st.checkbox("Apply CLAHE", key="kcae_clahe")
+    use_gaussian = st.checkbox("Apply Gaussian Blur", key="kcae_gaussian")
 
     preprocessing_steps = []
     if use_seg:
@@ -372,10 +1114,20 @@ def render_keras_cae_tab() -> None:
     st.subheader("Execution")
     force_retrain = st.checkbox("Force Retrain Model (bypass cache even if hyperparameters match)", value=False)
 
-    if not st.button("Run Keras CAE Pipeline"):
+    run_pipeline_clicked = st.button("Run Keras CAE Pipeline")
+
+    if not (load_selected_clicked or run_pipeline_clicked):
         return
 
-    with st.spinner("Training Keras CAE and evaluating... (may take several minutes)"):
+    active_hash = selected_model_hash if load_selected_clicked else None
+    active_force_retrain = False if load_selected_clicked else force_retrain
+    active_prep = (
+        selected_model_meta.get("_raw_preprocessing_steps", preprocessing_steps)
+        if load_selected_clicked and selected_model_meta
+        else preprocessing_steps
+    )
+
+    with st.spinner("Executing Keras CAE pipeline and evaluating..."):
         payload = {
             "data_root": data_root,
             "category": category,
@@ -386,9 +1138,10 @@ def render_keras_cae_tab() -> None:
             "mask_ratio": mask_ratio,
             "threshold_method": threshold_method,
             "k_fraction": k_fraction,
-            "preprocessing_steps": preprocessing_steps,
+            "preprocessing_steps": active_prep,
             "run_heatmap": True,  # Automatically compute heatmaps
-            "force_retrain": force_retrain,
+            "force_retrain": active_force_retrain,
+            "model_hash": active_hash,
         }
         data = make_api_request("/api/pipelines/keras_cae", payload, timeout=None)
 
@@ -399,52 +1152,7 @@ def render_keras_cae_tab() -> None:
     results = data.get("results", {})
 
     # ── Metrics ──────────────────────────────────────────────────────────────────
-    if "image_level" in results and "pixel_level" in results:
-        col_img, col_pix = st.columns(2)
-        img_metrics = results.get("image_level", {})
-        pix_metrics = results.get("pixel_level", {})
-
-        with col_img:
-            _display_level_metrics("Image-Level (Classification)", img_metrics)
-            total = results.get("total_test_images", 0)
-            prec = results.get("precision", 0.0) * 100
-            rec = results.get("recall", 0.0) * 100
-            st.info(
-                f"Out of {total} test components, the model successfully flagged **{rec:.1f}%** of the actual defects. "
-                f"When it fired an alarm, it was correct **{prec:.1f}%** of the time."
-            )
-
-        with col_pix:
-            _display_level_metrics("Pixel-Level (Localization)", pix_metrics)
-            aupimo_thresh = pix_metrics.get("t_aupimo_min", 0.0)
-            aupimo_score = pix_metrics.get("aupimo", 0.0)
-            if aupimo_thresh > 0:
-                st.info(
-                    f"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as "
-                    f"**{aupimo_thresh:.4f}**. The model must exceed this high threshold to flag a pixel "
-                    f"without violating the FPR constraint.\n\n"
-                    f"At this threshold, the model finds **{aupimo_score * 100:.2f}%** "
-                    f"of the actual anomalous pixels, guaranteeing highly reliable defect localization "
-                    f"with fewer than 1 false alarm per 100,000 normal pixels."
-                )
-
-        st.divider()
-
-        if "metrics_path" in img_metrics:
-            render_evaluation_curves(img_metrics["metrics_path"])
-
-        st.divider()
-
-        if "metrics_path" in pix_metrics:
-            render_evaluation_curves(pix_metrics["metrics_path"])
-    else:
-        st.subheader("Evaluation Metrics")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("AUROC (Image)", f"{results.get('auroc', 0.0):.4f}")
-        m2.metric("AUPIMO (Pixel)", f"{results.get('aupimo', 0.0):.4f}")
-        m3.metric("Accuracy", f"{results.get('accuracy', 0.0) * 100:.2f}%")
-        m4.metric("Precision", f"{results.get('precision', 0.0):.4f}")
-        m5.metric("Recall", f"{results.get('recall', 0.0):.4f}")
+    _render_evaluation_summary(results)
 
     st.caption(
         f"Adaptive Threshold: `{results.get('threshold', 0.0):.6f}` | "
