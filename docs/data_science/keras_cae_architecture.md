@@ -65,27 +65,48 @@ flowchart TD
 
 ---
 
+## Hyperparameter Optimization (Optuna)
+
+To find the best configuration per category, the pipeline integrates an **Optuna** study (`optuna_study.py`).
+
+- **Target Metric**: Pixel AUPIMO (Area Under the Per-Region Anomaly Detection Curve).
+- **Search Space**: Dynamically adapts based on object vs. texture. For example, Otsu + Canny Foreground Masking is automatically bypassed for textures like Carpet or Wood, preserving structural grammar.
+- **UI Integration**: The Streamlit UI automatically loads optimal values from `data/hyperparameters/keras_cae_best.json` using an `on_change` callback whenever the category is switched.
+
+### Cloud Execution (Google Colab)
+
+For large-scale tuning across all 15 MVTec AD categories, you can use the provided Colab notebook:
+
+1. Open **[`notebooks/colab_optuna_sweep.ipynb`](../../notebooks/colab_optuna_sweep.ipynb)** in Google Colab (or any Jupyter environment).
+2. Execute the notebook to run Optuna studies across all categories. It will iterate through the dataset and write the nested dictionary schema to a file.
+3. Download the resulting `keras_cae_best.json` file from the Colab instance.
+4. Place this file precisely at **`data/hyperparameters/keras_cae_best.json`** in your local project root.
+5. Launch the UI (`just run`). When you change the category in the Keras CAE tab, it will instantly load and sync these optimal parameters (including both preprocessing checkboxes and model hyperparameters like latent dimensionality).
+
+---
+
 ## Module Structure
 
 Each Python module handles one specific concern - no module does more than one job:
 
 | Module | What it does |
 |--------|-------------|
-| [`augmentation.py`](../../app/pipelines/multi_stage_ae/augmentation.py) | Category-aware data augmentation (texture vs. object strategies) |
-| [`segmentation.py`](../../app/pipelines/multi_stage_ae/segmentation.py) | Otsu + Canny foreground extraction and background replacement |
-| [`cae_keras.py`](../../app/pipelines/multi_stage_ae/cae_keras.py) | CAE model definition (`build_cae`), MIM masking, SSIM+MSE loss, training loop |
-| [`scoring.py`](../../app/pipelines/multi_stage_ae/scoring.py) | Pixel error map computation, Top-K pooling, adaptive thresholds |
-| [`evaluation.py`](../../app/pipelines/multi_stage_ae/evaluation.py) | AUROC, AUPIMO, Precision/Recall/F1, tradeoff curves |
-| [`error_heatmap.py`](../../app/pipelines/multi_stage_ae/error_heatmap.py) | Reconstruction Error Heatmap XAI overlays |
-| [`cae_pipeline.py`](../../app/pipelines/multi_stage_ae/cae_pipeline.py) | End-to-end orchestrator: calls all modules in order |
+| [`augmentation.py`](../../app/pipelines/preprocessing/augmentation.py) | Category-aware data augmentation (texture vs. object strategies) |
+| [`segmentation.py`](../../app/pipelines/preprocessing/segmentation.py) | Otsu + Canny foreground extraction and background replacement |
+| [`cae_keras.py`](../../app/pipelines/modelling/keras_cae/cae_keras.py) | CAE model definition (`build_cae`), MIM masking, SSIM+MSE loss, training loop |
+| [`scoring.py`](../../app/pipelines/evaluation/scoring.py) | Pixel error map computation, Top-K pooling, adaptive thresholds |
+| [`evaluation.py`](../../app/pipelines/evaluation/cae_metrics.py) | AUROC, AUPIMO, Precision/Recall/F1, tradeoff curves |
+| [`error_heatmap.py`](../../app/pipelines/evaluation/heatmaps.py) | Reconstruction Error Heatmap XAI overlays |
+| [`cae_pipeline.py`](../../app/pipelines/modelling/keras_cae/cae_pipeline.py) | End-to-end orchestrator: calls all modules in order |
+| [`optuna_study.py`](../../app/pipelines/modelling/keras_cae/optuna_study.py) | Automated hyperparameter optimization using Optuna (optimizes Pixel AUPIMO) |
 
 ---
 
 ## Step-by-Step Sub-Pages
 
 The 10 pipeline steps are split across focused sub-pages. Each sub-page is self-contained
-- you can read any one without reading the others, as long as you understand the overview
-above.
+
+- you can read any one without reading the others, as long as you understand the overview above.
 
 | Step | What happens | Sub-page |
 |------|-------------|----------|

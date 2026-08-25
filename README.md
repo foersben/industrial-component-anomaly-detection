@@ -75,6 +75,31 @@ just fetch-data
 
 ---
 
+## 🖥️ Interactive Application (Streamlit + FastAPI)
+
+Once the environment is setup and data is fetched, you can launch the interactive web application to evaluate models and analyze anomaly heatmaps.
+
+This launches a **FastAPI backend** on port 8000 and a **Streamlit frontend** on port 8501.
+
+```bash
+just run
+```
+
+### Supported Pipelines & Unified Caching
+
+The application supports multiple state-of-the-art anomaly detection pipelines, sharing a unified model registry and caching architecture under `data/models/`:
+
+1. **PatchCore Baseline**: An industry-standard feature-matching model (Roth et al., 2021) utilizing Wide-ResNet50-2 and coreset subsampling for near-perfect AUROC with zero training time.
+2. **Keras Convolutional Autoencoder (CAE)**: A custom end-to-end trained deep learning model designed for precise pixel-level anomaly localization and inference speed.
+
+Both pipelines support:
+
+* **Instant Cached Evaluation**: Evaluations are hashed and cached (under 100ms load time).
+* **Soft-Deletion Lifecycle**: Models are safely moved to a `.trash/` directory for reversible recovery.
+* **Dynamic Preprocessing**: Real-time integration of CLAHE, Gaussian Blurs, and Otsu+Canny foreground masking.
+
+---
+
 ## 💻 Development Workflow & `Justfile` Tasks
 
 We utilize `just` (installed automatically via Pixi) as our central command runner. **Never call bare `pip`, `poetry`, or global python commands.**
@@ -83,6 +108,7 @@ Run `just default` to see the full matrix. Core tasks include:
 
 | Command | Action Performed |
 | :--- | :--- |
+| `just run` | Starts FastAPI backend (port 8000) and Streamlit frontend (port 8501) concurrently. |
 | `just setup` | Installs virtual environments, pre-commit hooks, and IDE extensions. |
 | `just fetch-data` | Downloads the MVTec AD dataset from Hugging Face and AUPIMO benchmark metrics. |
 | `just lab` | Starts a JupyterLab server strictly bound to the dev environment (`localhost:8888`). |

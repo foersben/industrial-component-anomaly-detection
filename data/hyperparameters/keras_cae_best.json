@@ -1,0 +1,128 @@
+{
+    "bottle": {
+        "target_metric": "pixel_aupimo",
+        "score": 0.09312054597808858,
+        "preprocessing": {
+            "use_foreground_mask": false,
+            "use_clahe": false,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [
+                8,
+                8
+            ],
+            "use_gaussian_blur": false,
+            "blur_ksize": 5
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": 128,
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16
+        }
+    },
+    "cable": {
+        "target_metric": "pixel_aupimo",
+        "score": 0.0038483356440934596,
+        "preprocessing": {
+            "use_foreground_mask": false,
+            "use_clahe": false,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [
+                8,
+                8
+            ],
+            "use_gaussian_blur": true,
+            "blur_ksize": 7
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": 128,
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16
+        }
+    },
+    "capsule": {
+        "target_metric": "pixel_aupimo",
+        "score": 0.022920749224447395,
+        "preprocessing": {
+            "use_foreground_mask": true,
+            "use_clahe": false,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [
+                8,
+                8
+            ],
+            "use_gaussian_blur": true,
+            "blur_ksize": 3
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": 128,
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16
+        }
+    },
+    "carpet": {
+        "target_metric": "pixel_aupimo",
+        "score": 0.012240830384828066,
+        "preprocessing": {
+            "use_foreground_mask": false,
+            "use_clahe": false,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [
+                8,
+                8
+            ],
+            "use_gaussian_blur": false,
+            "blur_ksize": 5
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": 32,
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16
+        }
+    },
+    "grid": {
+        "target_metric": "pixel_aupimo",
+        "score": 0.017006638937249675,
+        "preprocessing": {
+            "use_foreground_mask": false,
+            "use_clahe": false,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [
+                8,
+                8
+            ],
+            "use_gaussian_blur": false,
+            "blur_ksize": 5
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": 16,
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16
+        }
+    },
+    "hazelnut": {
+        "target_metric": "pixel_aupimo",
+        "score": 0.025672589967149766,
+        "preprocessing": {
+            "use_foreground_mask": false,
+            "use_clahe": false,
+            "clahe_clip_limit": 2.0,
+            "clahe_tile_grid_size": [
+                8,
+                8
+            ],
+            "use_gaussian_blur": false,
+            "blur_ksize": 5
+        },
+        "model_hyperparameters": {
+            "learning_rate": 0.001,
+            "latent_dim": 32,
+            "loss_weight_ssim": 0.84,
+            "loss_weight_mse": 0.16
+        }
+    }
+}

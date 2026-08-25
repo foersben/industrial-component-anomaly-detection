@@ -104,6 +104,7 @@ import logging
 from typing import Any
 
 import numpy as np
+import optuna
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +367,7 @@ def train_cae(
     lr_patience: int = 5,
     lr_factor: float = 0.5,
     min_delta: float = 1e-6,
+    trial: optuna.Trial | None = None,
 ) -> dict[str, list[float]]:
     """Train the CAE model using Masked Image Modeling (MIM).
 
@@ -399,12 +401,28 @@ def train_cae(
         lr_patience: Epochs without improvement before reducing learning rate.
         lr_factor: Factor by which to reduce the learning rate (e.g. 0.5).
         min_delta: Minimum change required to qualify as an improvement.
+        trial: Optional Optuna trial for early pruning.
 
     Returns:
         Dictionary containing lists of epoch-average loss values:
         {'train': [...], 'val_good': [...], 'val_anomalous': [...]}.
     """
-    _require_tf()
+    tf = _require_tf()
+
+    class NumpyBatchGenerator(tf.keras.utils.Sequence):  # type: ignore[name-defined,misc]
+        def __init__(self, x: np.ndarray, y: np.ndarray, batch_size: int) -> None:
+            self.x = x
+            self.y = y
+            self.batch_size = batch_size
+
+        def __len__(self) -> int:
+            return int(np.ceil(len(self.x) / float(self.batch_size)))
+
+        def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
+            batch_x = self.x[idx * self.batch_size : (idx + 1) * self.batch_size]
+            batch_y = self.y[idx * self.batch_size : (idx + 1) * self.batch_size]
+            return batch_x, batch_y
+
     n_samples = len(train_images)
     history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
 
@@ -416,18 +434,19 @@ def train_cae(
     for epoch in range(epochs):
         # Shuffle training data at the start of each epoch
         indices = np.random.permutation(n_samples)
-        epoch_losses: list[float] = []
+        shuffled_clean = train_images[indices]
+        shuffled_masked = apply_patch_masking(shuffled_clean, mask_ratio, patch_size)
 
-        for start in range(0, n_samples, batch_size):
-            batch_indices = indices[start : start + batch_size]
-            batch_clean = train_images[batch_indices]  # Ground truth (reconstruction target)
-            batch_masked = apply_patch_masking(batch_clean, mask_ratio, patch_size)  # Model input
+        # Use a Sequence generator to avoid allocating huge CPU tensors and OOMing during copies
+        gen = NumpyBatchGenerator(shuffled_masked, shuffled_clean, batch_size)
 
-            # Keras model.train_on_batch returns a scalar loss (or list if multiple outputs)
-            loss = model.train_on_batch(batch_masked, batch_clean)
-            epoch_losses.append(float(loss))
-
-        avg_loss = float(np.mean(epoch_losses))
+        fit_hist = model.fit(
+            gen,
+            epochs=1,
+            verbose=0,
+            shuffle=False,  # We already shuffled manually
+        )
+        avg_loss = fit_hist.history["loss"][0]
         history["train"].append(avg_loss)
 
         log_msg = f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_loss:.6f}"
@@ -449,6 +468,12 @@ def train_cae(
             log_msg += f" | Val Anomaly Loss: {val_an_loss:.6f}"
 
         logger.info(log_msg)
+
+        # Optuna Pruning Integration
+        if trial is not None:
+            trial.report(float(monitor_loss), step=epoch)
+            if trial.should_prune():
+                raise optuna.exceptions.TrialPruned()
 
         # Callbacks Logic (Early Stopping, Checkpoint, ReduceLR)
         if monitor_loss < best_loss - min_delta:

@@ -16,8 +16,8 @@ vs. Mahalanobis), and honest evaluation (AUROC, F1, AUPIMO).
 
 **Implementation files**:
 
-- [`scoring.py`](../../app/pipelines/multi_stage_ae/scoring.py) - pixel error maps, Top-K, thresholds
-- [`evaluation.py`](../../app/pipelines/multi_stage_ae/evaluation.py) - AUROC, AUPIMO, Precision/Recall/F1
+- [`scoring.py`](../../app/pipelines/evaluation/scoring.py) - pixel error maps, Top-K, thresholds
+- [`evaluation.py`](../../app/pipelines/evaluation/cae_metrics.py) - AUROC, AUPIMO, Precision/Recall/F1
 
 ---
 

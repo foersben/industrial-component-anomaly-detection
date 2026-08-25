@@ -1,0 +1,92 @@
+{
+  "bottle": {
+    "target_metric": "pixel_auroc",
+    "score": 0.9791438579559326,
+    "preprocessing": {
+      "use_foreground_mask": false,
+      "use_clahe": false,
+      "use_gaussian_blur": false
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3_l4",
+      "coreset_sampling_ratio": 0.13044598765594176,
+      "num_neighbors": 3
+    }
+  },
+  "cable": {
+    "target_metric": "pixel_auroc",
+    "score": 0.9827287197113037,
+    "preprocessing": {
+      "use_foreground_mask": false,
+      "use_clahe": false,
+      "use_gaussian_blur": false
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3",
+      "coreset_sampling_ratio": 0.029826063351870984,
+      "num_neighbors": 1
+    }
+  },
+  "capsule": {
+    "target_metric": "pixel_auroc",
+    "score": 0.9880162477493286,
+    "preprocessing": {
+      "use_foreground_mask": false,
+      "use_clahe": true,
+      "use_gaussian_blur": false
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3",
+      "coreset_sampling_ratio": 0.011775929634129942,
+      "num_neighbors": 4
+    }
+  },
+  "carpet": {
+    "target_metric": "pixel_auroc",
+    "score": 0.9882488250732422,
+    "preprocessing": {
+      "use_foreground_mask": false,
+      "use_clahe": true,
+      "use_gaussian_blur": false
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3",
+      "coreset_sampling_ratio": 0.19139145933090876,
+      "num_neighbors": 2
+    }
+  },
+  "grid": {
+    "target_metric": "pixel_auroc",
+    "score": 0.9708350896835327,
+    "preprocessing": {
+      "use_foreground_mask": false,
+      "use_clahe": false,
+      "use_gaussian_blur": false
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3_l4",
+      "coreset_sampling_ratio": 0.11560954848553412,
+      "num_neighbors": 8
+    }
+  },
+  "hazelnut": {
+    "target_metric": "pixel_auroc",
+    "score": 0.9891554117202759,
+    "preprocessing": {
+      "use_foreground_mask": false,
+      "use_clahe": false,
+      "use_gaussian_blur": false
+    },
+    "model_hyperparameters": {
+      "backbone": "resnet18",
+      "feature_layers": "l2_l3",
+      "coreset_sampling_ratio": 0.024166026986326444,
+      "num_neighbors": 2
+    }
+  }
+}
