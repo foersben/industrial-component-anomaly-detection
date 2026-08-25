@@ -140,7 +140,7 @@ optuna = ">=4.9.0,<5"
 cuda-version = "12.*"
 cuda-libraries = "12.*"
 cuda-cupti = "12.*"
-cudnn = ">=8.9,<9"
+cudnn = ">=9.0,<10"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 # ── PyTorch (GPU / CUDA) ────────────────────────────────────────────────────

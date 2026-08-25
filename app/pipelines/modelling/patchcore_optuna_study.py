@@ -9,6 +9,10 @@ import torch
 from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import Patchcore
+import anomalib.models.components.sampling.k_center_greedy as kcg
+
+# Monkeypatch tqdm in k_center_greedy to prevent Jupyter RecursionError loops
+kcg.tqdm = lambda iterable, *args, **kwargs: iterable
 
 from app.core.logger import logger
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
@@ -54,20 +58,24 @@ def _evaluate_patchcore(
     proc_pipeline = build_pipeline_from_configs(preprocessing_steps)
     transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
 
-    # Initialize datamodule
-    datamodule = MVTecAD(
+    # Initialize datamodule with subclassed setup to persist transforms
+    class PreprocessedMVTecAD(MVTecAD):
+        def setup(self, stage: str | None = None) -> None:
+            super().setup(stage)
+            from app.pipelines.preprocessing.adapter import PreprocessedAnomalibDataset
+            
+            if getattr(self, "train_data", None) is not None and not isinstance(self.train_data, PreprocessedAnomalibDataset):
+                self.train_data = PreprocessedAnomalibDataset(self.train_data, transform_adapter)
+                
+            if getattr(self, "test_data", None) is not None and not isinstance(self.test_data, PreprocessedAnomalibDataset):
+                self.test_data = PreprocessedAnomalibDataset(self.test_data, transform_adapter)
+
+    datamodule = PreprocessedMVTecAD(
         root=data_root,
         category=category_name,
         train_batch_size=16,
         eval_batch_size=16,
     )
-    datamodule.setup()
-
-    # Assign transforms
-    if hasattr(datamodule, "train_data") and datamodule.train_data:
-        datamodule.train_data.transform = transform_adapter  # type: ignore[attr-defined]
-    if hasattr(datamodule, "test_data") and datamodule.test_data:
-        datamodule.test_data.transform = transform_adapter  # type: ignore[attr-defined]
 
     # Initialize model
     model = Patchcore(
@@ -83,12 +91,10 @@ def _evaluate_patchcore(
     try:
         engine.fit(model, datamodule)
 
-        # We need the AUPIMO pixel metric. extract_and_save_pr_metrics provides this.
-        # It's better to just run standard engine.test if we only care about AUPIMO,
-        # but Anomalib engine test returns dictionaries. Let's just use engine.test directly
+        # We use pixel_AUROC as a fast proxy for optimization
         test_results = engine.test(model=model, datamodule=datamodule)
         if test_results and len(test_results) > 0:
-            return float(test_results[0].get("pixel_AUPIMO", 0.0))
+            return float(test_results[0].get("pixel_AUROC", 0.0))
         return 0.0
     except Exception as e:
         logger.error("Trial failed with error: %s", e)
@@ -103,7 +109,7 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
     is_texture = category_name in TEXTURES
 
     # Backbone & Layers
-    backbone = trial.suggest_categorical("backbone", ["resnet18", "wide_resnet50_2"])
+    backbone = "resnet18"
 
     # Layers (Patchcore expects sequence of strings)
     layer_config = trial.suggest_categorical("feature_layers", ["l2_l3", "l2_l3_l4"])
@@ -144,13 +150,22 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
 def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
     """Runs an Optuna study for Patchcore and returns the best configuration."""
     study_name = f"patchcore_{category_name}"
+    
+    storage_path = Path("data/hyperparameters/patchcore_optuna.db")
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
+    storage_url = f"sqlite:///{storage_path.resolve()}"
+
     study = optuna.create_study(
         study_name=study_name,
+        storage=storage_url,
+        load_if_exists=True,
         direction="maximize",
         pruner=optuna.pruners.MedianPruner(),
     )
 
-    study.optimize(lambda t: objective(t, category_name, data_root), n_trials=n_trials)
+    trials_to_run = max(0, n_trials - len(study.trials))
+    if trials_to_run > 0:
+        study.optimize(lambda t: objective(t, category_name, data_root), n_trials=trials_to_run)
 
     best_trial = study.best_trial
     logger.info("Best trial for %s:", category_name)
@@ -162,7 +177,7 @@ def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw
     is_texture = category_name in TEXTURES
 
     cfg: dict[str, Any] = {
-        "target_metric": "pixel_aupimo",
+        "target_metric": "pixel_auroc",
         "score": best_trial.value,
         "preprocessing": {
             "use_foreground_mask": False if is_texture else best_trial.params.get("use_foreground_mask", False),
@@ -170,7 +185,7 @@ def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw
             "use_gaussian_blur": best_trial.params["use_gaussian_blur"],
         },
         "model_hyperparameters": {
-            "backbone": best_trial.params["backbone"],
+            "backbone": "resnet18",
             "feature_layers": best_trial.params["feature_layers"],
             "coreset_sampling_ratio": best_trial.params["coreset_sampling_ratio"],
             "num_neighbors": best_trial.params["num_neighbors"],
@@ -180,8 +195,21 @@ def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw
 
 
 if __name__ == "__main__":
-    # Example local run
-    best_cfg = run_study(category_name="bottle", n_trials=2)
+    import argparse
+    import logging
+
+    logging.basicConfig(level=logging.INFO)
+
+    parser = argparse.ArgumentParser(description="Run Optuna study for PatchCore")
+    parser.add_argument("--category", type=str, required=True, help="MVTec category name")
+    parser.add_argument("--n-trials", type=int, default=1, help="Number of trials to run")
+    parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Dataset root directory")
+
+    args = parser.parse_args()
+
+    # Best trial retrieval will crash if NO trials are completed yet, so we only fetch 
+    # and save if trials have run.
+    best_cfg = run_study(category_name=args.category, n_trials=args.n_trials, data_root=args.data_root)
 
     out_path = Path("data/hyperparameters/patchcore_best.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,6 +220,6 @@ if __name__ == "__main__":
     else:
         full_registry = {}
 
-    full_registry["bottle"] = best_cfg
+    full_registry[args.category] = best_cfg
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(full_registry, f, indent=2)

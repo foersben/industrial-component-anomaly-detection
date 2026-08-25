@@ -828,25 +828,31 @@ def run_baseline(
     transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
 
     # 1. Initialize dataset, model, and engine
-    datamodule = MVTecAD(
-        root=data_root,
-        category=category,
-        train_batch_size=16,
-        eval_batch_size=16,
-    )
-
     if len(proc_pipeline) > 0:
-        # Setup the datamodule datasets so train_data and test_data are instantiated
-        datamodule.setup()
+        class PreprocessedMVTecAD(MVTecAD):
+            def setup(self, stage: str | None = None) -> None:
+                super().setup(stage)
+                from app.pipelines.preprocessing.adapter import PreprocessedAnomalibDataset
+                
+                if getattr(self, "train_data", None) is not None and not isinstance(self.train_data, PreprocessedAnomalibDataset):
+                    self.train_data = PreprocessedAnomalibDataset(self.train_data, transform_adapter)
+                    
+                if getattr(self, "test_data", None) is not None and not isinstance(self.test_data, PreprocessedAnomalibDataset):
+                    self.test_data = PreprocessedAnomalibDataset(self.test_data, transform_adapter)
 
-        # Assign the adapter transform to the underlying datasets
-        train_data = getattr(datamodule, "train_data", None)
-        if train_data is not None:
-            train_data.transform = transform_adapter
-
-        test_data = getattr(datamodule, "test_data", None)
-        if test_data is not None:
-            test_data.transform = transform_adapter
+        datamodule = PreprocessedMVTecAD(
+            root=data_root,
+            category=category,
+            train_batch_size=16,
+            eval_batch_size=16,
+        )
+    else:
+        datamodule = MVTecAD(
+            root=data_root,
+            category=category,
+            train_batch_size=16,
+            eval_batch_size=16,
+        )
 
     model = Patchcore(
         backbone=backbone,

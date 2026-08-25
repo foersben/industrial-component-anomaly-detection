@@ -1,3 +1,5 @@
+import os
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 """End-to-end orchestrator for the Keras CAE anomaly detection pipeline.
 
 This module ties together all the modular components developed in this package

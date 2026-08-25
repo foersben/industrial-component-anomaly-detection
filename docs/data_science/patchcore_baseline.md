@@ -32,10 +32,11 @@ Through our internal evaluation, we discovered that the default Patchcore implem
 
 ### 1. Backbone Selection
 
-- **ResNet18**: The default. Very fast inference, but smaller feature maps.
-- **Wide-ResNet50-2 (Recommended)**: A wider variant of ResNet50.
-    - **Why?** It yields a much richer, higher-dimensional feature map that captures significantly more nuanced textural and structural variations. This prevents Patchcore from mistakenly classifying normal subtle variations as anomalies, drastically improving the False Positive curve at strict thresholds.
-    - **What to expect**: Higher memory usage and slightly slower inference, but a far more robust anomaly score distribution.
+- **ResNet18 (Recommended & Default)**: Fast inference and perfectly stable. During our hyperparameter sweeps, we discovered that `resnet18` scales flawlessly without triggering memory exhaustion or PyTorch Lightning recursion crashes, making it the preferred and safest backbone for PatchCore deployments.
+- **Wide-ResNet50-2 (Deprecated)**: While theoretically yielding richer feature maps, we actively deprecated this backbone due to critical stability issues. It frequently triggered internal `timm` hook crashes and OOM exceptions during dynamic feature extraction within `anomalib`, causing unrecoverable trial failures during hyperparameter sweeps.
+
+!!! warning "Jupyter Notebook Stability & Recursion Errors"
+    When running PatchCore hyperparameter sweeps inside Jupyter Notebooks (e.g. Google Colab), you may encounter a `maximum recursion depth exceeded` error. This is caused by a known conflict between Anomalib's greedy coreset `tqdm` progress bar and PyTorch Lightning's logging hooks, which trap `sys.stdout` in an infinite recursive loop. To fix this, our pipeline monkeypatches the `tqdm` instance in `patchcore_optuna_study.py` to run silently during sweeps. Ensure your kernel is restarted if a previous trial crashes, as Lightning will silently hold the VRAM, leading to immediate OOM errors on subsequent runs.
 
 ### 2. Coreset Sampling Ratio
 

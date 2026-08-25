@@ -67,9 +67,14 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
     except Exception as e:
         logger.error("Trial failed during execution: %s", e)
         raise optuna.exceptions.TrialPruned() from e
+    finally:
+        import gc
+        from tensorflow.keras import backend as K
+        K.clear_session()
+        gc.collect()
 
     # Extract the target metric to maximize
-    pixel_aupimo = results.get("metrics", {}).get("pixel_aupimo")
+    pixel_aupimo = results.get("pixel_level", {}).get("aupimo")
 
     if pixel_aupimo is None:
         raise ValueError("Pixel AUPIMO score not found in results.")
@@ -81,14 +86,22 @@ def run_study(category_name: str, n_trials: int = 15, data_root: str = "data/raw
     """Run the Optuna study and save the best parameters."""
     study_name = f"keras_cae_{category_name}"
 
+    storage_path = Path("data/hyperparameters/keras_cae_optuna.db")
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
+    storage_url = f"sqlite:///{storage_path.resolve()}"
+
     # We want to MAXIMIZE Pixel AUPIMO
     study = optuna.create_study(
         study_name=study_name,
+        storage=storage_url,
+        load_if_exists=True,
         direction="maximize",
         pruner=optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=5, interval_steps=1),
     )
 
-    study.optimize(lambda trial: objective(trial, category_name, data_root), n_trials=n_trials)
+    trials_to_run = max(0, n_trials - len(study.trials))
+    if trials_to_run > 0:
+        study.optimize(lambda trial: objective(trial, category_name, data_root), n_trials=trials_to_run)
 
     best_params = study.best_params
 

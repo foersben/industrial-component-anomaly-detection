@@ -6,6 +6,7 @@ Pixi's ``gpu`` and ``cpu`` install-time features determine *which build* of Tens
 is installed (``tensorflow[and-cuda]`` vs ``tensorflow-cpu``). However, several runtime
 situations make a second, dynamic check necessary:
 
+
 1. **Mixed environments**: A developer may have the ``gpu`` feature installed on a
    machine that temporarily lacks a working CUDA driver (e.g., after an OS update).
    Without runtime detection, TF would crash with a cryptic CUDA initialisation error.
@@ -71,9 +72,10 @@ Module Contents
 """
 
 from __future__ import annotations
+import os
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 
 import logging
-import os
 import subprocess
 from dataclasses import dataclass, field
 
@@ -246,7 +248,7 @@ def preload_cuda_shared_libraries() -> None:
         "libcurand.so.10",
         "libcusolver.so.11",
         "libcusparse.so.12",
-        "libcudnn.so.8",
+        "libcudnn.so.9",
         "libcupti.so.12",
         "libnvrtc.so.12",
     ]

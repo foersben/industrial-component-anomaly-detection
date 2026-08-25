@@ -103,6 +103,16 @@ run-dummy *args:
 run-baseline *args:
 	pixi run --frozen -e dev python -m app.main baseline {{args}}
 
+# Run model evaluations
+# Example: just evaluate keras --tuned
+evaluate model *args:
+	pixi run --frozen -e dev python scripts/evaluate.py --model {{model}} {{args}}
+
+# Run Optuna sweeps for hyperparameter tuning
+# Example: just sweep keras
+sweep model:
+	pixi run --frozen -e dev python scripts/sweep.py --model {{model}}
+
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
 	@echo "Extracting MVTec AD package..."

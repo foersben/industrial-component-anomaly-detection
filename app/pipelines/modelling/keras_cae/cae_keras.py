@@ -407,7 +407,22 @@ def train_cae(
         Dictionary containing lists of epoch-average loss values:
         {'train': [...], 'val_good': [...], 'val_anomalous': [...]}.
     """
-    _require_tf()
+    tf = _require_tf()
+    
+    class NumpyBatchGenerator(tf.keras.utils.Sequence):
+        def __init__(self, x, y, batch_size):
+            self.x = x
+            self.y = y
+            self.batch_size = batch_size
+            
+        def __len__(self):
+            return int(np.ceil(len(self.x) / float(self.batch_size)))
+            
+        def __getitem__(self, idx):
+            batch_x = self.x[idx * self.batch_size:(idx + 1) * self.batch_size]
+            batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
+            return batch_x, batch_y
+
     n_samples = len(train_images)
     history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
 
@@ -419,18 +434,19 @@ def train_cae(
     for epoch in range(epochs):
         # Shuffle training data at the start of each epoch
         indices = np.random.permutation(n_samples)
-        epoch_losses: list[float] = []
+        shuffled_clean = train_images[indices]
+        shuffled_masked = apply_patch_masking(shuffled_clean, mask_ratio, patch_size)
 
-        for start in range(0, n_samples, batch_size):
-            batch_indices = indices[start : start + batch_size]
-            batch_clean = train_images[batch_indices]  # Ground truth (reconstruction target)
-            batch_masked = apply_patch_masking(batch_clean, mask_ratio, patch_size)  # Model input
-
-            # Keras model.train_on_batch returns a scalar loss (or list if multiple outputs)
-            loss = model.train_on_batch(batch_masked, batch_clean)
-            epoch_losses.append(float(loss))
-
-        avg_loss = float(np.mean(epoch_losses))
+        # Use a Sequence generator to avoid allocating huge CPU tensors and OOMing during copies
+        gen = NumpyBatchGenerator(shuffled_masked, shuffled_clean, batch_size)
+        
+        fit_hist = model.fit(
+            gen,
+            epochs=1,
+            verbose=0,
+            shuffle=False,  # We already shuffled manually
+        )
+        avg_loss = fit_hist.history["loss"][0]
         history["train"].append(avg_loss)
 
         log_msg = f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_loss:.6f}"
