@@ -1,5 +1,3 @@
-import os
-os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 """End-to-end orchestrator for the Keras CAE anomaly detection pipeline.
 
 This module ties together all the modular components developed in this package
@@ -71,6 +69,7 @@ See the ASCII diagram below for the complete pipeline flow:
 import hashlib
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -84,6 +83,8 @@ from app.pipelines.evaluation.scoring import compute_adaptive_threshold, compute
 from app.pipelines.modelling.keras_cae.cae_keras import _require_tf, build_cae, train_cae
 from app.pipelines.preprocessing import PreprocessingPipeline, build_pipeline_from_configs
 from app.pipelines.preprocessing.augmentation import augment_batch, get_augmenter
+
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 
 logger = logging.getLogger(__name__)
 

@@ -69,8 +69,10 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
         raise optuna.exceptions.TrialPruned() from e
     finally:
         import gc
-        from tensorflow.keras import backend as K
-        K.clear_session()
+
+        from tensorflow.keras import backend
+
+        backend.clear_session()
         gc.collect()
 
     # Extract the target metric to maximize

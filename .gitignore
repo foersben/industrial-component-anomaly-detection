@@ -254,4 +254,5 @@ data/models/
 *.synctex.gz
 *.snm
 *.nav
-*.vrbscratch/
+*.vrb
+scratch/

@@ -829,16 +829,21 @@ def run_baseline(
 
     # 1. Initialize dataset, model, and engine
     if len(proc_pipeline) > 0:
+
         class PreprocessedMVTecAD(MVTecAD):
             def setup(self, stage: str | None = None) -> None:
                 super().setup(stage)
                 from app.pipelines.preprocessing.adapter import PreprocessedAnomalibDataset
-                
-                if getattr(self, "train_data", None) is not None and not isinstance(self.train_data, PreprocessedAnomalibDataset):
-                    self.train_data = PreprocessedAnomalibDataset(self.train_data, transform_adapter)
-                    
-                if getattr(self, "test_data", None) is not None and not isinstance(self.test_data, PreprocessedAnomalibDataset):
-                    self.test_data = PreprocessedAnomalibDataset(self.test_data, transform_adapter)
+
+                if getattr(self, "train_data", None) is not None and not isinstance(
+                    self.train_data, PreprocessedAnomalibDataset
+                ):
+                    self.train_data = PreprocessedAnomalibDataset(self.train_data, transform_adapter)  # type: ignore[assignment]
+
+                if getattr(self, "test_data", None) is not None and not isinstance(
+                    self.test_data, PreprocessedAnomalibDataset
+                ):
+                    self.test_data = PreprocessedAnomalibDataset(self.test_data, transform_adapter)  # type: ignore[assignment]
 
         datamodule = PreprocessedMVTecAD(
             root=data_root,
@@ -847,7 +852,7 @@ def run_baseline(
             eval_batch_size=16,
         )
     else:
-        datamodule = MVTecAD(
+        datamodule = MVTecAD(  # type: ignore[assignment]
             root=data_root,
             category=category,
             train_batch_size=16,

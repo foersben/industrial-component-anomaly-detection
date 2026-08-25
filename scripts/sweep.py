@@ -10,15 +10,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 CATEGORIES = [
-    "bottle", "cable", "capsule", "carpet", "grid",
-    "hazelnut", "leather", "metal_nut", "pill", "screw",
-    "tile", "toothbrush", "transistor", "wood", "zipper"
+    "bottle",
+    "cable",
+    "capsule",
+    "carpet",
+    "grid",
+    "hazelnut",
+    "leather",
+    "metal_nut",
+    "pill",
+    "screw",
+    "tile",
+    "toothbrush",
+    "transistor",
+    "wood",
+    "zipper",
 ]
 
-def sweep_keras():
+
+def sweep_keras() -> None:
+    """Run the Keras CAE Optuna sweep."""
     keras_output = Path("data/hyperparameters/keras_cae_best.json")
     if keras_output.exists():
-        with open(keras_output, "r", encoding="utf-8") as f:
+        with open(keras_output, encoding="utf-8") as f:
             keras_results = json.load(f)
     else:
         keras_results = {}
@@ -33,7 +47,7 @@ def sweep_keras():
 
     env = os.environ.copy()
     env["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
-    
+
     wrapper_code = """
 import sys
 from app.core.tf_device import preload_cuda_shared_libraries, configure_tensorflow
@@ -48,15 +62,15 @@ runpy.run_module('app.pipelines.modelling.keras_cae.optuna_study', run_name='__m
 """
 
     for category in remaining_categories:
-        logger.info(f"\n{'='*50}\nRunning Optuna study for: {category} in an isolated subprocess\n{'='*50}\n")
-        
+        logger.info(f"\n{'=' * 50}\nRunning Optuna study for: {category} in an isolated subprocess\n{'=' * 50}\n")
+
         args = ["--category", category, "--n-trials", "30"]
-        sys_argv_str = str(["app.pipelines.modelling.keras_cae.optuna_study"] + args)
-        
+        sys_argv_str = str(["app.pipelines.modelling.keras_cae.optuna_study", *args])
+
         script = wrapper_code.replace("{sys_argv}", sys_argv_str)
-        
+
         cmd = [sys.executable, "-c", script]
-        
+
         try:
             subprocess.run(cmd, env=env, check=True)
         except subprocess.CalledProcessError as e:
@@ -67,12 +81,13 @@ runpy.run_module('app.pipelines.modelling.keras_cae.optuna_study', run_name='__m
     logger.info("\nKeras CAE Sweep complete!")
 
 
-def sweep_patchcore():
+def sweep_patchcore() -> None:
+    """Run the PatchCore Optuna sweep."""
     out_path = Path("data/hyperparameters/patchcore_best.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     if out_path.exists():
-        with open(out_path, "r", encoding="utf-8") as f:
+        with open(out_path, encoding="utf-8") as f:
             registry = json.load(f)
     else:
         registry = {}
@@ -92,31 +107,43 @@ def sweep_patchcore():
         # Run 30 trials for this category, one by one in isolated subprocesses
         for trial_idx in range(30):
             logger.info(f"--- {cat} - Trial {trial_idx + 1}/30 ---")
-            
+
             cmd = [
                 sys.executable,
-                "-m", "app.pipelines.modelling.patchcore_optuna_study",
-                "--category", cat,
-                "--n-trials", "1"
+                "-m",
+                "app.pipelines.modelling.patchcore_optuna_study",
+                "--category",
+                cat,
+                "--n-trials",
+                "1",
             ]
-            
+
             try:
                 subprocess.run(cmd, env=env, check=True)
             except subprocess.CalledProcessError as e:
                 logger.error(f"Error: Trial {trial_idx + 1} for category {cat} failed with return code {e.returncode}.")
                 sys.exit(1)
-                
+
     logger.info("Finished Patchcore Optuna sweep for all categories!")
 
-def main():
+
+def main() -> None:
+    """Run the sweep script."""
     parser = argparse.ArgumentParser(description="Run optuna sweeps for models.")
-    parser.add_argument("--model", type=str, choices=["keras", "patchcore"], required=True, help="Model to sweep (keras or patchcore)")
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["keras", "patchcore"],
+        required=True,
+        help="Model to sweep (keras or patchcore)",
+    )
     args = parser.parse_args()
 
     if args.model == "keras":
         sweep_keras()
     elif args.model == "patchcore":
         sweep_patchcore()
+
 
 if __name__ == "__main__":
     main()

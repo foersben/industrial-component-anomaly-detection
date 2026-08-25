@@ -1,10 +1,10 @@
 import argparse
 import gc
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,31 +12,54 @@ import pandas as pd
 from PIL import Image
 
 CATEGORIES = [
-    "bottle", "cable", "capsule", "carpet", "grid",
-    "hazelnut", "leather", "metal_nut", "pill", "screw",
-    "tile", "toothbrush", "transistor", "wood", "zipper"
+    "bottle",
+    "cable",
+    "capsule",
+    "carpet",
+    "grid",
+    "hazelnut",
+    "leather",
+    "metal_nut",
+    "pill",
+    "screw",
+    "tile",
+    "toothbrush",
+    "transistor",
+    "wood",
+    "zipper",
 ]
 
-def load_and_prepare_evaluation_data(metrics_path):
+
+def load_and_prepare_evaluation_data(metrics_path: Any) -> Any:
+    """Load and prepare evaluation data."""
     from app.pipelines.evaluation.visualization import load_and_prepare_evaluation_data
+
     return load_and_prepare_evaluation_data(metrics_path)
 
-def plot_tradeoff_curve(data):
+
+def plot_tradeoff_curve(data: Any) -> Any:
+    """Plot the tradeoff curve."""
     from app.pipelines.evaluation.visualization import plot_tradeoff_curve
+
     return plot_tradeoff_curve(data)
 
-def plot_pr_curve(data):
+
+def plot_pr_curve(data: Any) -> Any:
+    """Plot the precision-recall curve."""
     from app.pipelines.evaluation.visualization import plot_pr_curve
+
     return plot_pr_curve(data)
 
-def save_plots_and_heatmaps(results, out_dir, heatmaps_pred_dir, heatmaps_gt_dir):
+
+def save_plots_and_heatmaps(results: Any, out_dir: Any, heatmaps_pred_dir: Any, heatmaps_gt_dir: Any) -> None:
+    """Save evaluation plots and heatmaps."""
     for level in ["image_level", "pixel_level"]:
         metrics = results.get(level, {})
         metrics_path = metrics.get("metrics_path")
         if metrics_path and Path(metrics_path).exists():
             try:
                 data = load_and_prepare_evaluation_data(metrics_path)
-                
+
                 fig_tradeoff = plot_tradeoff_curve(data)
                 fig_tradeoff.savefig(out_dir / f"{level}_tradeoff_curve.png")
                 plt.close(fig_tradeoff)
@@ -46,7 +69,7 @@ def save_plots_and_heatmaps(results, out_dir, heatmaps_pred_dir, heatmaps_gt_dir
                 plt.close(fig_pr)
             except Exception as e:
                 print(f"Error generating plots for {level}: {e}")
-    
+
     summary = {}
     for level in ["image_level", "pixel_level"]:
         level_metrics = results.get(level, {})
@@ -70,23 +93,29 @@ def save_plots_and_heatmaps(results, out_dir, heatmaps_pred_dir, heatmaps_gt_dir
             if "heatmap" in overlay_data:
                 hm_arr = np.array(overlay_data["heatmap"], dtype=np.uint8)
                 Image.fromarray(hm_arr).save(heatmaps_pred_dir / f"image_{idx}_prediction.png")
-            
+
             if "gt_and_heatmap" in overlay_data:
                 gt_hm_arr = np.array(overlay_data["gt_and_heatmap"], dtype=np.uint8)
                 Image.fromarray(gt_hm_arr).save(heatmaps_gt_dir / f"image_{idx}_gt_overlay.png")
 
-def evaluate_keras(category, tuned):
+
+def evaluate_keras(category: str, tuned: bool) -> None:
+    """Evaluate the Keras CAE model."""
     from app.core.tf_device import configure_tensorflow
+
     configure_tensorflow(min_vram_mib=1024)
     import tensorflow as tf
+
     from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 
-    print(f"\n{'='*50}\nEvaluating Keras CAE ({'Tuned' if tuned else 'Baseline'}) for category: {category}\n{'='*50}")
-    
+    print(
+        f"\n{'=' * 50}\nEvaluating Keras CAE ({'Tuned' if tuned else 'Baseline'}) for category: {category}\n{'=' * 50}"
+    )
+
     base_out_dir = Path("results/evaluation") / ("keras_cae" if tuned else "keras_cae_baseline")
     out_dir = base_out_dir / category
     out_dir.mkdir(parents=True, exist_ok=True)
-    
+
     heatmaps_pred_dir = out_dir / "heatmaps" / "prediction"
     heatmaps_gt_dir = out_dir / "heatmaps" / "ground_truth_overlay"
     heatmaps_pred_dir.mkdir(parents=True, exist_ok=True)
@@ -99,13 +128,13 @@ def evaluate_keras(category, tuned):
     if tuned:
         json_path = Path("data/hyperparameters/keras_cae_best.json")
         if json_path.exists():
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_path, encoding="utf-8") as f:
                 hyperparams = json.load(f)
             config = hyperparams.get(category, {})
             prep = config.get("preprocessing", {})
             hp = config.get("model_hyperparameters", {})
             latent_channels = hp.get("latent_dim", hp.get("latent_channels", 32))
-            
+
             if prep.get("use_foreground_mask", False):
                 preprocessing_steps.append({"name": "foreground_mask", "params": {}})
             if prep.get("use_clahe", False):
@@ -128,7 +157,7 @@ def evaluate_keras(category, tuned):
         preprocessing_steps=preprocessing_steps,
         run_heatmap=True,
         force_retrain=True,
-        model_hash=None
+        model_hash=None,
     )
 
     loss_history = results.get("loss_history")
@@ -155,16 +184,20 @@ def evaluate_keras(category, tuned):
     gc.collect()
 
 
-def evaluate_patchcore(category, tuned):
+def evaluate_patchcore(category: str, tuned: bool) -> None:
+    """Evaluate the PatchCore model."""
     import torch
+
     from app.pipelines.modelling.baseline import run_baseline
 
-    print(f"\n{'='*50}\nEvaluating Patchcore ({'Tuned' if tuned else 'Baseline'}) for category: {category}\n{'='*50}")
-    
+    print(
+        f"\n{'=' * 50}\nEvaluating Patchcore ({'Tuned' if tuned else 'Baseline'}) for category: {category}\n{'=' * 50}"
+    )
+
     base_out_dir = Path("results/evaluation") / ("patchcore_tuned" if tuned else "patchcore")
     out_dir = base_out_dir / category
     out_dir.mkdir(parents=True, exist_ok=True)
-    
+
     heatmaps_pred_dir = out_dir / "heatmaps" / "prediction"
     heatmaps_gt_dir = out_dir / "heatmaps" / "ground_truth_overlay"
     heatmaps_pred_dir.mkdir(parents=True, exist_ok=True)
@@ -172,19 +205,19 @@ def evaluate_patchcore(category, tuned):
 
     preprocessing_steps = []
     backbone = "resnet18"
-    feature_layers = ("layer2", "layer3")
+    feature_layers: tuple[str, ...] = ("layer2", "layer3")
     coreset_ratio = 0.1
     num_neighbors = 9
 
     if tuned:
         json_path = Path("data/hyperparameters/patchcore_best.json")
         if json_path.exists():
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_path, encoding="utf-8") as f:
                 hyperparams = json.load(f)
             config = hyperparams.get(category, {})
             prep = config.get("preprocessing", {})
             hp = config.get("model_hyperparameters", {})
-            
+
             if prep.get("use_foreground_mask", False):
                 preprocessing_steps.append({"name": "foreground_mask", "params": {}})
             if prep.get("use_clahe", False):
@@ -213,7 +246,7 @@ def evaluate_patchcore(category, tuned):
         num_neighbors=num_neighbors,
         run_heatmap=True,
         force_retrain=True,
-        model_hash=None
+        model_hash=None,
     )
 
     save_plots_and_heatmaps(results, out_dir, heatmaps_pred_dir, heatmaps_gt_dir)
@@ -221,7 +254,9 @@ def evaluate_patchcore(category, tuned):
     torch.cuda.empty_cache()
     gc.collect()
 
-def orchestrator(model, tuned):
+
+def orchestrator(model: str, tuned: bool) -> None:
+    """Orchestrate evaluation across categories."""
     base_out_dir = Path("results/evaluation")
     if model == "keras":
         out_dir = base_out_dir / ("keras_cae" if tuned else "keras_cae_baseline")
@@ -229,13 +264,17 @@ def orchestrator(model, tuned):
         out_dir = base_out_dir / ("patchcore_tuned" if tuned else "patchcore")
 
     categories_to_run = []
-    
+
     if tuned:
-        json_path = Path(f"data/hyperparameters/{model}_cae_best.json" if model == "keras" else "data/hyperparameters/patchcore_best.json")
+        json_path = Path(
+            f"data/hyperparameters/{model}_cae_best.json"
+            if model == "keras"
+            else "data/hyperparameters/patchcore_best.json"
+        )
         if not json_path.exists():
             print(f"File not found: {json_path}")
             return
-        with open(json_path, "r", encoding="utf-8") as f:
+        with open(json_path, encoding="utf-8") as f:
             hyperparams = json.load(f)
         categories_to_run = list(hyperparams.keys())
     else:
@@ -250,14 +289,16 @@ def orchestrator(model, tuned):
         cmd = [sys.executable, __file__, "--model", model, "--category", category]
         if tuned:
             cmd.append("--tuned")
-            
+
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             print(f"[ORCHESTRATOR] Process for '{category}' failed with exit code {e.returncode}.")
             sys.exit(e.returncode)
 
-def main():
+
+def main() -> None:
+    """Run the evaluation script."""
     parser = argparse.ArgumentParser(description="Evaluate anomaly detection models.")
     parser.add_argument("--model", type=str, choices=["keras", "patchcore"], required=True, help="Model to evaluate")
     parser.add_argument("--tuned", action="store_true", help="Evaluate the tuned hyperparameters")
@@ -271,6 +312,7 @@ def main():
             evaluate_patchcore(args.category, args.tuned)
     else:
         orchestrator(args.model, args.tuned)
+
 
 if __name__ == "__main__":
     main()

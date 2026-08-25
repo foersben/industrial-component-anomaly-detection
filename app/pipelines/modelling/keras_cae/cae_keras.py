@@ -408,19 +408,19 @@ def train_cae(
         {'train': [...], 'val_good': [...], 'val_anomalous': [...]}.
     """
     tf = _require_tf()
-    
-    class NumpyBatchGenerator(tf.keras.utils.Sequence):
-        def __init__(self, x, y, batch_size):
+
+    class NumpyBatchGenerator(tf.keras.utils.Sequence):  # type: ignore[name-defined,misc]
+        def __init__(self, x: np.ndarray, y: np.ndarray, batch_size: int) -> None:
             self.x = x
             self.y = y
             self.batch_size = batch_size
-            
-        def __len__(self):
+
+        def __len__(self) -> int:
             return int(np.ceil(len(self.x) / float(self.batch_size)))
-            
-        def __getitem__(self, idx):
-            batch_x = self.x[idx * self.batch_size:(idx + 1) * self.batch_size]
-            batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
+
+        def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
+            batch_x = self.x[idx * self.batch_size : (idx + 1) * self.batch_size]
+            batch_y = self.y[idx * self.batch_size : (idx + 1) * self.batch_size]
             return batch_x, batch_y
 
     n_samples = len(train_images)
@@ -439,7 +439,7 @@ def train_cae(
 
         # Use a Sequence generator to avoid allocating huge CPU tensors and OOMing during copies
         gen = NumpyBatchGenerator(shuffled_masked, shuffled_clean, batch_size)
-        
+
         fit_hist = model.fit(
             gen,
             epochs=1,

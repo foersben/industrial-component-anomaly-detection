@@ -1,3 +1,7 @@
+---
+title: "Notes"
+type: "notes"
+---
 * final report on "industrial component anomaly detection" project
 * look at our initial report first in docs/.report/misc and create a latex document using the same writing style - we are beginners in this line of work so keep it plain/simple, well explained
 * then checkout our dummy implementations and the baseline/patchcore implementation in this project and describe (or make up) our thinking process, how we initially progressed within the project
@@ -8,7 +12,7 @@
 * then in the subsequent notebook we tested ssim in isolation
 * only afterwards in our keras model I added the combined approach of ssim in combination with mse according to Bergmann
 * afterwards you can simply start checking the commits and the progress we made on this branch on our keras cae which is the most advanced model with all its details as describe in the /docs zensical documentation and all its details
-* for evaluation we want to focus on f1 score (image and pixel level) and aupimo pixel level performance, the loss fucntions, the pr-curve and threshold curve with aupimo
+* for evaluation we want to focus on f1 score (image and pixel level) and aupimo pixel level performance, the loss functions, the pr-curve and threshold curve with aupimo
 * we will use an image resolution of 256*256, we also decided for our final report to use for evaluation a train/val split of 85 + 15 = 100 (whole train set) the test set stays untouched during training
 * finally, I added optuna for an optimised hyperparameter search instead of randomly guessing and checking the outcome - make sure to describe optuna and why we use it
 * we are currently computing the hyperparameter

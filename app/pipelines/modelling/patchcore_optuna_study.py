@@ -4,19 +4,19 @@ import json
 from pathlib import Path
 from typing import Any
 
+import anomalib.models.components.sampling.k_center_greedy as kcg
 import optuna
 import torch
 from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import Patchcore
-import anomalib.models.components.sampling.k_center_greedy as kcg
-
-# Monkeypatch tqdm in k_center_greedy to prevent Jupyter RecursionError loops
-kcg.tqdm = lambda iterable, *args, **kwargs: iterable
 
 from app.core.logger import logger
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.factory import build_pipeline_from_configs
+
+# Monkeypatch tqdm in k_center_greedy to prevent Jupyter RecursionError loops
+kcg.tqdm = lambda iterable, *_, **__: iterable  # type: ignore[attr-defined]
 
 # MVTec AD Categorization
 TEXTURES = {"carpet", "grid", "leather", "tile", "wood"}
@@ -63,12 +63,16 @@ def _evaluate_patchcore(
         def setup(self, stage: str | None = None) -> None:
             super().setup(stage)
             from app.pipelines.preprocessing.adapter import PreprocessedAnomalibDataset
-            
-            if getattr(self, "train_data", None) is not None and not isinstance(self.train_data, PreprocessedAnomalibDataset):
-                self.train_data = PreprocessedAnomalibDataset(self.train_data, transform_adapter)
-                
-            if getattr(self, "test_data", None) is not None and not isinstance(self.test_data, PreprocessedAnomalibDataset):
-                self.test_data = PreprocessedAnomalibDataset(self.test_data, transform_adapter)
+
+            if getattr(self, "train_data", None) is not None and not isinstance(
+                self.train_data, PreprocessedAnomalibDataset
+            ):
+                self.train_data = PreprocessedAnomalibDataset(self.train_data, transform_adapter)  # type: ignore[assignment]
+
+            if getattr(self, "test_data", None) is not None and not isinstance(
+                self.test_data, PreprocessedAnomalibDataset
+            ):
+                self.test_data = PreprocessedAnomalibDataset(self.test_data, transform_adapter)  # type: ignore[assignment]
 
     datamodule = PreprocessedMVTecAD(
         root=data_root,
@@ -150,7 +154,7 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
 def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
     """Runs an Optuna study for Patchcore and returns the best configuration."""
     study_name = f"patchcore_{category_name}"
-    
+
     storage_path = Path("data/hyperparameters/patchcore_optuna.db")
     storage_path.parent.mkdir(parents=True, exist_ok=True)
     storage_url = f"sqlite:///{storage_path.resolve()}"
@@ -207,7 +211,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Best trial retrieval will crash if NO trials are completed yet, so we only fetch 
+    # Best trial retrieval will crash if NO trials are completed yet, so we only fetch
     # and save if trials have run.
     best_cfg = run_study(category_name=args.category, n_trials=args.n_trials, data_root=args.data_root)
 

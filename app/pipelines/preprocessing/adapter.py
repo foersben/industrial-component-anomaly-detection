@@ -47,7 +47,7 @@ class PreprocessingTransformAdapter:
         if isinstance(image, torch.Tensor):
             # Convert C x H x W Tensor -> H x W x C NumPy array
             img_np = image.detach().cpu().numpy().transpose(1, 2, 0)
-            
+
             # Safely handle float32 in [0, 1]
             is_float = img_np.dtype in (np.float32, np.float64)
             if is_float:
@@ -57,11 +57,11 @@ class PreprocessingTransformAdapter:
                     img_np = img_np.astype(np.uint8)
 
             processed_np = self.pipeline(img_np)
-            
+
             # Restore to float if original was float
             if is_float:
                 processed_np = processed_np.astype(np.float32) / 255.0
-                
+
             # Convert back to C x H x W Tensor
             return torch.from_numpy(processed_np).permute(2, 0, 1).to(image.dtype)
 

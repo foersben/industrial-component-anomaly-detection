@@ -72,7 +72,9 @@ Module Contents
 """
 
 from __future__ import annotations
+
 import os
+
 os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 
 import logging
