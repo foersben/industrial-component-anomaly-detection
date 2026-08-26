@@ -164,8 +164,6 @@ dev = { features = ["dev", "gpu"], solve-group = "default" }
 ci = { features = ["cpu"], solve-group = "ci" }
 ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
 
-[tool.pixi.activation.env]
-UV_NO_SYNC = "1"
 
 [tool.pixi.target.linux-64.activation.env]
 LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
