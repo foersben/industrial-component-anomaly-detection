@@ -22,6 +22,16 @@
 \usepackage{multirow}
 \usepackage{titlesec}
 
+% Keep the report buildable while evaluation figures are still pending.
+\let\reportincludegraphics\includegraphics
+\renewcommand{\includegraphics}[2][]{%
+    \IfFileExists{#2}{%
+        \reportincludegraphics[#1]{#2}%
+    }{%
+        \fbox{\parbox[c][3cm][c]{0.88\linewidth}{\centering\textcolor{gray}{Results pending}}}%
+    }%
+}
+
 \geometry{a4paper, margin=1in, top=1.2in, bottom=1.2in}
 \setlength{\headheight}{14pt}
 
@@ -605,21 +615,30 @@ Perhaps the most important finding is the effect of the hyperparameter tuning. A
 
 \begin{table}[b!]
 \centering
-\caption{Historical evaluation results for the first six categories across all four model variants. Values are provisional and require recomputation under the shared 85\%/15\% zero-leakage protocol.}
+\caption{Evaluation results across all 15 categories. The PatchCore (ResNet-18) values are from the current evaluation; populated cells in columns marked with an asterisk contain legacy values.}
 \label{tab:final_results}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l ccc ccc ccc ccc}
 \toprule
-\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Base)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned)}} \\
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned)$^{*}$}} & \multicolumn{3}{c}{\textbf{Keras CAE (Base)$^{*}$}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned)$^{*}$}} \\
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10} \cmidrule(lr){11-13}
  & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} \\
 \midrule
-Bottle & 0.992 & 0.978 & 0.000 & 0.992 & 0.979 & 0.000 & 1.000 & 1.000 & 0.511 & 0.992 & 1.000 & 0.468 \\
-Cable & 0.933 & 0.982 & 0.000 & 0.920 & 0.983 & 0.000 & 0.061 & 0.489 & 0.000 & 0.021 & 0.521 & 0.000 \\
-Capsule & 0.977 & 0.988 & 0.000 & 0.917 & 0.987 & 0.000 & 0.500 & 0.690 & 0.037 & 0.150 & 0.656 & 0.003 \\
-Carpet & 0.954 & 0.988 & 0.000 & 0.923 & 0.988 & 0.000 & 0.684 & 0.638 & 0.002 & 0.644 & 0.612 & 0.002 \\
-Grid & 0.906 & 0.968 & 0.000 & 0.895 & 0.969 & 0.000 & 0.760 & 0.770 & 0.087 & 0.643 & 0.781 & 0.104 \\
-Hazelnut & 0.986 & 0.989 & 0.000 & 0.933 & 0.989 & 0.000 & 0.580 & 0.875 & 0.087 & 0.478 & 0.834 & 0.054 \\
+Bottle & 0.962 & 0.978 & 0.982 & 0.992 & 0.979 & 0.000 & 1.000 & 1.000 & 0.511 & 0.992 & 1.000 & 0.468 \\
+Cable & 0.933 & 0.982 & 0.511 & 0.920 & 0.983 & 0.000 & 0.061 & 0.489 & 0.000 & 0.021 & 0.521 & 0.000 \\
+Capsule & 0.982 & 0.988 & 0.563 & 0.917 & 0.987 & 0.000 & 0.500 & 0.690 & 0.037 & 0.150 & 0.656 & 0.003 \\
+Carpet & 0.926 & 0.988 & 0.796 & 0.923 & 0.988 & 0.000 & 0.684 & 0.638 & 0.002 & 0.644 & 0.612 & 0.002 \\
+Grid & 0.916 & 0.970 & 0.506 & 0.895 & 0.969 & 0.000 & 0.760 & 0.770 & 0.087 & 0.643 & 0.781 & 0.104 \\
+Hazelnut & 0.971 & 0.989 & 0.863 & 0.933 & 0.989 & 0.000 & 0.580 & 0.875 & 0.087 & 0.478 & 0.834 & 0.054 \\
+Leather & 0.898 & 0.989 & 0.972 & & & & & & & & & \\
+Metal Nut & 0.963 & 0.984 & 0.760 & & & & & & & & & \\
+Pill & 0.891 & 0.978 & 0.293 & & & & & & & & & \\
+Screw & 0.796 & 0.991 & 0.380 & & & & & & & & & \\
+Tile & 0.951 & 0.929 & 0.685 & & & & & & & & & \\
+Toothbrush & 0.923 & 0.989 & 0.414 & & & & & & & & & \\
+Transistor & 0.916 & 0.969 & 0.427 & & & & & & & & & \\
+Wood & 0.952 & 0.919 & 0.642 & & & & & & & & & \\
+Zipper & 0.962 & 0.980 & 0.251 & & & & & & & & & \\
 \bottomrule
 \end{tabular}
 }
