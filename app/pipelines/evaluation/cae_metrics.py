@@ -112,15 +112,18 @@ def compute_aupimo(
 
     Returns:
         AUPIMO score in [0, 1]. Higher is better.
-        Returns 0.0 if no ground truth masks are available.
+
+    Raises:
+        ImportError: If anomalib or torch is unavailable.
+        ValueError: If the maps or masks cannot define AUPIMO at the requested bounds.
+        RuntimeError: If anomalib cannot compute the metric at the requested bounds.
     """
     try:
         import torch
         from anomalib.data import ImageBatch
         from anomalib.metrics import AUPIMO
-    except ImportError:
-        logger.warning("anomalib or torch not available for AUPIMO. Returning 0.0.")
-        return 0.0
+    except ImportError as exc:
+        raise ImportError("anomalib and torch are required to compute AUPIMO") from exc
 
     # Format masks: normal images have zeros mask, defective have binary mask
     h, w = anomaly_maps[0].shape
@@ -134,42 +137,33 @@ def compute_aupimo(
             all_masks.append(np.zeros((h, w), dtype=np.uint8))
 
     if not has_anomaly:
-        logger.warning("No anomalous images with ground truth masks. AUPIMO cannot be computed; returning 0.0.")
-        return 0.0
+        raise ValueError("AUPIMO requires at least one anomalous image with a ground-truth mask")
 
-    try:
-        pred_tensor = torch.tensor(np.stack(anomaly_maps), dtype=torch.float32)
-        gt_tensor = torch.tensor(np.stack(all_masks), dtype=torch.bool)
-        dummy_img = torch.zeros(len(anomaly_maps), 3, h, w, dtype=torch.float32)
+    pred_tensor = torch.tensor(np.stack(anomaly_maps), dtype=torch.float32)
+    gt_tensor = torch.tensor(np.stack(all_masks), dtype=torch.bool)
+    dummy_img = torch.zeros(len(anomaly_maps), 3, h, w, dtype=torch.float32)
 
-        batch = ImageBatch(image=dummy_img, anomaly_map=pred_tensor, gt_mask=gt_tensor)
+    batch = ImageBatch(image=dummy_img, anomaly_map=pred_tensor, gt_mask=gt_tensor)
 
-        # Try with requested bounds, falling back to wider bounds if resolution/samples are small
-        for bounds in [fpr_bounds, (1e-4, 1e-1), (1e-3, 1e-1)]:
-            try:
-                aupimo_metric = AUPIMO(num_thresholds=10_000, fpr_bounds=bounds)
-                aupimo_metric.update(batch)
-                result = aupimo_metric.compute()
-                if hasattr(result, "aupimo_scores"):
-                    score = float(result.aupimo_scores.nanmean().item())
-                elif isinstance(result, tuple) and len(result) > 1:
-                    score = float(result[1].nanmean().item())
-                elif isinstance(result, dict):
-                    score = float(next(iter(result.values())))
-                else:
-                    score = float(result)
+    # Increased from 10_000 to 50_000 so the narrow low-FPR interval contains
+    # enough sampled operating points for stable integration without the much
+    # larger memory and runtime cost of an unnecessarily dense threshold grid.
+    aupimo_metric = AUPIMO(num_thresholds=50_000, fpr_bounds=fpr_bounds)
+    aupimo_metric.update(batch)
+    result = aupimo_metric.compute()
+    if hasattr(result, "aupimo_scores"):
+        score = float(result.aupimo_scores.nanmean().item())
+    elif isinstance(result, tuple) and len(result) > 1:
+        score = float(result[1].nanmean().item())
+    elif isinstance(result, dict):
+        score = float(next(iter(result.values())))
+    else:
+        score = float(result)
 
-                if not np.isnan(score):
-                    logger.info("Pixel-Level AUPIMO: %.4f (bounds: %s)", score, bounds)
-                    return score
-            except ValueError:
-                continue
-
-        return 0.0
-
-    except Exception as e:
-        logger.warning("AUPIMO computation failed: %s. Returning 0.0.", e)
-        return 0.0
+    if np.isnan(score):
+        raise ValueError("AUPIMO computation returned NaN")
+    logger.info("Pixel-Level AUPIMO: %.4f (bounds: %s)", score, fpr_bounds)
+    return score
 
 
 def generate_heatmap_overlay(
@@ -309,7 +303,14 @@ def evaluate_cae(
         y_true_pixel = np.concatenate(flat_masks)
         y_score_pixel = np.concatenate([m.flatten() for m in error_maps])
 
-        compute_and_save_pr_metrics(y_true_pixel, y_score_pixel, output_dir / "pixel_metrics.npz", level="pixel")
+        compute_and_save_pr_metrics(
+            y_true_pixel,
+            y_score_pixel,
+            output_dir / "pixel_metrics.npz",
+            level="pixel",
+            aupimo=aupimo,
+            fpr_bounds=(1e-5, 1e-4),
+        )
 
         if len(np.unique(y_true_pixel)) >= 2:
             from sklearn.metrics import roc_auc_score

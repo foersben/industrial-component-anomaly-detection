@@ -217,26 +217,14 @@ def _render_evaluation_summary(results: dict[str, Any], model_type: str = "cae")
             aupimo_score = float(pix_metrics.get("aupimo_score", pix_metrics.get("aupimo", results.get("aupimo", 0.0))))
             fpr_lower_bound = float(pix_metrics.get("fpr_lower_bound", 1e-05))
             fpr_upper_bound = float(pix_metrics.get("fpr_upper_bound", 1e-04))
-            threshold_limit = float(pix_metrics.get("threshold_limit", pix_metrics.get("t_aupimo_min", 0.0)))
-            tpr_at_limit = float(
-                pix_metrics.get("tpr_at_limit", pix_metrics.get("aupimo_recall", pix_metrics.get("aupimo", 0.0)))
-            )
-            fpr_denom = fpr_lower_bound if fpr_lower_bound > 0 else 1e-5
 
             st.info(
                 f"**Pixel-Level Localization (AUPIMO)**\n"
-                f"AUPIMO (Area Under the Per-Image Measurement Overlap) evaluates how well the model localizes "
+                f"AUPIMO (Area Under the Per-Image Overlap) evaluates how well the model localizes "
                 f"defects across a strictly controlled False Positive Rate (FPR) range "
                 f"(from {fpr_lower_bound} to {fpr_upper_bound}).\n\n"
-                f"* **Overall Score:** An AUPIMO score of **{aupimo_score:.4f}** means that, on average across "
-                f"this strict trust range, the model successfully highlights **{aupimo_score * 100:.1f}%** "
-                f"of the actual defective pixel area.\n"
-                f"* **Industrial Threshold Limit:** To guarantee highly reliable defect localization with fewer than "
-                f"1 false alarm per {int(1 / fpr_denom):,} normal pixels, the model calculates a strict "
-                f"binarization threshold of **{threshold_limit:.4f}**.\n"
-                f"* **Reliability:** If deployed at this strict threshold, the model catches "
-                f"**{tpr_at_limit * 100:.2f}%** of the actual anomalous pixels, meaning any pixel flagged "
-                f"is guaranteed to be a defect with >99.99% confidence."
+                f"* **Overall Score:** **{aupimo_score:.4f}** is the normalized area under the per-anomalous-image "
+                f"recall curves across that logarithmic shared-FPR interval. Higher is better."
             )
 
         st.divider()

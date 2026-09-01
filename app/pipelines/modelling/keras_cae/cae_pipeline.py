@@ -491,7 +491,7 @@ def run_keras_cae_pipeline(
     4. Normalises images to [0, 1].
     5. Builds and trains the Keras CAE with MIM + SSIM+MSE + AdamW (or loads from cache).
     6. Scores all test images using Top-K pooling.
-    7. Computes an adaptive threshold from normal test scores.
+    7. Computes an adaptive threshold from normal validation scores.
     8. Evaluates with image-level AUROC and pixel-level AUPIMO.
     9. Optionally computes Reconstruction Error Heatmap overlays for every anomalous test image.
 
@@ -680,7 +680,7 @@ def run_keras_cae_pipeline(
             json.dump(metadata, f, indent=4)
         logger.info("Saved model and metadata to %s", registry_dir)
 
-    # ── 6. Compute Adaptive Threshold on Normal Test Images ─────────────────────
+    # ── 6. Compute Adaptive Threshold on Normal Validation Images ───────────────
     logger.info("Extracting crops for val_good images and predicting...")
     val_good_reconstructed_crops = model.predict(val_good_crops, batch_size=batch_size, verbose=0)
     val_good_reconstructed = stitch_crops(
@@ -711,18 +711,7 @@ def run_keras_cae_pipeline(
         output_dir=registry_dir,
         reconstructions=test_reconstructed,
     )
-    t_aupimo_min = 0.0
-    aupimo_recall = 0.0
     pixel_file = registry_dir / "pixel_metrics.npz"
-    if pixel_file.exists():
-        try:
-            data = np.load(pixel_file)
-            if "t_aupimo_min" in data:
-                t_aupimo_min = float(data["t_aupimo_min"])
-            if "aupimo" in data:
-                aupimo_recall = float(data["aupimo"])
-        except Exception:
-            pass
 
     results["image_level"] = {
         "auroc": results.get("auroc", 0.0),
@@ -736,11 +725,8 @@ def run_keras_cae_pipeline(
         "auroc": results.get("pixel_auroc", results.get("auroc", 0.0)),
         "f1_score": results.get("pixel_f1", results.get("f1_score", 0.0)),
         "aupimo_score": results.get("aupimo", 0.0),
-        "threshold_limit": t_aupimo_min,
-        "tpr_at_limit": aupimo_recall,
         "fpr_lower_bound": 1e-5,
         "fpr_upper_bound": 1e-4,
-        "t_aupimo_min": t_aupimo_min,
         "aupimo": results.get("aupimo", 0.0),
         "metrics_path": str(pixel_file),
     }

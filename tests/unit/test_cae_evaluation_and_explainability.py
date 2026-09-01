@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 
 from app.pipelines.evaluation.cae_metrics import (
     compute_aupimo,
@@ -17,12 +18,13 @@ from app.pipelines.evaluation.cae_metrics import (
 from app.pipelines.evaluation.heatmaps import compute_error_heatmap, overlay_ground_truth, overlay_heatmap
 
 
-def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path) -> None:
+def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that evaluate_cae computes AUROC, Precision, Recall, and F1 on separated distributions.
 
     Args:
         mock_keras_cae: Pre-compiled lightweight CAE model fixture.
         tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest fixture used to isolate image-level classification behavior.
     """
     test_images = np.random.rand(4, 32, 32, 3).astype(np.float32)
     test_reconstructed = test_images.copy()
@@ -33,6 +35,7 @@ def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path) ->
     mask_anomaly = np.ones((32, 32), dtype=np.uint8) * 255
     gt_masks: list[np.ndarray | None] = [None, None, mask_anomaly, mask_anomaly]
     threshold = 0.1
+    monkeypatch.setattr("app.pipelines.evaluation.cae_metrics.compute_aupimo", lambda *_args, **_kwargs: 0.5)
 
     eval_res = evaluate_cae(
         model=mock_keras_cae,
@@ -49,6 +52,10 @@ def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path) ->
     assert "recall" in eval_res
     assert "f1_score" in eval_res
     assert isinstance(eval_res["auroc"], float)
+    with np.load(tmp_path / "pixel_metrics.npz") as pixel_metrics:
+        assert float(pixel_metrics["aupimo"]) == 0.5
+        assert np.array_equal(pixel_metrics["aupimo_fpr_bounds"], np.array([1e-5, 1e-4]))
+        assert "t_aupimo_min" not in pixel_metrics
 
 
 def test_compute_image_auroc() -> None:
@@ -65,14 +72,39 @@ def test_compute_image_auroc() -> None:
 
 
 def test_compute_aupimo_no_defects() -> None:
-    """Verify that compute_aupimo gracefully returns 0.0 when test samples contain no defects."""
+    """Verify that compute_aupimo rejects inputs for which the metric is undefined."""
     gt_masks: list[np.ndarray | None] = [np.zeros((32, 32), dtype=np.uint8) for _ in range(3)]
     anomaly_maps = [np.random.rand(32, 32).astype(np.float32) for _ in range(3)]
 
-    results = compute_aupimo(anomaly_maps, gt_masks)
+    with pytest.raises(ValueError, match="at least one anomalous image"):
+        compute_aupimo(anomaly_maps, gt_masks)
 
-    assert isinstance(results, float)
-    assert results == 0.0
+
+def test_compute_aupimo_uses_50k_thresholds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify the shared AUPIMO path uses the documented threshold-grid resolution."""
+    import anomalib.metrics
+
+    captured: dict[str, Any] = {}
+
+    class FakeAUPIMO:
+        def __init__(self, num_thresholds: int, fpr_bounds: tuple[float, float]) -> None:
+            captured["num_thresholds"] = num_thresholds
+            captured["fpr_bounds"] = fpr_bounds
+
+        def update(self, _batch: Any) -> None:
+            return None
+
+        def compute(self) -> dict[str, float]:
+            return {"aupimo": 0.75}
+
+    monkeypatch.setattr(anomalib.metrics, "AUPIMO", FakeAUPIMO)
+    anomaly_maps = [np.zeros((4, 4), dtype=np.float32), np.ones((4, 4), dtype=np.float32)]
+    gt_masks = [np.zeros((4, 4), dtype=np.uint8), np.ones((4, 4), dtype=np.uint8)]
+
+    score = compute_aupimo(anomaly_maps, gt_masks, fpr_bounds=(1e-5, 1e-4))
+
+    assert score == 0.75
+    assert captured == {"num_thresholds": 50_000, "fpr_bounds": (1e-5, 1e-4)}
 
 
 def test_compute_error_heatmap(mock_keras_cae: Any) -> None:

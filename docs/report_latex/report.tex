@@ -83,7 +83,7 @@
 \thispagestyle{fancy}
 
 \begin{abstract}
-    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are equipped with category-adaptive preprocessing and automated hyperparameter optimisation via Optuna. All evaluations follow a strict zero-leakage policy and rely primarily on the F1 score at image level and on the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
+    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are equipped with category-adaptive preprocessing and automated hyperparameter optimisation via Optuna. A later protocol audit found that the historical cross-model evaluation did not consistently enforce the intended 85\% training/15\% validation split: the CAE used the split, whereas PatchCore built its memory bank from the complete normal training partition. We therefore treat the affected comparison as provisional and define a corrected zero-leakage protocol in which both models use the same split and the test set is accessed only for final evaluation. The primary metrics are the F1 score at image level and the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
 \end{abstract}
 
 % \tableofcontents
@@ -269,7 +269,7 @@ We observed during initial experiments that applying both CLAHE and Gaussian Blu
 \section{Exploratory Autoencoder Development}
 \label{sec:exploration}
 
-Our first model development phase consisted of iterative notebook-based experiments. We focused exclusively on the \textit{bottle} category to maintain a consistent comparison base. The training set contained 167 normal images, the validation set 42 normal images, and the test set 83 images. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
+Our first model development phase consisted of iterative notebook-based experiments. We focused exclusively on the \textit{bottle} category to maintain a consistent comparison base. Under the intended deterministic 85\%/15\% protocol, its 209 normal development images are divided into 177 training images and 32 validation images; the official test set contains 83 images and remains separate. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
 
 We developed several autoencoder variants over the course of the exploration phase. We present four representative milestone architectures that capture the key turning points in our understanding, followed by the final production model as a fifth architecture. We made the decision not to discuss every single iteration to avoid obscuring the main conceptual arc of the project.
 
@@ -458,10 +458,27 @@ To manage the memory footprint, PatchCore applies a greedy coreset subsampling s
 
 We use ResNet-18 pretrained on ImageNet as the PatchCore backbone. The larger Wide-ResNet-50-2 backbone triggered repeated out-of-memory exceptions during automated Optuna sweeps. These failures caused the Optuna study to miss entire hyperparameter configurations. We deprecated Wide-ResNet-50-2 and hardcoded ResNet-18 for all sweep runs to ensure stable, reproducible execution.
 
-\subsection{Zero-Leakage Threshold Calibration}
+\subsection{Fair Split and Zero-Leakage Threshold Calibration}
 \label{sec:leakage}
 
-The default evaluation pipeline optimises the classification threshold by finding the value that maximises the F1 score on the test set. Because the test set contains labelled defective images, this is a form of leakage. We intercept the raw continuous anomaly scores before any threshold is applied, and compute the classification threshold manually using only normal images. We set the threshold to the 95th percentile of the validation anomaly scores, and apply it unchanged to all test images to produce the final binary predictions.
+For a fair comparison, both models must receive the same information before evaluation. For every category, we deterministically divide the official normal training partition into 85\% model-training data and 15\% normal validation data using random seed 42. The CAE learns its weights from the 85\% subset, while PatchCore must build its feature memory bank and coreset from exactly the same 85\% subset. The 15\% subset is held out from both models. It is used for CAE early stopping and for calibrating each model's image-level operating threshold. We set that threshold from the distribution of normal validation scores and then freeze it before test inference.
+
+The protocol audit found that the historical comparison did not fully implement this design. The Keras CAE pipeline already used the deterministic 85\%/15\% split, but the PatchCore pipeline passed the complete official normal training partition to Anomalib. It therefore built its memory bank with more normal examples than the CAE. In addition, the historical PatchCore F1 path derived its 95th-percentile threshold from the normal subset of the official test set. This is test leakage because the reported test distribution influenced the operating point. Consequently, the historical F1 values do not represent a controlled like-for-like comparison and must be recomputed.
+
+The correction is to construct one shared split manifest per category and pass its 85\% and 15\% partitions explicitly to both pipelines. Model fitting, coreset construction, early stopping, and operating-threshold calibration must finish using only those development partitions. The official test images, labels, and masks remain inaccessible until the model and threshold have been frozen; they are then used once to compute the final F1, AUROC, precision-recall curves, AUPIMO, and qualitative overlays.
+
+AUPIMO requires a careful distinction. It is not the deployed image-level operating threshold. During final evaluation, AUPIMO uses normal test anomaly maps to construct its shared false-positive-rate axis and anomalous test masks to calculate per-image recall. This use of the test set is intrinsic to computing the final metric and does not select model settings. The FPR bounds $(10^{-5},10^{-4})$ and numerical threshold resolution are fixed before the test run. No AUPIMO result may be fed back into training or model choice during development.
+
+The minimum controlled comparison protocol is therefore as follows:
+
+\begin{enumerate}
+    \item \textbf{Identical data partitions.} Both models use the same exact image lists: 85\% of the official normal training images for fitting and 15\% for validation and calibration. The split is generated once with random seed 42 and reused by both pipelines. For \textit{bottle}, this gives 177 fitting images and 32 validation images.
+    \item \textbf{Validation-derived image thresholds.} Each model produces image-level anomaly scores for the same 15\% validation images. Its deployed operating threshold is calculated only from those normal validation scores and is frozen before the test set is opened. Normal test scores must not determine this threshold.
+    \item \textbf{Identical final test set and reporting.} Both models are evaluated on the same ordered test-image list. For \textit{bottle}, this is the complete set of 83 official test images. We report the confusion counts TP, FP, and FN together with precision, recall, and F1, rather than reporting F1 alone.
+    \item \textbf{Canonical pixel resolution.} Before pixel metrics are compared, both models' anomaly maps and ground-truth masks are converted to $256 \times 256$. Continuous anomaly maps are resized with bilinear interpolation, while binary masks use nearest-neighbour interpolation and remain binary.
+    \item \textbf{Identical metric implementations.} Pixel AUROC is computed through one shared function for both models. AUPIMO is computed through the same full-map \texttt{anomalib.metrics.AUPIMO} path using complete two-dimensional anomaly maps and masks, fixed FPR bounds $(10^{-5},10^{-4})$, and \texttt{num\_thresholds} set to 50,000. Alternative FPR bounds, pooled-pixel substitutes, and fallback metric values are not permitted; a failed metric calculation must be reported as an error.
+    \item \textbf{Separation of threshold roles.} The image-classification operating threshold comes from the 15\% validation set. AUPIMO's shared FPR axis is instead calculated from normal images in the final test/evaluation set because this is part of AUPIMO's metric definition. These operations serve different purposes and must not be conflated.
+\end{enumerate}
 
 \section{Hyperparameter Optimisation with Optuna}
 \label{sec:optuna}
@@ -542,7 +559,27 @@ In this section, we present the comprehensive findings from our model evaluation
 
 \subsection{Evaluation Procedure}
 
-For our evaluation, we split the MVTec training set into 85\% for model training and 15\% for validation. We use this validation set purely for threshold calibration and AUPIMO computation. Naturally, the test set is strictly kept separate and never accessed during training, validation, or whilst selecting thresholds.
+For the corrected evaluation, we will split the official normal MVTec training partition into 85\% for model fitting and 15\% for validation, identically for both models and with random seed 42. The CAE will train its weights on the 85\% subset; PatchCore will construct its memory bank and coreset from that same subset. The held-out 15\% will be used for CAE early stopping and for normal-only operating-threshold calibration. It will not be included in either model's fitted representation.
+
+The official test set is not used for fitting, validation, threshold calibration, or model selection. It is accessed only after the model and operating threshold have been frozen, for one final evaluation. AUPIMO is computed at this stage from complete two-dimensional test anomaly maps and masks with fixed FPR bounds $(10^{-5},10^{-4})$; its use of normal test maps to define the shared FPR axis is part of the metric calculation itself, not a development decision.
+
+\begin{center}
+\small
+\begin{tabular}{p{0.22\linewidth}p{0.34\linewidth}p{0.34\linewidth}}
+\toprule
+\textbf{Stage} & \textbf{Historical implementation} & \textbf{Corrected protocol} \\
+\midrule
+Model fitting & CAE: 85\% normal train; PatchCore: 100\% normal train & Both models: identical 85\% normal train \\
+Validation & CAE: held-out 15\%; PatchCore: no equivalent held-out partition & Identical held-out 15\% normal validation partition \\
+F1 threshold & CAE: normal validation scores; PatchCore: normal test scores & Normal validation scores only, frozen before test \\
+Test samples & Same official dataset, but under unequal preceding conditions & Same exact ordered list; 83 images for \textit{bottle} \\
+Pixel resolution & Model-dependent map paths & Both maps and masks evaluated at $256\times256$ \\
+Pixel metrics & Inconsistent AUPIMO paths & Shared pixel AUROC and full-map AUPIMO; 50,000 thresholds and fixed bounds \\
+Reported detection results & Primarily aggregate F1 & TP, FP, FN, precision, recall, and F1 \\
+Final metrics & Test set & Test set, once, after all decisions are frozen \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 Due to the substantial computational overhead of the automated Optuna sweeps, we found it necessary to limit the scope of the tuning process. Therefore, we decided to restrict our final evaluation to a representative subset of just six categories: \textit{bottle}, \textit{cable}, \textit{capsule}, \textit{carpet}, \textit{grid}, and \textit{hazelnut}. We selected these specifically because they cover both rigid objects and textures, which gives us a well-rounded and balanced assessment of how well the models actually generalise.
 
@@ -558,17 +595,17 @@ Looking at the precision-recall (PR) and threshold trade-off curves provides a d
 
 \subsection{Quantitative Results}
 
-Table \ref{tab:final_results} summarises the final evaluation metrics across the six selected categories for all four model variants. We report the image-level F1 score as the primary metric for detection performance, while pixel-level AUROC and AUPIMO serve as the metrics for segmentation accuracy.
+Table \ref{tab:final_results} records the historical evaluation metrics across the six selected categories for all four model variants. These values are provisional: they were produced before the split, threshold, and AUPIMO implementation issues described above were corrected, so they must not be used for final model selection. We retain them for traceability and will replace them only after all configurations have been rerun under the shared protocol. Image-level F1 remains the primary detection metric, while pixel-level AUROC and AUPIMO describe localisation performance.
 
-The results reveal several critical insights into the models' behaviours. Firstly, PatchCore demonstrates overwhelming superiority in both image-level detection and pixel-level segmentation (AUROC) across all categories, consistently achieving F1 scores above 0.90. However, as previously discussed, PatchCore suffers from the "AUPIMO paradox": its unbounded distance features cause extreme spikes at the threshold boundary, leading to an AUPIMO score of absolute zero across all categories.
+The historical results suggest that PatchCore ranks images and pixels strongly, with F1 scores above 0.90 and high pixel AUROC in these runs. They do not yet establish superiority, because PatchCore saw more normal fitting data and used a test-derived F1 threshold. Moreover, the reported PatchCore AUPIMO values of exactly zero were traced to an inconsistent implementation path rather than established as a property of PatchCore's score range. Recomputing the bottle baseline through the same full-map \texttt{anomalib.metrics.AUPIMO} path used by the CAE produced 0.9825 at the fixed bounds $(10^{-5},10^{-4})$. The remaining categories still require recomputation.
 
-Secondly, the Keras CAE models, while generally weaker at pure detection, manage to capture non-zero AUPIMO scores on certain categories (e.g., \textit{bottle} and \textit{grid}) because the autoencoder's mean squared error naturally suppresses these extreme spikes.
+The historical CAE scores likewise cannot be compared directly with the old PatchCore AUPIMO column until both have been recomputed through the same full-map metric implementation and shared data protocol.
 
 Perhaps the most important finding is the effect of the hyperparameter tuning. Across almost all categories, the Optuna-tuned variants (both PatchCore and Keras CAE) performed worse on the test set than their respective baseline models. For instance, the image-level F1 score for PatchCore on \textit{capsule} dropped from 0.977 to 0.917 after tuning. This degradation confirms our hypothesis that aggressive optimisation solely on normal validation data forces the models to overfit to background textures, ultimately harming their ability to generalise and detect actual physical defects at test time.
 
 \begin{table}[b!]
 \centering
-\caption{Final evaluation results for the first six categories across all four model variants. Image-level F1 and pixel-level AUPIMO are the primary metrics.}
+\caption{Historical evaluation results for the first six categories across all four model variants. Values are provisional and require recomputation under the shared 85\%/15\% zero-leakage protocol.}
 \label{tab:final_results}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l ccc ccc ccc ccc}
@@ -707,12 +744,12 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \subsection{Discussion of Evaluations}
 \label{sec:discussion}
 
-The table of quantitative results highlights the performance characteristics of our four test setups across the first six categories. 
+The table of quantitative results documents the historical behaviour of our four test setups across the first six categories. Because those runs did not use a fully consistent split and selection protocol, the comparisons below are hypotheses from the development phase rather than evidence for a final model choice. They must be revisited after the controlled rerun.
 
 \textbf{1. PatchCore + ResNet-18 (Baseline):}
 This setup establishes an exceptionally strong baseline for Image-level F1, consistently scoring above 0.90 for most categories. The robust performance demonstrates the immense advantage of leveraging feature extractors pretrained on ImageNet (ResNet-18). 
 
-However, the pixel-level AUPIMO scores present a glaring paradox: PatchCore achieves exactly 0.000 across all categories despite its near-perfect F1 scores and visually sharp heatmaps. This occurs because AUPIMO enforces an extremely strict false positive rate (FPR) limit (e.g., $10^{-4}$). PatchCore computes unbounded raw feature distances; if a normal image contains even a single microscopic anomaly (like a speck of dust or a lighting artefact), PatchCore's distance metric spikes dramatically. To maintain the strict FPR limit required by AUPIMO, the evaluation threshold is forced astronomically high, causing the true positive rate to collapse to zero for all other images. In contrast, the Keras CAE produces bounded, blurry mean squared error scores that suppress extreme outliers, allowing it to maintain a non-zero AUPIMO despite its visually noisier baseline.
+The original table reported pixel-level AUPIMO of exactly 0.000 for PatchCore across all categories. Our implementation audit did not support the proposed explanation that this was an unavoidable consequence of unbounded PatchCore distances. The historical PatchCore metric path flattened and pooled pixels and recorded recall at one normal-score quantile under an \texttt{aupimo} field, whereas the CAE passed complete two-dimensional anomaly maps and masks to \texttt{anomalib.metrics.AUPIMO}. Once the bottle baseline was recomputed through the CAE's full-map path, it achieved AUPIMO 0.9825 at bounds $(10^{-5},10^{-4})$, with anomaly-map values spanning approximately 0.093 to 1.000. The zero was therefore an evaluation inconsistency for bottle, not a demonstrated model failure. All remaining PatchCore categories must be rerun before the table is replaced.
 
 \textbf{2. PatchCore + ResNet-18 (Tuned):}
 The hyperparameter sweep for PatchCore is now complete. While we relied on the same powerful ResNet-18 backbone, we found that tuning the coreset sampling ratio, the number of nearest neighbours ($K$), and integrating targeted preprocessing steps did not yield the anticipated gains. In fact, tuning caused slight regressions in F1 scores across several categories (e.g., dropping from 0.977 to 0.917 on \textit{capsule}). Similar to the Keras CAE results discussed below, this highlights the difficulty of optimising hyperparameters using a surrogate objective (like pixel AUROC) on a validation set that lacks true defects.
@@ -728,9 +765,9 @@ Counterintuitively, the rigorous hyperparameter tuning via Optuna often resulted
 
 We developed an end-to-end unsupervised anomaly detection system for industrial components, building to a production-grade modular pipeline with automated hyperparameter optimisation. We traced the complete arc of the project, including the conceptual missteps, as we believe these are highly instructive.
 
-The most important technical lessons we established revolve around the often paradoxical relationship between model confidence and evaluation metrics. We demonstrated that standard metrics used in the anomaly detection literature are poorly suited to the extreme class imbalance of MVTec AD, and that rigid threshold-based metrics like AUPIMO severely penalise highly sensitive models. Because ultra-precise models like PatchCore compute unbounded feature distances, a single microscopic false-positive spike on a normal image can mathematically force the strict AUPIMO threshold so high that true recall collapses to zero---yielding a score of exactly 0.000 despite near-perfect F1 scores and visually pristine heatmaps. We also observed that reconstruction quality and anomaly detection quality are not the same and can even be inversely related in autoencoders. Ultimately, however, a frozen pretrained feature extractor built from ImageNet images dramatically outperforms a model trained from scratch, underlining the overriding importance of transfer learning when labelled training data is scarce.
+The most important technical lesson from the audit is that metric parity cannot compensate for data-protocol inequality, and data-protocol equality cannot compensate for metric inconsistency. PatchCore and the CAE must use the same 85\% fitting subset, the same 15\% normal validation subset, validation-derived operating thresholds, and the same full-map AUPIMO implementation. The test set must be reserved for the final evaluation after every model and preprocessing decision is frozen. The corrected bottle AUPIMO result demonstrates why implementation tracing is essential: an apparent score of exactly zero became 0.9825 when the intended metric was actually applied. Reconstruction quality and anomaly detection quality may still differ, and pretrained features remain a strong hypothesis, but a final model choice requires the controlled reruns rather than the provisional historical table.
 
-Final quantitative results for the representative six categories clearly demonstrate these trade-offs, concluding our evaluation of both the baseline and tuned detection systems.
+The historical results motivate the corrected experiments but do not conclude the comparison. Final quantitative conclusions will be drawn only after the representative categories are rerun under the shared zero-leakage protocol.
 
 % \clearpage
 \begin{thebibliography}{99}
