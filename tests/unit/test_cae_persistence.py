@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 import tensorflow as tf
 
 from app.pipelines.modelling.keras_cae.cae_keras import build_cae
@@ -89,12 +90,20 @@ def test_find_cached_model_resolution(tmp_path: Path) -> None:
     assert found_meta["hash"] == "model_abc"
 
 
-def test_keras_cae_pipeline_cached_evaluation(mock_mvtec_dataset: str) -> None:
+def test_keras_cae_pipeline_cached_evaluation(
+    mock_mvtec_dataset: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Run pipeline to train and save a model on mock data, then reload and verify exact match.
 
     Args:
         mock_mvtec_dataset: Path to the temporary mock MVTec dataset root.
+        monkeypatch: Pytest fixture used to isolate persistence from AUPIMO resolution limits.
     """
+    # The tiny synthetic maps cannot represent an FPR of 1e-5. Persistence is
+    # tested with a fixed metric value, while dedicated tests cover AUPIMO itself.
+    monkeypatch.setattr("app.pipelines.evaluation.cae_metrics.compute_aupimo", lambda *_args, **_kwargs: 0.5)
+
     # 1. Fresh training
     res1 = run_keras_cae_pipeline(
         data_root=mock_mvtec_dataset,

@@ -20,6 +20,7 @@ from anomalib.models import Patchcore
 from sklearn.metrics import f1_score, precision_score, recall_score
 
 from app.core.logger import logger
+from app.pipelines.evaluation.cae_metrics import compute_aupimo
 from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
 from app.pipelines.evaluation.scoring import compute_adaptive_threshold
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
@@ -39,13 +40,13 @@ class MetricLevelResult(TypedDict, total=False):
         precision: Precision score.
         recall: Recall score.
         threshold: Decision threshold for classification.
-        threshold_limit: Anomaly score threshold at the lower bound.
-        t_aupimo_min: Minimum AUPIMO threshold bound (for pixel localization).
-        tpr_at_limit: Recall/catch rate at threshold_limit.
         aupimo_score: Integrated AUPIMO score.
         fpr_lower_bound: Lower bound for FPR integration.
         fpr_upper_bound: Upper bound for FPR integration.
         aupimo: AUPIMO score.
+        anomaly_map_min: Minimum anomaly-map score over the test set.
+        anomaly_map_max: Maximum anomaly-map score over the test set.
+        anomaly_map_range: Difference between maximum and minimum map scores.
         metrics_path: Path to the .npz file containing precision, recall, and thresholds.
     """
 
@@ -54,13 +55,13 @@ class MetricLevelResult(TypedDict, total=False):
     precision: float
     recall: float
     threshold: float
-    threshold_limit: float
-    t_aupimo_min: float
-    tpr_at_limit: float
     aupimo_score: float
     fpr_lower_bound: float
     fpr_upper_bound: float
     aupimo: float
+    anomaly_map_min: float
+    anomaly_map_max: float
+    anomaly_map_range: float
     metrics_path: str
 
 
@@ -114,6 +115,45 @@ def _to_float(val: Any) -> float:
         return 0.0
 
 
+def _save_heatmap_overlays(
+    overlays: dict[int, dict[str, list[Any]]],
+    output_path: Path,
+) -> Path | None:
+    """Store dense heatmap images in a compressed binary archive instead of JSON."""
+    if not overlays:
+        return None
+
+    arrays: dict[str, np.ndarray[Any, Any]] = {}
+    for index, overlay in overlays.items():
+        if "heatmap" in overlay:
+            arrays[f"prediction__{index}"] = np.asarray(overlay["heatmap"], dtype=np.uint8)
+        if "gt_and_heatmap" in overlay:
+            arrays[f"ground_truth__{index}"] = np.asarray(overlay["gt_and_heatmap"], dtype=np.uint8)
+
+    if not arrays:
+        return None
+
+    np.savez_compressed(output_path, **arrays)
+    return output_path
+
+
+def _load_heatmap_overlays(input_path: Path) -> dict[int, dict[str, list[Any]]]:
+    """Load heatmap images from the compressed archive into the existing result schema."""
+    overlays: dict[int, dict[str, list[Any]]] = {}
+    with np.load(input_path, allow_pickle=False) as archive:
+        for key in archive.files:
+            kind, separator, raw_index = key.partition("__")
+            if not separator or kind not in {"prediction", "ground_truth"}:
+                continue
+            try:
+                index = int(raw_index)
+            except ValueError:
+                continue
+            field = "heatmap" if kind == "prediction" else "gt_and_heatmap"
+            overlays.setdefault(index, {})[field] = archive[key].astype(np.uint8, copy=False).tolist()
+    return overlays
+
+
 def _tensor_to_numpy(val: Any) -> np.ndarray[Any, Any] | None:
     """Helper to safely extract a 1D NumPy array from a PyTorch tensor attribute.
 
@@ -156,7 +196,8 @@ def _process_and_save_level(
     labels_list: list[np.ndarray[Any, Any]],
     output_path: Path,
     level: str,
-    fpr_limit: float = 1e-4,
+    aupimo: float | None = None,
+    fpr_bounds: tuple[float, float] | None = None,
 ) -> None:
     """Concatenates prediction lists and saves metrics if data is present.
 
@@ -165,7 +206,8 @@ def _process_and_save_level(
         labels_list: List of ground truth labels.
         output_path: Path to save metrics to.
         level: Level of metrics (image or pixel).
-        fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
+        aupimo: Genuine AUPIMO computed from full 2D maps, when available.
+        fpr_bounds: FPR integration bounds used for AUPIMO, when available.
     """
     if not (scores_list and labels_list):
         return
@@ -173,7 +215,14 @@ def _process_and_save_level(
     y_score = np.concatenate(scores_list)
     y_true = np.concatenate(labels_list)
 
-    compute_and_save_pr_metrics(y_true, y_score, output_path, level=level, fpr_limit=fpr_limit)
+    compute_and_save_pr_metrics(
+        y_true,
+        y_score,
+        output_path,
+        level=level,
+        aupimo=aupimo,
+        fpr_bounds=fpr_bounds,
+    )
     logger.info("Saved %s-level PR metrics to %s", level, output_path)
 
 
@@ -184,7 +233,19 @@ def extract_and_save_pr_metrics(
     base_dir: Path,
     fpr_limit: float = 1e-4,
     run_heatmap: bool = False,
-) -> tuple[float, float, float, float, float, dict[int, dict[str, list[Any]]], list[int]]:
+) -> tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    dict[int, dict[str, list[Any]]],
+    list[int],
+]:
     """Extract model predictions and persist Precision-Recall metrics for visual analysis.
 
     Args:
@@ -199,27 +260,67 @@ def extract_and_save_pr_metrics(
         logger.info("Extracting predictions for PR curve metrics...")
         raw_predictions = engine.predict(model=model, dataloaders=datamodule.test_dataloader())
         if not raw_predictions:
-            return 0.0, 0.0, 0.0, 0.0, 0.0, {}, []
+            raise RuntimeError("PatchCore prediction returned no test batches")
         predictions = raw_predictions
 
         pixel_scores, pixel_labels = [], []
         image_scores, image_labels = [], []
+        anomaly_maps: list[np.ndarray] = []
+        ground_truth_masks: list[np.ndarray | None] = []
 
         for batch in predictions:
             if px := _collect_batch_tensors(batch, "anomaly_map", "gt_mask"):
                 pixel_scores.append(px[0])
                 pixel_labels.append(px[1])
 
+                batch_item: Any = batch
+                map_tensor = batch_item.anomaly_map
+                mask_tensor = batch_item.gt_mask
+                maps = map_tensor.detach().cpu().numpy()
+                masks = mask_tensor.detach().cpu().numpy()
+                if maps.ndim == 4 and maps.shape[1] == 1:
+                    maps = maps[:, 0]
+                if masks.ndim == 4 and masks.shape[1] == 1:
+                    masks = masks[:, 0]
+                if maps.ndim != 3 or masks.ndim != 3 or maps.shape != masks.shape:
+                    raise ValueError(
+                        "AUPIMO requires matching PatchCore maps and masks with shape (N, H, W); "
+                        f"got maps={maps.shape}, masks={masks.shape}"
+                    )
+                anomaly_maps.extend(np.asarray(item, dtype=np.float32) for item in maps)
+                ground_truth_masks.extend(np.asarray(item, dtype=np.uint8) for item in masks)
+
             if img := _collect_batch_tensors(batch, "pred_score", "gt_label"):
                 image_scores.append(img[0])
                 image_labels.append(img[1])
 
-        _process_and_save_level(
-            pixel_scores, pixel_labels, base_dir / "pixel_metrics.npz", level="pixel", fpr_limit=fpr_limit
+        if not anomaly_maps or not ground_truth_masks:
+            raise RuntimeError("PatchCore predictions did not contain full anomaly maps and ground-truth masks")
+
+        fpr_bounds = (1e-5, fpr_limit)
+        pixel_aupimo = compute_aupimo(anomaly_maps, ground_truth_masks, fpr_bounds=fpr_bounds)
+        stacked_maps = np.stack(anomaly_maps)
+        anomaly_map_min = float(stacked_maps.min())
+        anomaly_map_max = float(stacked_maps.max())
+        anomaly_map_range = anomaly_map_max - anomaly_map_min
+        logger.info(
+            "PatchCore full-map AUPIMO: %.6f at FPR bounds %s | maps min=%.8f max=%.8f range=%.8f",
+            pixel_aupimo,
+            fpr_bounds,
+            anomaly_map_min,
+            anomaly_map_max,
+            anomaly_map_range,
         )
+
         _process_and_save_level(
-            image_scores, image_labels, base_dir / "image_metrics.npz", level="image", fpr_limit=fpr_limit
+            pixel_scores,
+            pixel_labels,
+            base_dir / "pixel_metrics.npz",
+            level="pixel",
+            aupimo=pixel_aupimo,
+            fpr_bounds=fpr_bounds,
         )
+        _process_and_save_level(image_scores, image_labels, base_dir / "image_metrics.npz", level="image")
 
         # Compute manual thresholds and F1 scores strictly on normal data
         image_scores_np = np.concatenate(image_scores)
@@ -236,6 +337,7 @@ def extract_and_save_pr_metrics(
             manual_image_f1 = 0.0
             manual_image_prec = 0.0
             manual_image_rec = 0.0
+            img_threshold = 0.0
 
         pixel_scores_np = np.concatenate(pixel_scores)
         pixel_labels_np = np.concatenate(pixel_labels)
@@ -337,13 +439,17 @@ def extract_and_save_pr_metrics(
             manual_image_prec,
             manual_image_rec,
             img_threshold,
+            pixel_aupimo,
+            anomaly_map_min,
+            anomaly_map_max,
+            anomaly_map_range,
             heatmap_overlays,
             anomalous_indices,
         )
 
     except Exception as e:
-        logger.warning("Could not auto-save evaluation metrics.npz: %s", e)
-        return 0.0, 0.0, 0.0, 0.0, 0.0, {}, []
+        logger.exception("Could not compute PatchCore evaluation metrics: %s", e)
+        raise
 
 
 def _normalize_preprocessing_steps(steps: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -597,6 +703,10 @@ def format_results(
     manual_image_prec: float,
     manual_image_rec: float,
     img_threshold: float,
+    pixel_aupimo: float,
+    anomaly_map_min: float,
+    anomaly_map_max: float,
+    anomaly_map_range: float,
     heatmap_overlays: dict[int, dict[str, list[Any]]],
     anomalous_indices: list[int],
     fpr_limit: float = 1e-4,
@@ -617,6 +727,10 @@ def format_results(
         manual_image_prec: Manually calculated image-level Precision score.
         manual_image_rec: Manually calculated image-level Recall score.
         img_threshold: Manually calculated image-level classification threshold.
+        pixel_aupimo: Full-map AUPIMO computed by anomalib.
+        anomaly_map_min: Minimum PatchCore anomaly-map value.
+        anomaly_map_max: Maximum PatchCore anomaly-map value.
+        anomaly_map_range: Range of PatchCore anomaly-map values.
         heatmap_overlays: Dictionary of precomputed heatmap overlays.
         anomalous_indices: List of image indices corresponding to anomalies.
         fpr_limit: Maximum allowable False Positive Rate for AUPIMO threshold.
@@ -630,19 +744,6 @@ def format_results(
         A dictionary containing structured image_level and pixel_level results.
     """
     res_dict: Mapping[str, float] = test_results[0] if test_results else {}
-    t_aupimo_min = 0.0
-    aupimo = 0.0
-
-    pixel_file = base_dir / "pixel_metrics.npz"
-    if pixel_file.exists():
-        try:
-            data = np.load(pixel_file)
-            if "t_aupimo_min" in data:
-                t_aupimo_min = float(data["t_aupimo_min"])
-            if "aupimo" in data:
-                aupimo = float(data["aupimo"])
-        except Exception:
-            pass
 
     return {
         "category": category,
@@ -657,13 +758,13 @@ def format_results(
         "pixel_level": {
             "auroc": _to_float(res_dict.get("pixel_AUROC", 0.0)),
             "f1_score": manual_pixel_f1,
-            "aupimo_score": _to_float(res_dict.get("pixel_AUPIMO", 0.0)),
-            "threshold_limit": t_aupimo_min,
-            "tpr_at_limit": aupimo,
+            "aupimo_score": pixel_aupimo,
             "fpr_lower_bound": 1e-5,
             "fpr_upper_bound": fpr_limit,
-            "t_aupimo_min": t_aupimo_min,
-            "aupimo": _to_float(res_dict.get("pixel_AUPIMO", 0.0)),
+            "aupimo": pixel_aupimo,
+            "anomaly_map_min": anomaly_map_min,
+            "anomaly_map_max": anomaly_map_max,
+            "anomaly_map_range": anomaly_map_range,
             "metrics_path": str(base_dir / "pixel_metrics.npz"),
         },
         "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
@@ -745,13 +846,10 @@ def run_baseline(
         pixel_file = cached_dir / "pixel_metrics.npz"
         image_file = cached_dir / "image_metrics.npz"
 
-        t_aupimo_min = 0.0
         aupimo = 0.0
         if pixel_file.exists():
             try:
                 data = np.load(pixel_file)
-                if "t_aupimo_min" in data:
-                    t_aupimo_min = float(data["t_aupimo_min"])
                 if "aupimo" in data:
                     aupimo = float(data["aupimo"])
             except Exception:
@@ -772,7 +870,16 @@ def run_baseline(
         manual_image_prec = float(meta.get("manual_image_prec", 0.0))
         manual_image_rec = float(meta.get("manual_image_rec", 0.0))
         img_threshold = float(meta.get("img_threshold", 0.0))
-        heatmap_overlays = meta.get("heatmap_overlays", {})
+        heatmap_overlays_path = meta.get("heatmap_overlays_path")
+        if heatmap_overlays_path:
+            try:
+                heatmap_overlays = _load_heatmap_overlays(cached_dir / Path(heatmap_overlays_path).name)
+            except (OSError, ValueError) as e:
+                logger.warning("Could not load cached PatchCore heatmaps: %s", e)
+                heatmap_overlays = {}
+        else:
+            # Backward compatibility for caches written before heatmaps moved to NPZ.
+            heatmap_overlays = meta.get("heatmap_overlays", {})
         anomalous_indices = meta.get("anomalous_indices", [])
         split_info = meta.get("dataset_split", {})
         cached_prep = meta.get("preprocessing_steps", raw_prep_list)
@@ -800,15 +907,15 @@ def run_baseline(
                 "metrics_path": str(image_file),
             },
             "pixel_level": {
-                "auroc": aupimo or _to_float(res_dict.get("pixel_AUROC", 0.0)),
+                "auroc": _to_float(res_dict.get("pixel_AUROC", 0.0)),
                 "f1_score": manual_pixel_f1,
-                "aupimo_score": aupimo or _to_float(res_dict.get("pixel_AUPIMO", 0.0)),
-                "threshold_limit": t_aupimo_min,
-                "tpr_at_limit": aupimo,
+                "aupimo_score": aupimo,
                 "fpr_lower_bound": 1e-5,
                 "fpr_upper_bound": fpr_limit,
-                "t_aupimo_min": t_aupimo_min,
-                "aupimo": aupimo or _to_float(res_dict.get("pixel_AUPIMO", 0.0)),
+                "aupimo": aupimo,
+                "anomaly_map_min": float(meta.get("anomaly_map_min", 0.0)),
+                "anomaly_map_max": float(meta.get("anomaly_map_max", 0.0)),
+                "anomaly_map_range": float(meta.get("anomaly_map_range", 0.0)),
                 "metrics_path": str(pixel_file),
             },
             "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
@@ -881,6 +988,10 @@ def run_baseline(
         manual_image_prec,
         manual_image_rec,
         img_threshold,
+        pixel_aupimo,
+        anomaly_map_min,
+        anomaly_map_max,
+        anomaly_map_range,
         heatmap_overlays,
         anomalous_indices,
     ) = extract_and_save_pr_metrics(engine, model, datamodule, base_dir, fpr_limit, run_heatmap)
@@ -906,6 +1017,10 @@ def run_baseline(
 
     raw_results_dict = {k: _to_float(v) for k, v in (test_results[0] if test_results else {}).items()}
 
+    heatmap_archive = _save_heatmap_overlays(heatmap_overlays, base_dir / "heatmap_overlays.npz")
+    if heatmap_archive is not None:
+        logger.info("Saved compressed PatchCore heatmaps to %s", heatmap_archive)
+
     metadata = {
         "hash": effective_hash,
         "model_type": "patchcore",
@@ -923,7 +1038,12 @@ def run_baseline(
         "manual_image_prec": manual_image_prec,
         "manual_image_rec": manual_image_rec,
         "img_threshold": img_threshold,
-        "heatmap_overlays": heatmap_overlays,
+        "pixel_aupimo": pixel_aupimo,
+        "aupimo_fpr_bounds": [1e-5, fpr_limit],
+        "anomaly_map_min": anomaly_map_min,
+        "anomaly_map_max": anomaly_map_max,
+        "anomaly_map_range": anomaly_map_range,
+        "heatmap_overlays_path": heatmap_archive.name if heatmap_archive is not None else None,
         "anomalous_indices": anomalous_indices,
         "raw_results": raw_results_dict,
         "timestamp": datetime.now(UTC).isoformat(),
@@ -945,6 +1065,10 @@ def run_baseline(
         manual_image_prec=manual_image_prec,
         manual_image_rec=manual_image_rec,
         img_threshold=img_threshold,
+        pixel_aupimo=pixel_aupimo,
+        anomaly_map_min=anomaly_map_min,
+        anomaly_map_max=anomaly_map_max,
+        anomaly_map_range=anomaly_map_range,
         heatmap_overlays=heatmap_overlays,
         anomalous_indices=anomalous_indices,
         fpr_limit=fpr_limit,
