@@ -288,7 +288,7 @@ def build_cae(crop_size: int = 64, latent_channels: int = 32) -> Any:
     # AdamW with decoupled weight decay for regularisation
     optimizer = tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4)
 
-    model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84))
+    model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84), jit_compile=False)
 
     logger.info(
         "Built Keras CAE: crop_size=%d, latent_channels=%d, bottleneck_spatial=%d",
