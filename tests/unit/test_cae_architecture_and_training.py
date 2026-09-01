@@ -91,3 +91,43 @@ def test_train_cae_minimal(mock_keras_cae: Any) -> None:
     assert len(history["val_good"]) == 1
     assert isinstance(history["train"][0], float)
     assert history["train"][0] > 0.0
+
+
+def test_train_cae_materializes_only_one_batch_at_a_time() -> None:
+    """Guard against recreating full shuffled and masked datasets each epoch."""
+
+    class BatchOnlyModel:
+        def __init__(self) -> None:
+            self.batch_sizes: list[int] = []
+
+        def reset_metrics(self) -> None:
+            pass
+
+        def train_on_batch(self, inputs: np.ndarray, targets: np.ndarray) -> float:
+            assert len(inputs) == len(targets)
+            self.batch_sizes.append(len(inputs))
+            return float(np.mean(np.square(inputs - targets)))
+
+        def get_weights(self) -> list[np.ndarray]:
+            return []
+
+        def set_weights(self, weights: list[np.ndarray]) -> None:
+            assert weights == []
+
+        def fit(self, *_args: Any, **_kwargs: Any) -> None:
+            raise AssertionError("train_cae must not construct a per-epoch fit/data-adapter pipeline")
+
+    model = BatchOnlyModel()
+    train_images = np.ones((11, 8, 8, 3), dtype=np.float32)
+
+    history = train_cae(
+        model=model,
+        train_images=train_images,
+        epochs=1,
+        batch_size=4,
+        mask_ratio=0.25,
+        patch_size=4,
+    )
+
+    assert model.batch_sizes == [4, 4, 3]
+    assert len(history["train"]) == 1
