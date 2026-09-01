@@ -17,16 +17,34 @@ Do not use the historical report table to select a final model. Those values wer
 
 ## Continuation instructions for another chat
 
-As of 2026-09-01, work is on branch `fix/consistent-model-evaluation`. Inspect the repository status before editing, preserve any user changes, and do not commit new work without explicit user permission. The full-map AUPIMO correction and compressed PatchCore heatmap persistence are implemented on this branch, while the shared fair-evaluation split has been documented but not implemented.
+As of 2026-09-01, work is on branch `fix/consistent-model-evaluation`. Inspect the repository status before editing, preserve any user changes, and do not commit new work without explicit user permission. The shared fair-evaluation implementation is complete in the working tree but has not been committed. A deterministic PatchCore bottle verification has been completed; the Keras CAE rerun remains outstanding.
 
 A continuation chat should:
 
 1. read this document completely;
 2. inspect `git status` and the existing diffs before editing;
 3. keep Optuna out of scope;
-4. implement and test the steps below in order;
-5. let the user run the expensive real-model evaluations;
-6. avoid changing final report numbers until corrected artifacts pass the acceptance checklist.
+4. preserve the completed implementation and rerun the automated checks if it changes;
+5. diagnose the outstanding Keras CAE runtime failure before rerunning it;
+6. inspect the corrected bottle metadata against the acceptance checklist before scaling out;
+7. avoid changing final report numbers until corrected artifacts pass the acceptance checklist.
+
+## Implementation status
+
+The shared protocol is now implemented for both baseline pipelines:
+
+- one deterministic split utility supplies identical ordered fitting, validation, and test partitions with path digests;
+- PatchCore fitting is restricted to the 85% fitting partition and its threshold is calibrated only on the 15% normal validation partition;
+- CAE consumes the same shared split;
+- both models use shared 256x256 map/mask canonicalisation, scikit-learn pixel AUROC, and full-map AUPIMO;
+- both return and persist image confusion counts;
+- cache identity and metadata include `fair-eval-v1`, split and metric evidence, and legacy PatchCore caches are rejected;
+- PatchCore explicitly seeds coreset sampling and loader workers with seed 42, disables Anomalib post-processing, and evaluates one documented raw-score prediction path;
+- `metrics_summary.csv` persists the confusion counts;
+- two independent PatchCore bottle fits produced identical results: image AUROC 1.0, threshold 7.370965, TP 63, FP 5, FN 0, TN 15, and anomalous-class F1 0.961832;
+- a read-only real-data smoke check verified bottle counts of 177 fitting, 32 validation, and 83 test images in both the shared split and Anomalib datasets/loaders.
+
+The next action is to complete the automated checks after the deterministic PatchCore change, then diagnose and rerun the bottle Keras CAE. Do not scale to other categories or update report values until both corrected bottle artifacts pass the acceptance checklist.
 
 ## Required protocol
 
@@ -45,7 +63,9 @@ For every category, both models must use the following fixed protocol:
 
 AUPIMO's shared FPR axis is calculated from normal images in the final test/evaluation set. This is part of the metric definition and is distinct from the deployed image-classification threshold, which must come from validation images.
 
-## Current implementation audit
+## Pre-implementation audit (retained for traceability)
+
+The items in this section describe the state before the continuation implementation above. They are retained to explain why the changes were required and must not be treated as the current code status.
 
 ### Already correct or substantially corrected
 

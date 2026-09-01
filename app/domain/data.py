@@ -1,6 +1,8 @@
 """Dataset helpers shared by modelling experiments."""
 
+import hashlib
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,6 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from app.core.logger import logger
-from app.pipelines.preprocessing import PreprocessingTransformAdapter, build_pipeline_from_configs
 
 IMAGE_EXTENSIONS = frozenset({".bmp", ".jpeg", ".jpg", ".png"})
 MANIFEST_COLUMNS = [
@@ -26,6 +27,127 @@ MANIFEST_COLUMNS = [
     "mode",
     "mask_path",
 ]
+
+FAIR_EVALUATION_PROTOCOL = "fair-eval-v1"
+FAIR_EVALUATION_SPLIT_SEED = 42
+FAIR_EVALUATION_VALIDATION_FRACTION = 0.15
+
+
+def _ordered_path_digest(paths: list[str]) -> str:
+    """Return a deterministic digest that preserves path membership and order."""
+    payload = "\n".join(str(Path(path).expanduser().resolve()) for path in paths)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class FairEvaluationSplit:
+    """Shared fitting, validation, and test partitions for one MVTec category."""
+
+    category: str
+    fitting: pd.DataFrame
+    validation: pd.DataFrame
+    test: pd.DataFrame
+    seed: int
+    validation_fraction: float
+    fitting_digest: str
+    validation_digest: str
+    test_digest: str
+
+    @property
+    def fitting_paths(self) -> list[str]:
+        """Return fitting paths in their protocol-defined order."""
+        return [str(path) for path in self.fitting["path"]]
+
+    @property
+    def validation_paths(self) -> list[str]:
+        """Return validation paths in their protocol-defined order."""
+        return [str(path) for path in self.validation["path"]]
+
+    @property
+    def test_paths(self) -> list[str]:
+        """Return official test paths in their protocol-defined order."""
+        return [str(path) for path in self.test["path"]]
+
+    def evidence(self) -> dict[str, Any]:
+        """Return serialisable protocol evidence for hashes and metadata."""
+        return {
+            "protocol": FAIR_EVALUATION_PROTOCOL,
+            "split_seed": self.seed,
+            "validation_fraction": self.validation_fraction,
+            "train_normal": len(self.fitting),
+            "val_normal": len(self.validation),
+            "test_total": len(self.test),
+            "fitting_path_digest": self.fitting_digest,
+            "validation_path_digest": self.validation_digest,
+            "test_path_digest": self.test_digest,
+        }
+
+
+def build_fair_evaluation_split(
+    manifest: pd.DataFrame,
+    category: str,
+    *,
+    validation_fraction: float = FAIR_EVALUATION_VALIDATION_FRACTION,
+    seed: int = FAIR_EVALUATION_SPLIT_SEED,
+) -> FairEvaluationSplit:
+    """Build the deterministic shared baseline-evaluation split.
+
+    Only official normal training rows may enter fitting or validation. Official
+    test rows retain the manifest's existing deterministic order.
+    """
+    from sklearn.model_selection import train_test_split
+
+    required = {"path", "product", "split", "is_anomaly"}
+    if missing := required.difference(manifest.columns):
+        raise ValueError(f"manifest is missing required columns: {sorted(missing)}")
+    if not 0.0 < validation_fraction < 1.0:
+        raise ValueError("validation_fraction must be between 0 and 1")
+
+    category_rows = manifest.loc[manifest["product"] == category].copy()
+    if category_rows.empty:
+        raise ValueError(f"No manifest rows found for category '{category}'")
+
+    normal_train = category_rows.loc[
+        (category_rows["split"] == "train") & (~category_rows["is_anomaly"].astype(bool))
+    ].sort_values("path", kind="stable")
+    official_test = category_rows.loc[category_rows["split"] == "test"]
+    if normal_train.empty:
+        raise ValueError(f"No official normal training rows found for category '{category}'")
+    if official_test.empty:
+        raise ValueError(f"No official test rows found for category '{category}'")
+
+    fitting, validation = train_test_split(
+        normal_train,
+        test_size=validation_fraction,
+        random_state=seed,
+        shuffle=True,
+    )
+    fitting = fitting.reset_index(drop=True)
+    validation = validation.reset_index(drop=True)
+    official_test = official_test.reset_index(drop=True)
+
+    fitting_paths = fitting["path"].astype(str).tolist()
+    validation_paths = validation["path"].astype(str).tolist()
+    test_paths = official_test["path"].astype(str).tolist()
+    fitting_set = set(fitting_paths)
+    validation_set = set(validation_paths)
+    test_set = set(test_paths)
+    if fitting_set & validation_set or fitting_set & test_set or validation_set & test_set:
+        raise ValueError("Fair-evaluation partitions contain overlapping image paths")
+    if fitting_set | validation_set != set(normal_train["path"].astype(str)):
+        raise ValueError("Fitting and validation partitions do not exhaust normal training rows")
+
+    return FairEvaluationSplit(
+        category=category,
+        fitting=fitting,
+        validation=validation,
+        test=official_test,
+        seed=seed,
+        validation_fraction=validation_fraction,
+        fitting_digest=_ordered_path_digest(fitting_paths),
+        validation_digest=_ordered_path_digest(validation_paths),
+        test_digest=_ordered_path_digest(test_paths),
+    )
 
 
 def _read_image_metadata(path: Path) -> tuple[int, int, str]:
@@ -195,6 +317,8 @@ def create_mvtec_dataset(
     Returns:
         An MVTecImageDataset.
     """
+    from app.pipelines.preprocessing import PreprocessingTransformAdapter, build_pipeline_from_configs
+
     pipeline = build_pipeline_from_configs(preprocessing_steps)
     adapter = PreprocessingTransformAdapter(pipeline)
 

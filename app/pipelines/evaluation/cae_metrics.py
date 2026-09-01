@@ -79,8 +79,7 @@ def compute_image_auroc(scores: np.ndarray, binary_labels: np.ndarray) -> float:
     from sklearn.metrics import roc_auc_score
 
     if len(np.unique(binary_labels)) < 2:
-        logger.warning("Only one class present in labels. AUROC is undefined; returning 0.0.")
-        return 0.0
+        raise ValueError("Image AUROC requires both normal and anomalous labels")
 
     auroc: float = float(roc_auc_score(binary_labels, scores))
     logger.info("Image-Level AUROC: %.4f", auroc)
@@ -255,8 +254,14 @@ def evaluate_cae(
         - ``"error_maps"``: List of 2D pixel error maps.
         - ``"threshold"``: The decision threshold used.
     """
-    from sklearn.metrics import accuracy_score, precision_score, recall_score
+    from sklearn.metrics import accuracy_score
 
+    from app.pipelines.evaluation.metrics import (
+        AUPIMO_FPR_BOUNDS,
+        compute_and_save_pr_metrics,
+        compute_image_confusion_metrics,
+        compute_shared_pixel_metrics,
+    )
     from app.pipelines.evaluation.scoring import compute_image_scores
 
     logger.info("Running CAE evaluation on %d test images...", len(test_images))
@@ -267,13 +272,15 @@ def evaluate_cae(
     binary_labels = test_labels.astype(int)
 
     auroc = compute_image_auroc(scores, binary_labels)
-    aupimo = compute_aupimo(error_maps, gt_masks)
+    pixel_metrics, canonical_maps, canonical_masks = compute_shared_pixel_metrics(error_maps, gt_masks, binary_labels)
+    aupimo = float(pixel_metrics["pixel_aupimo"])
 
     predictions = (scores > threshold).astype(int)
     acc = float(accuracy_score(binary_labels, predictions))
-    prec = float(precision_score(binary_labels, predictions, zero_division=0))
-    rec = float(recall_score(binary_labels, predictions, zero_division=0))
-    f1 = 2 * (prec * rec) / (prec + rec) if (prec + rec) > 0 else 0.0
+    confusion = compute_image_confusion_metrics(binary_labels, scores, threshold)
+    prec = float(confusion["precision"])
+    rec = float(confusion["recall"])
+    f1 = float(confusion["f1_score"])
 
     logger.info(
         "Evaluation complete — AUROC: %.4f | AUPIMO: %.4f | Acc: %.2f%% | Prec: %.2f | Rec: %.2f",
@@ -284,24 +291,13 @@ def evaluate_cae(
         rec,
     )
 
-    pixel_auroc = 0.0
+    pixel_auroc = float(pixel_metrics["pixel_auroc"])
     pixel_f1 = 0.0
     if output_dir:
-        from app.pipelines.evaluation.metrics import compute_and_save_pr_metrics
-
         compute_and_save_pr_metrics(binary_labels, scores, output_dir / "image_metrics.npz", level="image")
 
-        # Save pixel metrics
-        h, w = error_maps[0].shape
-        flat_masks = []
-        for mask in gt_masks:
-            if mask is not None and np.any(mask > 0):
-                flat_masks.append((mask > 0).astype(np.uint8).flatten())
-            else:
-                flat_masks.append(np.zeros((h, w), dtype=np.uint8).flatten())
-
-        y_true_pixel = np.concatenate(flat_masks)
-        y_score_pixel = np.concatenate([m.flatten() for m in error_maps])
+        y_true_pixel = canonical_masks.reshape(-1)
+        y_score_pixel = canonical_maps.reshape(-1)
 
         compute_and_save_pr_metrics(
             y_true_pixel,
@@ -309,13 +305,10 @@ def evaluate_cae(
             output_dir / "pixel_metrics.npz",
             level="pixel",
             aupimo=aupimo,
-            fpr_bounds=(1e-5, 1e-4),
+            fpr_bounds=AUPIMO_FPR_BOUNDS,
         )
 
-        if len(np.unique(y_true_pixel)) >= 2:
-            from sklearn.metrics import roc_auc_score
-
-            pixel_auroc = float(roc_auc_score(y_true_pixel, y_score_pixel))
+        from sklearn.metrics import precision_score, recall_score
 
         pixel_pred = (y_score_pixel > threshold).astype(int)
         pixel_prec = float(precision_score(y_true_pixel, pixel_pred, zero_division=0))
@@ -334,4 +327,6 @@ def evaluate_cae(
         "scores": scores,
         "error_maps": error_maps,
         "threshold": threshold,
+        **confusion,
+        **pixel_metrics,
     }
