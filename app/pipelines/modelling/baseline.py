@@ -18,8 +18,11 @@ import torch
 from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import Patchcore
+from anomalib.utils.path import generate_output_filename
 from anomalib.visualization import ImageVisualizer
+from anomalib.visualization.image.item_visualizer import visualize_image_item
 from lightning import seed_everything
+from PIL import Image, ImageDraw, ImageFont
 from sklearn.metrics import f1_score, roc_auc_score
 
 from app.core.logger import logger
@@ -58,8 +61,47 @@ def _seed_patchcore_run(seed: int) -> None:
     seed_everything(seed, workers=True, verbose=False)
 
 
+def _add_panel_headers(
+    grid: Image.Image,
+    labels: list[str],
+    panel_width: int = 256,
+    header_height: int = 34,
+) -> Image.Image:
+    """Place unobstructed labels in a header above a horizontal image grid."""
+    labelled = Image.new("RGB", (grid.width, grid.height + header_height), "white")
+    labelled.paste(grid.convert("RGB"), (0, header_height))
+    draw = ImageDraw.Draw(labelled)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 16)
+    except OSError:
+        font = ImageFont.load_default()
+
+    for index, label in enumerate(labels):
+        left = index * panel_width
+        if left >= grid.width:
+            break
+        right = min(left + panel_width, grid.width)
+        text_box = draw.textbbox((0, 0), label, font=font)
+        text_width = text_box[2] - text_box[0]
+        text_height = text_box[3] - text_box[1]
+        x = left + max(0, (right - left - text_width) // 2)
+        y = max(0, (header_height - text_height) // 2 - text_box[1])
+        draw.text((x, y), label, fill="black", font=font)
+    return labelled
+
+
 class _RawScoreImageVisualizer(ImageVisualizer):
-    """Normalize a display copy of raw maps before Anomalib converts them to 8-bit images."""
+    """Render raw maps with optional calibrated masks and unobstructed headers."""
+
+    def __init__(
+        self,
+        pixel_threshold: float | None = None,
+        output_dir: str | Path | None = None,
+    ) -> None:
+        """Configure four-panel rendering without drawing labels over image data."""
+        super().__init__(text_config={"enable": False}, output_dir=output_dir)
+        self.pixel_threshold = pixel_threshold
+        self.render_enabled = True
 
     def on_test_batch_end(
         self,
@@ -71,9 +113,12 @@ class _RawScoreImageVisualizer(ImageVisualizer):
         dataloader_idx: int = 0,
     ) -> None:
         """Render raw anomaly maps without mutating the batch used for evaluation."""
+        del pl_module, outputs, batch_idx, dataloader_idx
+        if not self.render_enabled:
+            return
+
         anomaly_map = getattr(batch, "anomaly_map", None)
         if not isinstance(anomaly_map, torch.Tensor) or anomaly_map.ndim < 2:
-            super().on_test_batch_end(trainer, pl_module, outputs, batch, batch_idx, dataloader_idx)
             return
 
         flattened = anomaly_map.reshape(anomaly_map.shape[0], -1)
@@ -87,15 +132,38 @@ class _RawScoreImageVisualizer(ImageVisualizer):
             (anomaly_map - minimum) / score_range,
             torch.zeros_like(anomaly_map),
         )
-        visualization_batch = batch.update(in_place=False, anomaly_map=normalized_map)
-        super().on_test_batch_end(
-            trainer,
-            pl_module,
-            outputs,
-            visualization_batch,
-            batch_idx,
-            dataloader_idx,
-        )
+        updates: dict[str, Any] = {"anomaly_map": normalized_map}
+        if self.pixel_threshold is not None:
+            updates["pred_mask"] = anomaly_map > self.pixel_threshold
+        visualization_batch = batch.update(in_place=False, **updates)
+
+        if self.output_dir is None:
+            self.output_dir = Path(trainer.default_root_dir) / "images"
+
+        labels = ["Image", "Ground-Truth Mask", "Anomaly Map Overlay", "Predicted Mask"]
+        for item in visualization_batch:
+            image = visualize_image_item(
+                item,
+                fields=self.fields,
+                overlay_fields=self.overlay_fields,
+                field_size=self.field_size,
+                fields_config=self.fields_config,
+                overlay_fields_config=self.overlay_fields_config,
+                text_config={"enable": False},
+            )
+            if image is None:
+                continue
+            image = _add_panel_headers(image, labels, panel_width=self.field_size[0])
+            datamodule = getattr(trainer, "datamodule", None)
+            dataset_name = getattr(datamodule, "name", None) if datamodule else None
+            category = getattr(datamodule, "category", None) if datamodule else None
+            filename = generate_output_filename(
+                input_path=item.image_path or "",
+                output_path=self.output_dir,
+                dataset_name=dataset_name,
+                category=category,
+            )
+            image.save(filename)
 
 
 def _print_patchcore_results_table(results: Mapping[str, float]) -> None:
@@ -378,6 +446,7 @@ def extract_and_save_pr_metrics(
     int,
     int,
     float,
+    float,
 ]:
     """Extract model predictions and persist Precision-Recall metrics for visual analysis.
 
@@ -391,6 +460,9 @@ def extract_and_save_pr_metrics(
     """
     try:
         logger.info("Extracting predictions for PR curve metrics...")
+        visualizer = getattr(model, "visualizer", None)
+        if isinstance(visualizer, _RawScoreImageVisualizer):
+            visualizer.render_enabled = False
         validation_predictions = engine.predict(model=model, dataloaders=validation_dataloader)
         if not validation_predictions:
             raise RuntimeError("PatchCore prediction returned no validation batches")
@@ -405,6 +477,23 @@ def extract_and_save_pr_metrics(
                 validation_pixel_scores.append(maps)
         if not validation_scores:
             raise RuntimeError("PatchCore validation predictions did not contain image scores")
+        if not validation_pixel_scores:
+            raise RuntimeError("PatchCore validation predictions did not contain anomaly maps")
+
+        # Freeze deployment thresholds using only the shared normal validation partition.
+        img_threshold = compute_adaptive_threshold(
+            np.concatenate(validation_scores),
+            method="quantile",
+            quantile=PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
+        )
+        pix_threshold = compute_adaptive_threshold(
+            np.concatenate(validation_pixel_scores),
+            method="quantile",
+            quantile=PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
+        )
+        if isinstance(visualizer, _RawScoreImageVisualizer):
+            visualizer.pixel_threshold = pix_threshold
+            visualizer.render_enabled = True
 
         raw_predictions = engine.predict(model=model, dataloaders=test_dataloader)
         if not raw_predictions:
@@ -479,24 +568,11 @@ def extract_and_save_pr_metrics(
         )
         _process_and_save_level(image_scores, image_labels, base_dir / "image_metrics.npz", level="image")
 
-        # Freeze thresholds using only the shared normal validation partition.
-        img_threshold = compute_adaptive_threshold(
-            np.concatenate(validation_scores),
-            method="quantile",
-            quantile=PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
-        )
         confusion = compute_image_confusion_metrics(image_labels_np, image_scores_np, img_threshold)
         manual_image_f1 = float(confusion["f1_score"])
         manual_image_prec = float(confusion["precision"])
         manual_image_rec = float(confusion["recall"])
 
-        if not validation_pixel_scores:
-            raise RuntimeError("PatchCore validation predictions did not contain anomaly maps")
-        pix_threshold = compute_adaptive_threshold(
-            np.concatenate(validation_pixel_scores),
-            method="quantile",
-            quantile=PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
-        )
         pixel_scores_np = canonical_maps.reshape(-1)
         pixel_labels_np = canonical_masks.reshape(-1)
         pix_preds = (pixel_scores_np > pix_threshold).astype(int)
@@ -602,6 +678,7 @@ def extract_and_save_pr_metrics(
             int(confusion["false_positives"]),
             int(confusion["false_negatives"]),
             int(confusion["true_negatives"]),
+            pix_threshold,
             image_auroc,
         )
 
@@ -872,6 +949,7 @@ def format_results(
     manual_image_prec: float,
     manual_image_rec: float,
     img_threshold: float,
+    pixel_threshold: float,
     pixel_auroc: float,
     pixel_aupimo: float,
     anomaly_map_min: float,
@@ -901,6 +979,7 @@ def format_results(
         manual_image_prec: Manually calculated image-level Precision score.
         manual_image_rec: Manually calculated image-level Recall score.
         img_threshold: Manually calculated image-level classification threshold.
+        pixel_threshold: Normal-validation threshold used to create predicted masks.
         pixel_auroc: Pixel AUROC from the shared canonical metric path.
         pixel_aupimo: Full-map AUPIMO computed by anomalib.
         anomaly_map_min: Minimum PatchCore anomaly-map value.
@@ -944,6 +1023,7 @@ def format_results(
         "pixel_level": {
             "auroc": pixel_auroc,
             "f1_score": manual_pixel_f1,
+            "threshold": pixel_threshold,
             "aupimo_score": pixel_aupimo,
             "fpr_lower_bound": 1e-5,
             "fpr_upper_bound": fpr_limit,
@@ -1125,6 +1205,7 @@ def run_baseline(
             "pixel_level": {
                 "auroc": float(meta["pixel_auroc"]),
                 "f1_score": manual_pixel_f1,
+                **({"threshold": float(meta["pixel_threshold"])} if "pixel_threshold" in meta else {}),
                 "aupimo_score": aupimo,
                 "fpr_lower_bound": 1e-5,
                 "fpr_upper_bound": fpr_limit,
@@ -1206,6 +1287,7 @@ def run_baseline(
         false_positives,
         false_negatives,
         true_negatives,
+        pix_threshold,
         image_auroc,
     ) = extract_and_save_pr_metrics(
         engine,
@@ -1303,6 +1385,7 @@ def run_baseline(
         "false_negatives": false_negatives,
         "true_negatives": true_negatives,
         "img_threshold": img_threshold,
+        "pixel_threshold": pix_threshold,
         "pixel_aupimo": pixel_aupimo,
         "aupimo_fpr_bounds": [1e-5, fpr_limit],
         "aupimo_num_thresholds": AUPIMO_NUM_THRESHOLDS,
@@ -1333,6 +1416,7 @@ def run_baseline(
         manual_image_prec=manual_image_prec,
         manual_image_rec=manual_image_rec,
         img_threshold=img_threshold,
+        pixel_threshold=pix_threshold,
         pixel_auroc=pixel_auroc,
         pixel_aupimo=pixel_aupimo,
         anomaly_map_min=anomaly_map_min,

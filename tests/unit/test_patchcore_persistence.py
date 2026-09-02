@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
+from PIL import Image
 
 from app.domain.data import build_fair_evaluation_split
 from app.pipelines.evaluation.metrics import fair_metric_evidence
@@ -16,6 +17,7 @@ from app.pipelines.modelling.baseline import (
     PATCHCORE_MODEL_SEED,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     PATCHCORE_SCORE_SPACE,
+    _add_panel_headers,
     _configure_patchcore_partitions,
     _load_heatmap_overlays,
     _save_heatmap_overlays,
@@ -28,6 +30,19 @@ from app.pipelines.modelling.baseline import (
     restore_cached_patchcore_model,
     run_baseline,
 )
+
+
+def test_patchcore_visualization_headers_do_not_cover_panels() -> None:
+    """Four-panel labels live in a separate header instead of obscuring image data."""
+    grid = Image.new("RGB", (1024, 256), (12, 34, 56))
+
+    labelled = _add_panel_headers(
+        grid,
+        ["Image", "Ground-Truth Mask", "Anomaly Map Overlay", "Predicted Mask"],
+    )
+
+    assert labelled.size == (1024, 290)
+    assert np.array_equal(np.asarray(labelled)[34:], np.asarray(grid))
 
 
 class _SamplesDataset:
