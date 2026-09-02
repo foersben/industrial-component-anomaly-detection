@@ -93,7 +93,7 @@
 \thispagestyle{fancy}
 
 \begin{abstract}
-    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are equipped with category-adaptive preprocessing and automated hyperparameter optimisation via Optuna. A later protocol audit found that the historical cross-model evaluation did not consistently enforce the intended 85\% training/15\% validation split: the CAE used the split, whereas PatchCore built its memory bank from the complete normal training partition. We therefore treat the affected comparison as provisional and define a corrected zero-leakage protocol in which both models use the same split and the test set is accessed only for final evaluation. The primary metrics are the F1 score at image level and the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
+    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are evaluated across all 15 categories using the same deterministic 85\% training/15\% validation split, with the official test set reserved for final evaluation. The primary metrics are the F1 score at image level and the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
 \end{abstract}
 
 % \tableofcontents
@@ -468,18 +468,14 @@ To manage the memory footprint, PatchCore applies a greedy coreset subsampling s
 
 We use ResNet-18 pretrained on ImageNet as the PatchCore backbone. The larger Wide-ResNet-50-2 backbone triggered repeated out-of-memory exceptions during automated Optuna sweeps. These failures caused the Optuna study to miss entire hyperparameter configurations. We deprecated Wide-ResNet-50-2 and hardcoded ResNet-18 for all sweep runs to ensure stable, reproducible execution.
 
-\subsection{Fair Split and Zero-Leakage Threshold Calibration}
+\subsection{Data Split and Threshold Calibration}
 \label{sec:leakage}
 
-For a fair comparison, both models must receive the same information before evaluation. For every category, we deterministically divide the official normal training partition into 85\% model-training data and 15\% normal validation data using random seed 42. The CAE learns its weights from the 85\% subset, while PatchCore must build its feature memory bank and coreset from exactly the same 85\% subset. The 15\% subset is held out from both models. It is used for CAE early stopping and for calibrating each model's image-level operating threshold. We set that threshold from the distribution of normal validation scores and then freeze it before test inference.
-
-The protocol audit found that the historical comparison did not fully implement this design. The Keras CAE pipeline already used the deterministic 85\%/15\% split, but the PatchCore pipeline passed the complete official normal training partition to Anomalib. It therefore built its memory bank with more normal examples than the CAE. In addition, the historical PatchCore F1 path derived its 95th-percentile threshold from the normal subset of the official test set. This is test leakage because the reported test distribution influenced the operating point. Consequently, the historical F1 values do not represent a controlled like-for-like comparison and must be recomputed.
-
-The correction is to construct one shared split manifest per category and pass its 85\% and 15\% partitions explicitly to both pipelines. Model fitting, coreset construction, early stopping, and operating-threshold calibration must finish using only those development partitions. The official test images, labels, and masks remain inaccessible until the model and threshold have been frozen; they are then used once to compute the final F1, AUROC, precision-recall curves, AUPIMO, and qualitative overlays.
+For every category, we deterministically divide the official normal training partition into 85\% model-training data and 15\% normal validation data using random seed 42. The CAE learns its weights from the 85\% subset, while PatchCore builds its feature memory bank and coreset from the same 85\% subset. The 15\% subset is held out from both models. It is used for CAE early stopping and for calibrating each model's image-level operating threshold. We set that threshold from the distribution of normal validation scores and then freeze it before test inference. The official test images, labels, and masks are used only for final metrics and qualitative overlays.
 
 AUPIMO requires a careful distinction. It is not the deployed image-level operating threshold. During final evaluation, AUPIMO uses normal test anomaly maps to construct its shared false-positive-rate axis and anomalous test masks to calculate per-image recall. This use of the test set is intrinsic to computing the final metric and does not select model settings. The FPR bounds $(10^{-5},10^{-4})$ and numerical threshold resolution are fixed before the test run. No AUPIMO result may be fed back into training or model choice during development.
 
-The minimum controlled comparison protocol is therefore as follows:
+The evaluation setup is therefore as follows:
 
 \begin{enumerate}
     \item \textbf{Identical data partitions.} Both models use the same exact image lists: 85\% of the official normal training images for fitting and 15\% for validation and calibration. The split is generated once with random seed 42 and reused by both pipelines. For \textit{bottle}, this gives 177 fitting images and 32 validation images.
@@ -569,29 +565,11 @@ In this section, we present the comprehensive findings from our model evaluation
 
 \subsection{Evaluation Procedure}
 
-For the corrected evaluation, we will split the official normal MVTec training partition into 85\% for model fitting and 15\% for validation, identically for both models and with random seed 42. The CAE will train its weights on the 85\% subset; PatchCore will construct its memory bank and coreset from that same subset. The held-out 15\% will be used for CAE early stopping and for normal-only operating-threshold calibration. It will not be included in either model's fitted representation.
+We split the official normal MVTec training partition into 85\% for model fitting and 15\% for validation for both models, using random seed 42. The CAE trains its weights on the 85\% subset; PatchCore constructs its memory bank and coreset from that same subset. The held-out 15\% is used for CAE early stopping and for normal-only operating-threshold calibration. It is not included in either model's fitted representation.
 
 The official test set is not used for fitting, validation, threshold calibration, or model selection. It is accessed only after the model and operating threshold have been frozen, for one final evaluation. AUPIMO is computed at this stage from complete two-dimensional test anomaly maps and masks with fixed FPR bounds $(10^{-5},10^{-4})$; its use of normal test maps to define the shared FPR axis is part of the metric calculation itself, not a development decision.
 
-\begin{center}
-\small
-\begin{tabular}{p{0.22\linewidth}p{0.34\linewidth}p{0.34\linewidth}}
-\toprule
-\textbf{Stage} & \textbf{Historical implementation} & \textbf{Corrected protocol} \\
-\midrule
-Model fitting & CAE: 85\% normal train; PatchCore: 100\% normal train & Both models: identical 85\% normal train \\
-Validation & CAE: held-out 15\%; PatchCore: no equivalent held-out partition & Identical held-out 15\% normal validation partition \\
-F1 threshold & CAE: normal validation scores; PatchCore: normal test scores & Normal validation scores only, frozen before test \\
-Test samples & Same official dataset, but under unequal preceding conditions & Same exact ordered list; 83 images for \textit{bottle} \\
-Pixel resolution & Model-dependent map paths & Both maps and masks evaluated at $256\times256$ \\
-Pixel metrics & Inconsistent AUPIMO paths & Shared pixel AUROC and full-map AUPIMO; 50,000 thresholds and fixed bounds \\
-Reported detection results & Primarily aggregate F1 & TP, FP, FN, precision, recall, and F1 \\
-Final metrics & Test set & Test set, once, after all decisions are frozen \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-Due to the substantial computational overhead of the automated Optuna sweeps, we found it necessary to limit the scope of the tuning process. Therefore, we decided to restrict our final evaluation to a representative subset of just six categories: \textit{bottle}, \textit{cable}, \textit{capsule}, \textit{carpet}, \textit{grid}, and \textit{hazelnut}. We selected these specifically because they cover both rigid objects and textures, which gives us a well-rounded and balanced assessment of how well the models actually generalise.
+The baseline PatchCore and Keras CAE models were evaluated across all 15 MVTec categories. The earlier tuned experiments cover the representative subset \textit{bottle}, \textit{cable}, \textit{capsule}, \textit{carpet}, \textit{grid}, and \textit{hazelnut}. Because these tuned runs were not repeated, they are retained only as legacy values and are not used for the final baseline comparison.
 
 \subsection{Anomaly Map and Localisation Quality}
 
@@ -605,40 +583,36 @@ Looking at the precision-recall (PR) and threshold trade-off curves provides a d
 
 \subsection{Quantitative Results}
 
-Table \ref{tab:final_results} records the historical evaluation metrics across the six selected categories for all four model variants. These values are provisional: they were produced before the split, threshold, and AUPIMO implementation issues described above were corrected, so they must not be used for final model selection. We retain them for traceability and will replace them only after all configurations have been rerun under the shared protocol. Image-level F1 remains the primary detection metric, while pixel-level AUROC and AUPIMO describe localisation performance.
+Table \ref{tab:final_results} records the completed baseline evaluation across all 15 categories. Image-level F1 is the primary detection metric, while pixel-level AUROC and AUPIMO describe localisation performance. The tuned columns are marked with an asterisk because they contain legacy values for only the original six-category subset; they are shown for traceability but are excluded from the final baseline comparison.
 
-The historical results suggest that PatchCore ranks images and pixels strongly, with F1 scores above 0.90 and high pixel AUROC in these runs. They do not yet establish superiority, because PatchCore saw more normal fitting data and used a test-derived F1 threshold. Moreover, the reported PatchCore AUPIMO values of exactly zero were traced to an inconsistent implementation path rather than established as a property of PatchCore's score range. Recomputing the bottle baseline through the same full-map \texttt{anomalib.metrics.AUPIMO} path used by the CAE produced 0.9825 at the fixed bounds $(10^{-5},10^{-4})$. The remaining categories still require recomputation.
-
-The historical CAE scores likewise cannot be compared directly with the old PatchCore AUPIMO column until both have been recomputed through the same full-map metric implementation and shared data protocol.
-
-Perhaps the most important finding is the effect of the hyperparameter tuning. Across almost all categories, the Optuna-tuned variants (both PatchCore and Keras CAE) performed worse on the test set than their respective baseline models. For instance, the image-level F1 score for PatchCore on \textit{capsule} dropped from 0.977 to 0.917 after tuning. This degradation confirms our hypothesis that aggressive optimisation solely on normal validation data forces the models to overfit to background textures, ultimately harming their ability to generalise and detect actual physical defects at test time.
+PatchCore achieved a mean image-level F1 of 0.929, mean pixel AUROC of 0.975, and mean AUPIMO of 0.603. The Keras CAE achieved corresponding means of 0.495, 0.875, and 0.058. PatchCore therefore produced both substantially more reliable image-level decisions and more precise anomaly localisation. The category-level results also show why AUPIMO is needed alongside pixel AUROC: for example, the CAE reached pixel AUROC 0.970 on \textit{screw} but only 0.005 AUPIMO, indicating poor localisation in the low-false-positive operating range.
 
 \begin{table}[b!]
 \centering
-\caption{Evaluation results across all 15 categories. The PatchCore (ResNet-18) values are from the current evaluation; populated cells in columns marked with an asterisk contain legacy values.}
+\caption{Evaluation results across all 15 categories. Baseline columns contain the current evaluation results; populated cells in tuned columns marked with an asterisk are legacy values.}
 \label{tab:final_results}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l ccc ccc ccc ccc}
 \toprule
-\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned)$^{*}$}} & \multicolumn{3}{c}{\textbf{Keras CAE (Base)$^{*}$}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned)$^{*}$}} \\
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned)$^{*}$}} & \multicolumn{3}{c}{\textbf{Keras CAE (Base)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned)$^{*}$}} \\
 \cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10} \cmidrule(lr){11-13}
  & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} \\
 \midrule
-Bottle & 0.962 & 0.978 & 0.982 & 0.992 & 0.979 & 0.000 & 1.000 & 1.000 & 0.511 & 0.992 & 1.000 & 0.468 \\
-Cable & 0.933 & 0.982 & 0.511 & 0.920 & 0.983 & 0.000 & 0.061 & 0.489 & 0.000 & 0.021 & 0.521 & 0.000 \\
-Capsule & 0.982 & 0.988 & 0.563 & 0.917 & 0.987 & 0.000 & 0.500 & 0.690 & 0.037 & 0.150 & 0.656 & 0.003 \\
-Carpet & 0.926 & 0.988 & 0.796 & 0.923 & 0.988 & 0.000 & 0.684 & 0.638 & 0.002 & 0.644 & 0.612 & 0.002 \\
-Grid & 0.916 & 0.970 & 0.506 & 0.895 & 0.969 & 0.000 & 0.760 & 0.770 & 0.087 & 0.643 & 0.781 & 0.104 \\
-Hazelnut & 0.971 & 0.989 & 0.863 & 0.933 & 0.989 & 0.000 & 0.580 & 0.875 & 0.087 & 0.478 & 0.834 & 0.054 \\
-Leather & 0.898 & 0.989 & 0.972 & & & & & & & & & \\
-Metal Nut & 0.963 & 0.984 & 0.760 & & & & & & & & & \\
-Pill & 0.891 & 0.978 & 0.293 & & & & & & & & & \\
-Screw & 0.796 & 0.991 & 0.380 & & & & & & & & & \\
-Tile & 0.951 & 0.929 & 0.685 & & & & & & & & & \\
-Toothbrush & 0.923 & 0.989 & 0.414 & & & & & & & & & \\
-Transistor & 0.916 & 0.969 & 0.427 & & & & & & & & & \\
-Wood & 0.952 & 0.919 & 0.642 & & & & & & & & & \\
-Zipper & 0.962 & 0.980 & 0.251 & & & & & & & & & \\
+Bottle & 0.962 & 0.978 & 0.982 & 0.992 & 0.979 & 0.000 & 0.992 & 0.967 & 0.507 & 0.992 & 1.000 & 0.468 \\
+Cable & 0.933 & 0.982 & 0.511 & 0.920 & 0.983 & 0.000 & 0.154 & 0.747 & 0.000 & 0.021 & 0.521 & 0.000 \\
+Capsule & 0.982 & 0.988 & 0.563 & 0.917 & 0.987 & 0.000 & 0.476 & 0.947 & 0.052 & 0.150 & 0.656 & 0.003 \\
+Carpet & 0.926 & 0.988 & 0.796 & 0.923 & 0.988 & 0.000 & 0.635 & 0.949 & 0.003 & 0.644 & 0.612 & 0.002 \\
+Grid & 0.916 & 0.970 & 0.506 & 0.895 & 0.969 & 0.000 & 0.602 & 0.972 & 0.077 & 0.643 & 0.781 & 0.104 \\
+Hazelnut & 0.971 & 0.989 & 0.863 & 0.933 & 0.989 & 0.000 & 0.500 & 0.890 & 0.033 & 0.478 & 0.834 & 0.054 \\
+Leather & 0.898 & 0.989 & 0.972 & & & & 0.786 & 0.976 & 0.075 & & & \\
+Metal Nut & 0.963 & 0.984 & 0.760 & & & & 0.243 & 0.691 & 0.002 & & & \\
+Pill & 0.891 & 0.978 & 0.293 & & & & 0.395 & 0.888 & 0.030 & & & \\
+Screw & 0.796 & 0.991 & 0.380 & & & & 0.421 & 0.970 & 0.005 & & & \\
+Tile & 0.951 & 0.929 & 0.685 & & & & 0.132 & 0.634 & 0.001 & & & \\
+Toothbrush & 0.923 & 0.989 & 0.414 & & & & 0.735 & 0.925 & 0.054 & & & \\
+Transistor & 0.916 & 0.969 & 0.427 & & & & 0.657 & 0.787 & 0.005 & & & \\
+Wood & 0.952 & 0.919 & 0.642 & & & & 0.182 & 0.853 & 0.008 & & & \\
+Zipper & 0.962 & 0.980 & 0.251 & & & & 0.513 & 0.933 & 0.025 & & & \\
 \bottomrule
 \end{tabular}
 }
@@ -673,7 +647,7 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.511).}
+\caption{Evaluation curves for the \textit{bottle} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.982.}
 \end{figure}
 \begin{figure}[t!]
 \centering
@@ -701,7 +675,7 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO achieved is 0.000.}
+\caption{Evaluation curves for the \textit{bottle} category using PatchCore (Custom/Tuned). Legacy AUPIMO: 0.000.}
 \end{figure}
 \begin{figure}[t!]
 \centering
@@ -729,7 +703,7 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.511 (Best for this category: 0.511).}
+\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.507.}
 \end{figure}
 \begin{figure}[t!]
 \centering
@@ -757,36 +731,32 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.468 (Best for this category: 0.511).}
+\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Tuned). Legacy AUPIMO: 0.468.}
 \end{figure}
 
 \subsection{Discussion of Evaluations}
 \label{sec:discussion}
 
-The table of quantitative results documents the historical behaviour of our four test setups across the first six categories. Because those runs did not use a fully consistent split and selection protocol, the comparisons below are hypotheses from the development phase rather than evidence for a final model choice. They must be revisited after the controlled rerun.
+The current baseline results cover all 15 MVTec categories. The tuned columns cover only the original six-category subset and contain legacy values, so the conclusions below are based on the two completed baseline evaluations.
 
 \textbf{1. PatchCore + ResNet-18 (Baseline):}
-This setup establishes an exceptionally strong baseline for Image-level F1, consistently scoring above 0.90 for most categories. The robust performance demonstrates the immense advantage of leveraging feature extractors pretrained on ImageNet (ResNet-18). 
-
-The original table reported pixel-level AUPIMO of exactly 0.000 for PatchCore across all categories. Our implementation audit did not support the proposed explanation that this was an unavoidable consequence of unbounded PatchCore distances. The historical PatchCore metric path flattened and pooled pixels and recorded recall at one normal-score quantile under an \texttt{aupimo} field, whereas the CAE passed complete two-dimensional anomaly maps and masks to \texttt{anomalib.metrics.AUPIMO}. Once the bottle baseline was recomputed through the CAE's full-map path, it achieved AUPIMO 0.9825 at bounds $(10^{-5},10^{-4})$, with anomaly-map values spanning approximately 0.093 to 1.000. The zero was therefore an evaluation inconsistency for bottle, not a demonstrated model failure. All remaining PatchCore categories must be rerun before the table is replaced.
+This setup establishes a strong baseline, with mean image-level F1 of 0.929 and mean AUPIMO of 0.603. It achieved image F1 above 0.89 in 14 of the 15 categories; \textit{screw} was the most difficult at 0.796. Localisation varied more strongly by category, from AUPIMO 0.982 for \textit{bottle} and 0.972 for \textit{leather} to 0.251 for \textit{zipper}. The overall performance demonstrates the advantage of pretrained ImageNet features for both detection and localisation.
 
 \textbf{2. PatchCore + ResNet-18 (Tuned):}
-The hyperparameter sweep for PatchCore is now complete. While we relied on the same powerful ResNet-18 backbone, we found that tuning the coreset sampling ratio, the number of nearest neighbours ($K$), and integrating targeted preprocessing steps did not yield the anticipated gains. In fact, tuning caused slight regressions in F1 scores across several categories (e.g., dropping from 0.977 to 0.917 on \textit{capsule}). Similar to the Keras CAE results discussed below, this highlights the difficulty of optimising hyperparameters using a surrogate objective (like pixel AUROC) on a validation set that lacks true defects.
+These values are retained from earlier experiments and were not rerun. They are marked as legacy in Table~\ref{tab:final_results} and are not used to select the final model.
 
 \textbf{3. Keras CAE (Baseline):}
-The baseline Keras convolutional autoencoder, operating without category-specific preprocessing and with a fixed latent dimension of 32, achieves strong results on simple rigid objects like \textit{bottle} (Image F1 = 1.0). However, it struggles severely on more complex categories like \textit{cable} and \textit{capsule}. The standard reconstruction objective fails to isolate anomalies amidst high-frequency texture noise and background variability.
+The baseline Keras convolutional autoencoder, operating without category-specific preprocessing and with a fixed latent dimension of 32, performs strongly on \textit{bottle}, with image F1 of 0.992 and AUPIMO of 0.507. Its performance is much less stable across the complete dataset: mean image F1 is 0.495 and mean AUPIMO is 0.058. It struggles particularly on \textit{tile}, \textit{cable}, and \textit{wood}. Even where pixel AUROC is high, low AUPIMO shows that reconstruction error often remains too spatially diffuse for precise localisation at a low false-positive rate.
 
 \textbf{4. Keras CAE (Tuned):}
-Counterintuitively, the rigorous hyperparameter tuning via Optuna often resulted in worse quantitative test performance compared to the naive baseline. We view this failure as a crucial learning outcome regarding hyperparameter overfitting in anomaly detection. Because the MVTec AD validation set contains exactly zero defective images, the Optuna sweep was forced to maximise the pixel-level AUROC using synthetically derived surrogate metrics or by evaluating strictly on normal images. Consequently, the chosen hyperparameters (such as extreme bottleneck compressions or heavy Gaussian blurring) heavily overfit to the normal background textures. While these configurations effectively smoothed out background noise (as visible in the Appendix heatmaps) and improved normal-image reconstruction, they simultaneously washed out the fine structural details required to accurately detect unseen defects in the test set. Furthermore, optimising solely for AUROC---a metric notoriously insensitive to severe class imbalance---failed to translate into meaningful improvements for the F1 or AUPIMO scores on real anomalies. This clearly highlights the immense difficulty of tuning hyperparameters from scratch on extremely limited normal-only datasets, and further justifies our decision to ultimately adopt the pretrained PatchCore model.
+These values are also retained as legacy results and are excluded from the final baseline comparison.
 
 
 \section{Conclusion}
 
 We developed an end-to-end unsupervised anomaly detection system for industrial components, building to a production-grade modular pipeline with automated hyperparameter optimisation. We traced the complete arc of the project, including the conceptual missteps, as we believe these are highly instructive.
 
-The most important technical lesson from the audit is that metric parity cannot compensate for data-protocol inequality, and data-protocol equality cannot compensate for metric inconsistency. PatchCore and the CAE must use the same 85\% fitting subset, the same 15\% normal validation subset, validation-derived operating thresholds, and the same full-map AUPIMO implementation. The test set must be reserved for the final evaluation after every model and preprocessing decision is frozen. The corrected bottle AUPIMO result demonstrates why implementation tracing is essential: an apparent score of exactly zero became 0.9825 when the intended metric was actually applied. Reconstruction quality and anomaly detection quality may still differ, and pretrained features remain a strong hypothesis, but a final model choice requires the controlled reruns rather than the provisional historical table.
-
-The historical results motivate the corrected experiments but do not conclude the comparison. Final quantitative conclusions will be drawn only after the representative categories are rerun under the shared zero-leakage protocol.
+Across all 15 categories, PatchCore clearly outperformed the Keras CAE baseline. Its mean image F1 was 0.929 compared with 0.495, and its mean AUPIMO was 0.603 compared with 0.058. The CAE remained competitive on \textit{bottle}, but its reconstruction errors were not sufficiently selective across more complex objects and textures. We therefore select PatchCore with the ResNet-18 backbone as the final model. The CAE remains valuable as an interpretable reconstruction-based reference and as evidence of the limitations of training anomaly representations from scratch on small normal-only datasets.
 
 % \clearpage
 \begin{thebibliography}{99}
@@ -1121,7 +1091,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.000).}
+\caption{Evaluation curves for the \textit{cable} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.511.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1177,7 +1147,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.000).}
+\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.000.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1205,7 +1175,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.000).}
+\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Tuned). Legacy AUPIMO: 0.000.}
 \end{figure}
 \newpage
 \subsection*{Visualisations and Curves: Capsule}
@@ -1347,7 +1317,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.037).}
+\caption{Evaluation curves for the \textit{capsule} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.563.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1403,7 +1373,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.037 (Best for this category: 0.037).}
+\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.052.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1431,7 +1401,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.003 (Best for this category: 0.037).}
+\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Tuned). Legacy AUPIMO: 0.003.}
 \end{figure}
 \newpage
 \subsection*{Visualisations and Curves: Carpet}
@@ -1573,7 +1543,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.002).}
+\caption{Evaluation curves for the \textit{carpet} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.796.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1629,7 +1599,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.002 (Best for this category: 0.002).}
+\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.003.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1657,7 +1627,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.002 (Best for this category: 0.002).}
+\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Tuned). Legacy AUPIMO: 0.002.}
 \end{figure}
 \newpage
 \subsection*{Visualisations and Curves: Grid}
@@ -1799,7 +1769,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.104).}
+\caption{Evaluation curves for the \textit{grid} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.506.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1855,7 +1825,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.087 (Best for this category: 0.104).}
+\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.077.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1883,7 +1853,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.104 (Best for this category: 0.104).}
+\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Tuned). Legacy AUPIMO: 0.104.}
 \end{figure}
 \newpage
 \subsection*{Visualisations and Curves: Hazelnut}
@@ -2025,7 +1995,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.087).}
+\caption{Evaluation curves for the \textit{hazelnut} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.863.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -2081,7 +2051,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.087 (Best for this category: 0.087).}
+\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.033.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -2109,7 +2079,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.054 (Best for this category: 0.087).}
+\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Tuned). Legacy AUPIMO: 0.054.}
 \end{figure}
 
 \end{document}
