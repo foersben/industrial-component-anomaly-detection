@@ -501,7 +501,7 @@ For PatchCore, we optimised six distinct hyperparameters per category. The \text
 
 For the Keras CAE, we similarly allowed Optuna to toggle the preprocessing flags, but we also exposed the \textit{latent\_dim} parameter (searching from 16 to 128 channels) to find the optimal bottleneck compression for each specific category. 
 
-For both models, the objective metric we told Optuna to maximise was the pixel-level AUROC on the test set, simply because it acts as a fast, computationally cheap proxy during the optimisation loops.
+The legacy Optuna objectives differed by model: PatchCore maximised pixel-level AUROC, while the Keras CAE maximised pixel-level AUPIMO. Both searches obtained their objective feedback from the official test partition. This makes the resulting configurations useful historical evidence about the search process, but it also introduces test-set leakage; consequently, their tuned metrics are excluded from the final fair baseline comparison.
 
 \subsection{Practical Difficulties During the Sweep Process}
 
@@ -573,7 +573,7 @@ The baseline PatchCore and Keras CAE models were evaluated across all 15 MVTec c
 
 \subsection{Anomaly Map and Localisation Quality}
 
-We have placed the qualitative visualisations of the anomaly maps in the Appendix to keep the main text readable. For each of the six evaluated categories, you will find side-by-side comparisons of the raw prediction heatmaps and the heatmaps overlaid with the ground-truth defect masks, shown across all four of our model variants.
+We have placed the qualitative visualisations of the anomaly maps in the Appendix to keep the main text readable. For each of the six evaluated categories, the baseline PatchCore examples show the original image, ground-truth mask, anomaly-map overlay, and validation-thresholded prediction. The remaining model variants retain paired anomaly-map and ground-truth-overlay views.
 
 When interpreting these visualisations, it is important to understand the colour scaling. The heatmaps map raw anomaly scores to a continuous colour spectrum, where dark regions (dark blue or black) indicate normal, low-score areas, and bright, warmer colours (yellows, oranges, and reds) indicate high-confidence anomalies. Consequently, a highly precise model like PatchCore often produces very dark, sparse heatmaps with a single bright peak tightly clustered around the true defect. Conversely, models that struggle with high-frequency background reconstruction (such as the Keras CAE baseline) tend to produce much brighter, noisier heatmaps overall, as their baseline anomaly score remains elevated across the entire image. In practice, this allows for a much more direct visual assessment of how effectively each model actually localises structural defects instead of just flagging background noise.
 
@@ -583,36 +583,38 @@ Looking at the precision-recall (PR) and threshold trade-off curves provides a d
 
 \subsection{Quantitative Results}
 
-Table \ref{tab:final_results} records the completed baseline evaluation across all 15 categories. Image-level F1 is the primary detection metric, while pixel-level AUROC and AUPIMO describe localisation performance. The tuned columns are marked with an asterisk because they contain legacy values for only the original six-category subset; they are shown for traceability but are excluded from the final baseline comparison.
+Table \ref{tab:final_results} records the completed baseline evaluation across all 15 categories using the three metrics most relevant to the final comparison. Image-level F1 measures the frozen operating decision, image-level PR-AUC measures threshold-independent detection ranking under class imbalance, and AUPIMO measures localisation in the low-false-positive regime. Complete operational, confusion-matrix, pixel-level, protocol, and legacy metrics are reported in Appendix~\ref{sec:complete_metrics}.
 
-PatchCore achieved a mean image-level F1 of 0.929, mean pixel AUROC of 0.975, and mean AUPIMO of 0.603. The Keras CAE achieved corresponding means of 0.495, 0.875, and 0.058. PatchCore therefore produced both substantially more reliable image-level decisions and more precise anomaly localisation. The category-level results also show why AUPIMO is needed alongside pixel AUROC: for example, the CAE reached pixel AUROC 0.970 on \textit{screw} but only 0.005 AUPIMO, indicating poor localisation in the low-false-positive operating range.
+PatchCore achieved mean image-level F1 of 0.929, mean image-level PR-AUC of 0.988, and mean AUPIMO of 0.603. The Keras CAE achieved corresponding means of 0.495, 0.867, and 0.058. PatchCore therefore produced both substantially more reliable image-level decisions and more precise anomaly localisation. The difference between PR-AUC and F1 is also informative: a model can rank defective images reasonably well while still performing poorly at its validation-calibrated operating threshold.
 
-\begin{table}[b!]
+\begin{table}[H]
 \centering
-\caption{Evaluation results across all 15 categories. Baseline columns contain the current evaluation results; populated cells in tuned columns marked with an asterisk are legacy values.}
+\caption{Primary baseline evaluation results across all 15 categories. PR-AUC is computed by trapezoidal integration of the stored image-level precision-recall curve.}
 \label{tab:final_results}
 \resizebox{\textwidth}{!}{
-\begin{tabular}{l ccc ccc ccc ccc}
+\begin{tabular}{l ccc ccc}
 \toprule
-\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned)$^{*}$}} & \multicolumn{3}{c}{\textbf{Keras CAE (Base)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned)$^{*}$}} \\
-\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10} \cmidrule(lr){11-13}
- & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} \\
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+ & \textbf{Img F1} & \textbf{Img PR-AUC} & \textbf{AUPIMO} & \textbf{Img F1} & \textbf{Img PR-AUC} & \textbf{AUPIMO} \\
 \midrule
-Bottle & 0.962 & 0.978 & 0.982 & 0.992 & 0.979 & 0.000 & 0.992 & 0.967 & 0.507 & 0.992 & 1.000 & 0.468 \\
-Cable & 0.933 & 0.982 & 0.511 & 0.920 & 0.983 & 0.000 & 0.154 & 0.747 & 0.000 & 0.021 & 0.521 & 0.000 \\
-Capsule & 0.982 & 0.988 & 0.563 & 0.917 & 0.987 & 0.000 & 0.476 & 0.947 & 0.052 & 0.150 & 0.656 & 0.003 \\
-Carpet & 0.926 & 0.988 & 0.796 & 0.923 & 0.988 & 0.000 & 0.635 & 0.949 & 0.003 & 0.644 & 0.612 & 0.002 \\
-Grid & 0.916 & 0.970 & 0.506 & 0.895 & 0.969 & 0.000 & 0.602 & 0.972 & 0.077 & 0.643 & 0.781 & 0.104 \\
-Hazelnut & 0.971 & 0.989 & 0.863 & 0.933 & 0.989 & 0.000 & 0.500 & 0.890 & 0.033 & 0.478 & 0.834 & 0.054 \\
-Leather & 0.898 & 0.989 & 0.972 & & & & 0.786 & 0.976 & 0.075 & & & \\
-Metal Nut & 0.963 & 0.984 & 0.760 & & & & 0.243 & 0.691 & 0.002 & & & \\
-Pill & 0.891 & 0.978 & 0.293 & & & & 0.395 & 0.888 & 0.030 & & & \\
-Screw & 0.796 & 0.991 & 0.380 & & & & 0.421 & 0.970 & 0.005 & & & \\
-Tile & 0.951 & 0.929 & 0.685 & & & & 0.132 & 0.634 & 0.001 & & & \\
-Toothbrush & 0.923 & 0.989 & 0.414 & & & & 0.735 & 0.925 & 0.054 & & & \\
-Transistor & 0.916 & 0.969 & 0.427 & & & & 0.657 & 0.787 & 0.005 & & & \\
-Wood & 0.952 & 0.919 & 0.642 & & & & 0.182 & 0.853 & 0.008 & & & \\
-Zipper & 0.962 & 0.980 & 0.251 & & & & 0.513 & 0.933 & 0.025 & & & \\
+Bottle & 0.962 & 1.000 & 0.982 & 0.992 & 1.000 & 0.507 \\
+Cable & 0.933 & 0.985 & 0.511 & 0.154 & 0.624 & 0.000 \\
+Capsule & 0.982 & 0.996 & 0.563 & 0.476 & 0.917 & 0.052 \\
+Carpet & 0.926 & 0.994 & 0.796 & 0.635 & 0.835 & 0.003 \\
+Grid & 0.916 & 0.986 & 0.506 & 0.602 & 0.901 & 0.077 \\
+Hazelnut & 0.971 & 0.999 & 0.863 & 0.500 & 0.902 & 0.033 \\
+Leather & 0.898 & 0.998 & 0.972 & 0.786 & 0.892 & 0.075 \\
+Metal Nut & 0.963 & 0.998 & 0.760 & 0.243 & 0.825 & 0.002 \\
+Pill & 0.891 & 0.982 & 0.293 & 0.395 & 0.923 & 0.030 \\
+Screw & 0.796 & 0.983 & 0.380 & 0.421 & 0.887 & 0.005 \\
+Tile & 0.951 & 0.993 & 0.685 & 0.132 & 0.727 & 0.001 \\
+Toothbrush & 0.923 & 0.949 & 0.414 & 0.735 & 0.922 & 0.054 \\
+Transistor & 0.916 & 0.976 & 0.427 & 0.657 & 0.758 & 0.005 \\
+Wood & 0.952 & 0.995 & 0.642 & 0.182 & 0.955 & 0.008 \\
+Zipper & 0.962 & 0.985 & 0.251 & 0.513 & 0.940 & 0.025 \\
+\midrule
+\textbf{Mean} & \textbf{0.929} & \textbf{0.988} & \textbf{0.603} & \textbf{0.495} & \textbf{0.867} & \textbf{0.058} \\
 \bottomrule
 \end{tabular}
 }
@@ -734,16 +736,17 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Tuned). Legacy AUPIMO: 0.468.}
 \end{figure}
 
+\clearpage
 \subsection{Discussion of Evaluations}
 \label{sec:discussion}
 
-The current baseline results cover all 15 MVTec categories. The tuned columns cover only the original six-category subset and contain legacy values, so the conclusions below are based on the two completed baseline evaluations.
+The current baseline results cover all 15 MVTec categories. The tuned experiments cover only the original six-category subset and are retained as legacy values in Appendix Table~\ref{tab:appendix_legacy_metrics}, so the conclusions below are based on the two completed baseline evaluations.
 
 \textbf{1. PatchCore + ResNet-18 (Baseline):}
 This setup establishes a strong baseline, with mean image-level F1 of 0.929 and mean AUPIMO of 0.603. It achieved image F1 above 0.89 in 14 of the 15 categories; \textit{screw} was the most difficult at 0.796. Localisation varied more strongly by category, from AUPIMO 0.982 for \textit{bottle} and 0.972 for \textit{leather} to 0.251 for \textit{zipper}. The overall performance demonstrates the advantage of pretrained ImageNet features for both detection and localisation.
 
 \textbf{2. PatchCore + ResNet-18 (Tuned):}
-These values are retained from earlier experiments and were not rerun. They are marked as legacy in Table~\ref{tab:final_results} and are not used to select the final model.
+These values are retained from earlier experiments and were not rerun. They are marked as legacy in Appendix Table~\ref{tab:appendix_legacy_metrics} and are not used to select the final model.
 
 \textbf{3. Keras CAE (Baseline):}
 The baseline Keras convolutional autoencoder, operating without category-specific preprocessing and with a fixed latent dimension of 32, performs strongly on \textit{bottle}, with image F1 of 0.992 and AUPIMO of 0.507. Its performance is much less stable across the complete dataset: mean image F1 is 0.495 and mean AUPIMO is 0.058. It struggles particularly on \textit{tile}, \textit{cable}, and \textit{wood}. Even where pixel AUROC is high, low AUPIMO shows that reconstruction error often remains too spatially diffuse for precise localisation at a low false-positive rate.
@@ -829,69 +832,199 @@ IEEE International Conference on Image Processing (ICIP), 2022.
 \end{thebibliography}
 
 \clearpage
-\section*{Appendix: Qualitative Visualisations and Evaluation Curves}
+\section*{Appendix: Complete Metrics and Visualisations}
+\label{sec:complete_metrics}
 \label{sec:appendix_visuals}
 
-For each of the six evaluated categories, we present qualitative anomaly maps across the four model variants. We show two defective test images per category. 
+\subsection*{Complete Baseline Metrics}
 
-\textbf{How to read the heatmaps:} For each defective sample, the left image ("Pred") shows the raw predicted anomaly heatmap. Darker colours indicate that the model considers the region to be normal, while warmer, brighter colours signify regions predicted to be anomalous. A highly confident and precise detection (such as those produced by PatchCore) will appear as a small bright spot on an otherwise mostly dark background. In contrast, models with a higher baseline error (like the Keras CAE) struggle to reconstruct high-frequency background textures; consequently, their heatmaps appear much brighter and noisier overall, as the anomaly scores are elevated across the entire image. The right image ("GT Overlay") superimposes the ground-truth defect mask (typically outlined in red or yellow) onto the prediction heatmap, allowing you to visually verify if the model's highest predicted scores align with the actual defect location.
+Tables~\ref{tab:appendix_image_metrics}--\ref{tab:appendix_pixel_metrics} report the complete, non-duplicated performance metrics collected for the two final baseline models. Image PR-AUC is obtained by trapezoidal integration of each stored precision-recall curve. Accuracy is intentionally omitted because the normal/defective class imbalance makes it less informative than precision, recall, F1, and the confusion counts. Repeated aliases and anomaly-map range diagnostics are likewise omitted because they are not independent performance measures.
+
+\begin{table}[H]
+\centering
+\caption{Complete image-level ranking and operating-point metrics. All operating-point metrics use category-specific thresholds calibrated exclusively from normal validation images.}
+\label{tab:appendix_image_metrics}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l ccccc ccccc}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{5}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{5}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-6} \cmidrule(lr){7-11}
+ & \textbf{AUROC} & \textbf{PR-AUC} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{AUROC} & \textbf{PR-AUC} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} \\
+\midrule
+Bottle & 1.000 & 1.000 & 0.962 & 0.926 & 1.000 & 1.000 & 1.000 & 0.992 & 1.000 & 0.984 \\
+Cable & 0.975 & 0.985 & 0.933 & 0.955 & 0.913 & 0.467 & 0.624 & 0.154 & 0.667 & 0.087 \\
+Capsule & 0.983 & 0.996 & 0.982 & 0.982 & 0.982 & 0.711 & 0.917 & 0.476 & 0.921 & 0.321 \\
+Carpet & 0.980 & 0.994 & 0.926 & 0.871 & 0.989 & 0.635 & 0.835 & 0.635 & 0.797 & 0.528 \\
+Grid & 0.960 & 0.986 & 0.916 & 0.980 & 0.860 & 0.749 & 0.901 & 0.602 & 0.962 & 0.439 \\
+Hazelnut & 0.999 & 0.999 & 0.971 & 1.000 & 0.943 & 0.863 & 0.902 & 0.500 & 0.923 & 0.343 \\
+Leather & 0.997 & 0.998 & 0.898 & 0.814 & 1.000 & 0.696 & 0.892 & 0.786 & 0.740 & 0.837 \\
+Metal Nut & 0.993 & 0.998 & 0.963 & 0.939 & 0.989 & 0.500 & 0.825 & 0.243 & 0.929 & 0.140 \\
+Pill & 0.914 & 0.982 & 0.891 & 0.983 & 0.816 & 0.660 & 0.923 & 0.395 & 0.972 & 0.248 \\
+Screw & 0.957 & 0.983 & 0.796 & 0.976 & 0.672 & 0.777 & 0.887 & 0.421 & 0.970 & 0.269 \\
+Tile & 0.981 & 0.993 & 0.951 & 0.987 & 0.917 & 0.501 & 0.727 & 0.132 & 0.857 & 0.071 \\
+Toothbrush & 0.900 & 0.949 & 0.923 & 0.857 & 1.000 & 0.783 & 0.922 & 0.735 & 0.947 & 0.600 \\
+Transistor & 0.985 & 0.976 & 0.916 & 0.884 & 0.950 & 0.848 & 0.758 & 0.657 & 0.767 & 0.575 \\
+Wood & 0.987 & 0.995 & 0.952 & 0.922 & 0.983 & 0.859 & 0.955 & 0.182 & 1.000 & 0.100 \\
+Zipper & 0.954 & 0.985 & 0.962 & 0.966 & 0.958 & 0.787 & 0.940 & 0.513 & 1.000 & 0.345 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Image-level calibrated thresholds and confusion counts on the official test set.}
+\label{tab:appendix_confusion_metrics}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l crrrr crrrr}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{5}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{5}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-6} \cmidrule(lr){7-11}
+ & \textbf{Threshold} & \textbf{TP} & \textbf{FP} & \textbf{FN} & \textbf{TN} & \textbf{Threshold} & \textbf{TP} & \textbf{FP} & \textbf{FN} & \textbf{TN} \\
+\midrule
+Bottle & 7.371 & 63 & 5 & 0 & 15 & 0.407 & 62 & 0 & 1 & 20 \\
+Cable & 15.064 & 84 & 4 & 8 & 54 & 0.811 & 8 & 4 & 84 & 54 \\
+Capsule & 6.646 & 107 & 2 & 2 & 21 & 0.412 & 35 & 3 & 74 & 20 \\
+Carpet & 7.338 & 88 & 13 & 1 & 15 & 0.467 & 47 & 12 & 42 & 16 \\
+Grid & 9.984 & 49 & 1 & 8 & 20 & 0.445 & 25 & 1 & 32 & 20 \\
+Hazelnut & 14.282 & 66 & 0 & 4 & 40 & 0.492 & 24 & 2 & 46 & 38 \\
+Leather & 6.924 & 92 & 21 & 0 & 11 & 0.495 & 77 & 27 & 15 & 5 \\
+Metal Nut & 11.597 & 92 & 6 & 1 & 16 & 0.598 & 13 & 1 & 80 & 21 \\
+Pill & 10.507 & 115 & 2 & 26 & 24 & 0.414 & 35 & 1 & 106 & 25 \\
+Screw & 10.511 & 80 & 2 & 39 & 39 & 0.496 & 32 & 1 & 87 & 40 \\
+Tile & 10.931 & 77 & 1 & 7 & 32 & 0.857 & 6 & 1 & 78 & 32 \\
+Toothbrush & 9.525 & 30 & 5 & 0 & 7 & 0.669 & 18 & 1 & 12 & 11 \\
+Transistor & 11.466 & 38 & 5 & 2 & 55 & 0.599 & 23 & 7 & 17 & 53 \\
+Wood & 10.032 & 59 & 5 & 1 & 14 & 0.700 & 6 & 0 & 54 & 19 \\
+Zipper & 7.867 & 114 & 4 & 5 & 28 & 0.625 & 41 & 0 & 78 & 32 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Complete stored pixel-level metrics. Pixel AUROC is retained here for conventional reference but is not used as a primary model-selection metric.}
+\label{tab:appendix_pixel_metrics}
+\begin{tabular}{l ccc ccc}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+ & \textbf{Px AUROC} & \textbf{Px F1$^{\dagger}$} & \textbf{AUPIMO} & \textbf{Px AUROC} & \textbf{Px F1$^{\dagger}$} & \textbf{AUPIMO} \\
+\midrule
+Bottle & 0.978 & 0.406 & 0.982 & 0.967 & 0.519 & 0.507 \\
+Cable & 0.982 & 0.540 & 0.511 & 0.747 & 0.000 & 0.000 \\
+Capsule & 0.988 & 0.176 & 0.563 & 0.947 & 0.162 & 0.052 \\
+Carpet & 0.988 & 0.169 & 0.796 & 0.949 & 0.202 & 0.003 \\
+Grid & 0.970 & 0.200 & 0.506 & 0.972 & 0.270 & 0.077 \\
+Hazelnut & 0.989 & 0.517 & 0.863 & 0.890 & 0.067 & 0.033 \\
+Leather & 0.989 & 0.070 & 0.972 & 0.976 & 0.433 & 0.075 \\
+Metal Nut & 0.984 & 0.758 & 0.760 & 0.691 & 0.002 & 0.002 \\
+Pill & 0.978 & 0.591 & 0.293 & 0.888 & 0.188 & 0.030 \\
+Screw & 0.991 & 0.132 & 0.380 & 0.970 & 0.101 & 0.005 \\
+Tile & 0.929 & 0.532 & 0.685 & 0.634 & 0.003 & 0.001 \\
+Toothbrush & 0.989 & 0.280 & 0.414 & 0.925 & 0.091 & 0.054 \\
+Transistor & 0.969 & 0.598 & 0.427 & 0.787 & 0.037 & 0.005 \\
+Wood & 0.919 & 0.273 & 0.642 & 0.853 & 0.000 & 0.008 \\
+Zipper & 0.980 & 0.302 & 0.251 & 0.933 & 0.049 & 0.025 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\parbox{0.96\textwidth}{\footnotesize $^{\dagger}$Pixel F1 is included as a stored operating-point diagnostic, but the two implementations are not directly comparable: PatchCore uses the 99th percentile of normal-validation pixel scores, whereas the CAE reuses its normal-validation image-score threshold on the pixel error map. AUPIMO is the protocol-consistent pixel metric used for the final comparison.}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Shared evaluation protocol and stored metric provenance.}
+\label{tab:appendix_metric_protocol}
+\begin{tabular}{p{0.31\textwidth} p{0.60\textwidth}}
+\toprule
+\textbf{Item} & \textbf{Protocol} \\
+\midrule
+Image operating threshold & Category-specific 95th percentile of normal-validation image scores; frozen before official test inference. \\
+PatchCore pixel-F1 threshold & Category-specific 99th percentile of normal-validation pixel scores. \\
+CAE pixel-F1 threshold & Normal-validation image-score threshold reused on pixel error scores; reported only as a diagnostic. \\
+AUPIMO false-positive range & Shared FPR from $10^{-5}$ to $10^{-4}$ on a logarithmic scale. \\
+AUPIMO thresholds & 50,000 thresholds. \\
+Canonical pixel-map size & $256 \times 256$ for both predictions and ground-truth masks. \\
+Image PR-AUC & Trapezoidal area under the stored image precision-recall curve. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Legacy tuned-run values retained for traceability. These six-category experiments predate the final fair-evaluation protocol and are not used in the baseline comparison.}
+\label{tab:appendix_legacy_metrics}
+\begin{tabular}{l ccc ccc}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned, Legacy)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned, Legacy)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+ & \textbf{Img F1} & \textbf{Px AUROC} & \textbf{AUPIMO} & \textbf{Img F1} & \textbf{Px AUROC} & \textbf{AUPIMO} \\
+\midrule
+Bottle & 0.992 & 0.979 & 0.000 & 0.992 & 1.000 & 0.468 \\
+Cable & 0.920 & 0.983 & 0.000 & 0.021 & 0.521 & 0.000 \\
+Capsule & 0.917 & 0.987 & 0.000 & 0.150 & 0.656 & 0.003 \\
+Carpet & 0.923 & 0.988 & 0.000 & 0.644 & 0.612 & 0.002 \\
+Grid & 0.895 & 0.969 & 0.000 & 0.643 & 0.781 & 0.104 \\
+Hazelnut & 0.933 & 0.989 & 0.000 & 0.478 & 0.834 & 0.054 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\clearpage
+\subsection*{Qualitative Visualisations and Evaluation Curves}
+
+For each of the six evaluated categories, we present qualitative anomaly maps across the four model variants. We show two defective test images per category.
+
+\textbf{How to read the visualisations:} Each baseline PatchCore example is a four-panel inference result showing the original image, the binary ground-truth mask, the continuous anomaly-map overlay, and the final predicted mask. The predicted mask uses the category-specific threshold fixed at the 99th percentile of anomaly scores from normal validation pixels; the official test masks do not influence this threshold. The remaining model variants use paired anomaly-map overlays, with the second panel adding the ground-truth defect outline. Darker colours indicate regions considered normal, while warmer, brighter colours indicate higher anomaly scores. These views distinguish the model's continuous localisation evidence from its final thresholded decision.
 
 We also include the full evaluation curves for the remaining five categories (the curves for the \textit{bottle} category are in the main text). The visualisations and curves for the tuned PatchCore model are currently placeholders pending completion of the hyperparameter sweep.
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Bottle}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v17/images_regenerated/broken_large/000.png}
+\caption{Broken-large defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v17/images_regenerated/broken_large/001.png}
+\caption{Broken-large defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Bottle using PatchCore (ResNet-18).}
+\caption{Four-panel qualitative results for Bottle using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Bottle using PatchCore (Custom/Tuned).}
 \end{figure}
@@ -900,26 +1033,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Bottle using Keras CAE (Baseline).}
 \end{figure}
@@ -928,84 +1061,71 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Bottle using Keras CAE (Tuned).}
 \end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Cable}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v18/images_regenerated/bent_wire/000.png}
+\caption{Bent-wire defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v18/images_regenerated/bent_wire/001.png}
+\caption{Bent-wire defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Cable using PatchCore (ResNet-18).}
+\caption{Four-panel qualitative results for Cable using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Cable using PatchCore (Custom/Tuned).}
 \end{figure}
@@ -1014,26 +1134,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Cable using Keras CAE (Baseline).}
 \end{figure}
@@ -1042,26 +1162,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Cable using Keras CAE (Tuned).}
 \end{figure}
@@ -1177,61 +1297,48 @@ We also include the full evaluation curves for the remaining five categories (th
 \end{subfigure}
 \caption{Evaluation curves for the \textit{cable} category using Keras CAE (Tuned). Legacy AUPIMO: 0.000.}
 \end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Capsule}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v19/images_regenerated/crack/000.png}
+\caption{Crack defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v19/images_regenerated/crack/001.png}
+\caption{Crack defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Capsule using PatchCore (ResNet-18).}
+\caption{Four-panel qualitative results for Capsule using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Capsule using PatchCore (Custom/Tuned).}
 \end{figure}
@@ -1240,26 +1347,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Capsule using Keras CAE (Baseline).}
 \end{figure}
@@ -1268,26 +1375,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Capsule using Keras CAE (Tuned).}
 \end{figure}
@@ -1403,61 +1510,48 @@ We also include the full evaluation curves for the remaining five categories (th
 \end{subfigure}
 \caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Tuned). Legacy AUPIMO: 0.003.}
 \end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Carpet}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v20/images_regenerated/color/000.png}
+\caption{Colour defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v20/images_regenerated/color/001.png}
+\caption{Colour defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Carpet using PatchCore (ResNet-18).}
+\caption{Four-panel qualitative results for Carpet using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Carpet using PatchCore (Custom/Tuned).}
 \end{figure}
@@ -1466,26 +1560,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Carpet using Keras CAE (Baseline).}
 \end{figure}
@@ -1494,26 +1588,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Carpet using Keras CAE (Tuned).}
 \end{figure}
@@ -1629,61 +1723,48 @@ We also include the full evaluation curves for the remaining five categories (th
 \end{subfigure}
 \caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Tuned). Legacy AUPIMO: 0.002.}
 \end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Grid}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v21/images_regenerated/bent/000.png}
+\caption{Bent defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v21/images_regenerated/bent/001.png}
+\caption{Bent defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Grid using PatchCore (ResNet-18).}
+\caption{Four-panel qualitative results for Grid using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Grid using PatchCore (Custom/Tuned).}
 \end{figure}
@@ -1692,26 +1773,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Grid using Keras CAE (Baseline).}
 \end{figure}
@@ -1720,26 +1801,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Grid using Keras CAE (Tuned).}
 \end{figure}
@@ -1855,61 +1936,48 @@ We also include the full evaluation curves for the remaining five categories (th
 \end{subfigure}
 \caption{Evaluation curves for the \textit{grid} category using Keras CAE (Tuned). Legacy AUPIMO: 0.104.}
 \end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Hazelnut}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v22/images_regenerated/crack/000.png}
+\caption{Crack defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v22/images_regenerated/crack/001.png}
+\caption{Crack defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Hazelnut using PatchCore (ResNet-18).}
+\caption{Four-panel qualitative results for Hazelnut using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Hazelnut using PatchCore (Custom/Tuned).}
 \end{figure}
@@ -1918,26 +1986,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Hazelnut using Keras CAE (Baseline).}
 \end{figure}
@@ -1946,26 +2014,26 @@ We also include the full evaluation curves for the remaining five categories (th
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Hazelnut using Keras CAE (Tuned).}
 \end{figure}
