@@ -67,6 +67,7 @@ def test_all_category_dispatch_reports_macro_averages(monkeypatch: pytest.Monkey
                 "average_precision": value,
             },
             "pixel_level": {"f1_score": value, "auroc": value, "aupimo": value},
+            "heatmap_overlays": {0: {"heatmap": [[[1]]]}},
         }
 
     monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline._run_dinov2_category", fake_category)
@@ -77,6 +78,8 @@ def test_all_category_dispatch_reports_macro_averages(monkeypatch: pytest.Monkey
     assert list(result["categories"]) == list(MVTEC_CATEGORIES)
     assert [call["category"] for call in calls] == list(MVTEC_CATEGORIES)
     assert all(call["masking"] == "published" for call in calls)
+    assert all(call["reuse_complete"] is True for call in calls)
+    assert all(not category_result["heatmap_overlays"] for category_result in result["categories"].values())
     assert result["macro_average"]["image_f1"] == pytest.approx(8 / 15)
 
 
