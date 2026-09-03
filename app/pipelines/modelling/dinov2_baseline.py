@@ -1,5 +1,6 @@
 """Frozen DINOv2 patch-token nearest-neighbour baseline for MVTec AD."""
 
+import gc
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -41,6 +42,7 @@ from app.pipelines.preprocessing.factory import build_pipeline_from_configs
 
 DINO_V2_ENCODER = "vit_small_patch14_dinov2"
 DINO_V2_INPUT_SIZE = 252
+DINO_V2_BATCH_SIZE = 4
 MVTEC_CATEGORIES = (
     "bottle",
     "cable",
@@ -82,6 +84,73 @@ def resolve_masking(masking: MaskingMode, category: str) -> bool:
     raise ValueError("masking must be one of: off, on, published")
 
 
+def _load_completed_category_result(
+    base_dir: Path,
+    category: str,
+    model_hash: str,
+    run_heatmap: bool,
+) -> BaselineResult | None:
+    """Load a complete category result without retaining saved heatmap pixels."""
+    metadata_path = base_dir / "metadata.json"
+    required_artifacts = (base_dir / "image_metrics.npz", base_dir / "pixel_metrics.npz")
+    if not metadata_path.is_file() or not all(path.is_file() for path in required_artifacts):
+        return None
+
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("category") != category or metadata.get("hash") != model_hash:
+            return None
+        heatmap_path = metadata.get("heatmap_overlays_path")
+        if run_heatmap and (not heatmap_path or not (base_dir / str(heatmap_path)).is_file()):
+            return None
+
+        raw_results = metadata["raw_results"]
+        result = format_results(
+            test_results=[raw_results],
+            category=category,
+            base_dir=base_dir,
+            manual_image_f1=float(metadata["image_f1"]),
+            manual_pixel_f1=float(metadata["pixel_f1"]),
+            manual_image_prec=float(metadata["image_precision"]),
+            manual_image_rec=float(metadata["image_recall"]),
+            img_threshold=float(metadata["image_threshold"]),
+            pixel_threshold=float(metadata["pixel_threshold"]),
+            pixel_auroc=float(metadata["pixel_auroc"]),
+            pixel_aupimo=float(metadata["pixel_aupimo"]),
+            anomaly_map_min=float(metadata["anomaly_map_min"]),
+            anomaly_map_max=float(metadata["anomaly_map_max"]),
+            anomaly_map_range=float(metadata["anomaly_map_range"]),
+            heatmap_overlays={},
+            anomalous_indices=list(metadata.get("anomalous_indices", [])),
+            preprocessing_steps=list(metadata.get("preprocessing_steps", [])),
+            hyperparameters=dict(metadata.get("hyperparameters", {})),
+            dataset_split=dict(metadata.get("dataset_split", {})),
+            model_hash=model_hash,
+            metadata=metadata,
+            true_positives=int(metadata["true_positives"]),
+            false_positives=int(metadata["false_positives"]),
+            false_negatives=int(metadata["false_negatives"]),
+            true_negatives=int(metadata["true_negatives"]),
+        )
+        result["image_level"]["average_precision"] = float(metadata["image_average_precision"])
+        return result
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        logger.warning("Ignoring incomplete DINOv2 artifacts in %s: %s", base_dir, exc)
+        return None
+
+
+def _release_accelerator_memory() -> None:
+    """Collect cyclic trainer state and release unused CUDA allocations."""
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
 def _run_dinov2_category(
     data_root: Path | str = "data/raw/mvtec_ad",
     category: str = "bottle",
@@ -94,6 +163,7 @@ def _run_dinov2_category(
     preprocessing_steps: list[dict[str, Any]] | None = None,
     registry_base: Path | str = "data/models/dinov2",
     model_seed: int = PATCHCORE_MODEL_SEED,
+    reuse_complete: bool = False,
 ) -> BaselineResult:
     """Evaluate frozen DINOv2 patch tokens with a normal-only nearest-neighbour bank.
 
@@ -115,6 +185,7 @@ def _run_dinov2_category(
         preprocessing_steps: Deprecated alias for a preprocessing configuration list.
         registry_base: Directory in which evaluation artifacts are written.
         model_seed: Shared deterministic model and data-loader seed.
+        reuse_complete: Reuse complete artifacts for this exact configuration.
 
     Returns:
         Results using the same schema and metric artifacts as PatchCore.
@@ -158,12 +229,17 @@ def _run_dinov2_category(
     model_hash = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:12]
     base_dir = Path(registry_base) / model_hash
     base_dir.mkdir(parents=True, exist_ok=True)
+    if reuse_complete:
+        completed_result = _load_completed_category_result(base_dir, category, model_hash, run_heatmap)
+        if completed_result is not None:
+            logger.info("Reusing complete DINOv2 result for %s (Hash: %s)", category, model_hash)
+            return completed_result
 
     datamodule = MVTecAD(
         root=data_root,
         category=category,
-        train_batch_size=16,
-        eval_batch_size=16,
+        train_batch_size=DINO_V2_BATCH_SIZE,
+        eval_batch_size=DINO_V2_BATCH_SIZE,
         val_split_mode="none",
     )
     transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
@@ -241,8 +317,8 @@ def _run_dinov2_category(
         "masking_mode": masking,
         "masking": use_masking,
         "coreset_subsampling": False,
-        "train_batch_size": 16,
-        "eval_batch_size": 16,
+        "train_batch_size": DINO_V2_BATCH_SIZE,
+        "eval_batch_size": DINO_V2_BATCH_SIZE,
         "model_seed": model_seed,
         "score_space": PATCHCORE_SCORE_SPACE,
     }
@@ -372,22 +448,30 @@ def run_dinov2_baseline(
             model_seed=model_seed,
         )
 
-    category_results = {
-        name: _run_dinov2_category(
-            data_root=data_root,
-            category=name,
-            pipeline=pipeline,
-            fpr_limit=fpr_limit,
-            encoder_name=encoder_name,
-            num_neighbors=num_neighbors,
-            masking=masking,
-            run_heatmap=run_heatmap,
-            preprocessing_steps=preprocessing_steps,
-            registry_base=registry_base,
-            model_seed=model_seed,
-        )
-        for name in MVTEC_CATEGORIES
-    }
+    category_results: dict[str, BaselineResult] = {}
+    for name in MVTEC_CATEGORIES:
+        try:
+            result = _run_dinov2_category(
+                data_root=data_root,
+                category=name,
+                pipeline=pipeline,
+                fpr_limit=fpr_limit,
+                encoder_name=encoder_name,
+                num_neighbors=num_neighbors,
+                masking=masking,
+                run_heatmap=run_heatmap,
+                preprocessing_steps=preprocessing_steps,
+                registry_base=registry_base,
+                model_seed=model_seed,
+                reuse_complete=True,
+            )
+            # Heatmaps are already persisted as a compressed artifact. Keeping
+            # their nested Python lists for every category can consume many GB.
+            result["heatmap_overlays"] = {}
+            category_results[name] = result
+            del result
+        finally:
+            _release_accelerator_memory()
     metric_paths = {
         "image_f1": ("image_level", "f1_score"),
         "image_recall": ("image_level", "recall"),
