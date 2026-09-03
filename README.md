@@ -87,12 +87,16 @@ just run
 
 ### Supported Pipelines & Unified Caching
 
-The application supports multiple state-of-the-art anomaly detection pipelines, sharing a unified model registry and caching architecture under `data/models/`:
+The project supports multiple anomaly detection pipelines with artifacts under `data/models/`:
 
-1. **PatchCore Baseline**: An industry-standard feature-matching model (Roth et al., 2021) utilizing Wide-ResNet50-2 and coreset subsampling for near-perfect AUROC with zero training time.
-2. **Keras Convolutional Autoencoder (CAE)**: A custom end-to-end trained deep learning model designed for precise pixel-level anomaly localization and inference speed.
+1. **PatchCore Baseline**: An industry-standard feature-matching model (Roth et al., 2021) using pretrained ResNet features and coreset subsampling.
+2. **DINOv2 Nearest-Neighbour Baseline**: A frozen, self-supervised Vision Transformer whose patch tokens are compared with a normal-only feature bank for image scoring and dense localization.
+3. **Keras Convolutional Autoencoder (CAE)**: A custom end-to-end trained deep learning model designed for precise pixel-level anomaly localization and inference speed.
 
-Both pipelines support:
+PatchCore and the Keras CAE are available in the Streamlit application. The DINOv2 baseline is intentionally exposed
+through the CLI and API first, keeping the initial research integration small and auditable.
+
+The existing interactive pipelines support:
 
 * **Instant Cached Evaluation**: Evaluations are hashed and cached (under 100ms load time).
 * **Soft-Deletion Lifecycle**: Models are safely moved to a `.trash/` directory for reversible recovery.

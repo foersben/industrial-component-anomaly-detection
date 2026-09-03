@@ -71,6 +71,7 @@ def _add_panel_headers(
     labelled = Image.new("RGB", (grid.width, grid.height + header_height), "white")
     labelled.paste(grid.convert("RGB"), (0, header_height))
     draw = ImageDraw.Draw(labelled)
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", 16)
     except OSError:
@@ -239,6 +240,7 @@ class MetricLevelResult(TypedDict, total=False):
     """
 
     auroc: float
+    average_precision: float
     f1_score: float
     precision: float
     recall: float
@@ -423,11 +425,12 @@ def _process_and_save_level(
 
 def extract_and_save_pr_metrics(
     engine: Engine,
-    model: Patchcore,
+    model: Any,
     validation_dataloader: Any,
     test_dataloader: Any,
     base_dir: Path,
     run_heatmap: bool = False,
+    model_name: str = "PatchCore",
 ) -> tuple[
     float,
     float,
@@ -457,6 +460,7 @@ def extract_and_save_pr_metrics(
         test_dataloader: Loader containing the unchanged official test partition.
         base_dir: Output directory for metrics.
         run_heatmap: Whether to compute heatmap overlays.
+        model_name: Human-readable model name used in diagnostics.
     """
     try:
         logger.info("Extracting predictions for PR curve metrics...")
@@ -465,7 +469,7 @@ def extract_and_save_pr_metrics(
             visualizer.render_enabled = False
         validation_predictions = engine.predict(model=model, dataloaders=validation_dataloader)
         if not validation_predictions:
-            raise RuntimeError("PatchCore prediction returned no validation batches")
+            raise RuntimeError(f"{model_name} prediction returned no validation batches")
         validation_scores: list[np.ndarray[Any, Any]] = []
         validation_pixel_scores: list[np.ndarray[Any, Any]] = []
         for batch in validation_predictions:
@@ -476,9 +480,9 @@ def extract_and_save_pr_metrics(
             if maps is not None:
                 validation_pixel_scores.append(maps)
         if not validation_scores:
-            raise RuntimeError("PatchCore validation predictions did not contain image scores")
+            raise RuntimeError(f"{model_name} validation predictions did not contain image scores")
         if not validation_pixel_scores:
-            raise RuntimeError("PatchCore validation predictions did not contain anomaly maps")
+            raise RuntimeError(f"{model_name} validation predictions did not contain anomaly maps")
 
         # Freeze deployment thresholds using only the shared normal validation partition.
         img_threshold = compute_adaptive_threshold(
@@ -497,7 +501,7 @@ def extract_and_save_pr_metrics(
 
         raw_predictions = engine.predict(model=model, dataloaders=test_dataloader)
         if not raw_predictions:
-            raise RuntimeError("PatchCore prediction returned no test batches")
+            raise RuntimeError(f"{model_name} prediction returned no test batches")
         predictions = raw_predictions
 
         pixel_scores, pixel_labels = [], []
@@ -532,12 +536,12 @@ def extract_and_save_pr_metrics(
                 image_labels.append(img[1])
 
         if not anomaly_maps or not ground_truth_masks:
-            raise RuntimeError("PatchCore predictions did not contain full anomaly maps and ground-truth masks")
+            raise RuntimeError(f"{model_name} predictions did not contain full anomaly maps and ground-truth masks")
 
         image_scores_np = np.concatenate(image_scores)
         image_labels_np = np.concatenate(image_labels).astype(np.uint8)
         if len(np.unique(image_labels_np)) < 2:
-            raise ValueError("PatchCore image AUROC requires both normal and anomalous test labels")
+            raise ValueError(f"{model_name} image AUROC requires both normal and anomalous test labels")
         image_auroc = float(roc_auc_score(image_labels_np, image_scores_np))
         shared_pixel_metrics, canonical_maps, canonical_masks = compute_shared_pixel_metrics(
             anomaly_maps, ground_truth_masks, image_labels_np
@@ -550,7 +554,8 @@ def extract_and_save_pr_metrics(
         anomaly_map_max = float(stacked_maps.max())
         anomaly_map_range = anomaly_map_max - anomaly_map_min
         logger.info(
-            "PatchCore full-map AUPIMO: %.6f at FPR bounds %s | maps min=%.8f max=%.8f range=%.8f",
+            "%s full-map AUPIMO: %.6f at FPR bounds %s | maps min=%.8f max=%.8f range=%.8f",
+            model_name,
             pixel_aupimo,
             fpr_bounds,
             anomaly_map_min,
@@ -683,7 +688,7 @@ def extract_and_save_pr_metrics(
         )
 
     except Exception as e:
-        logger.exception("Could not compute PatchCore evaluation metrics: %s", e)
+        logger.exception("Could not compute %s evaluation metrics: %s", model_name, e)
         raise
 
 
