@@ -256,8 +256,8 @@ The final results in Table~\ref{tab:final_results} use only the baseline configu
 \centering
 \caption{Preprocessing and scoring configuration active for the final baselines.}
 \label{tab:baseline-config}
-\small
-\renewcommand{\arraystretch}{1.1}
+\footnotesize
+\renewcommand{\arraystretch}{1.0}
 \begin{tabular}{
     >{\raggedright\arraybackslash}p{0.18\textwidth}
     >{\raggedright\arraybackslash}p{0.36\textwidth}
@@ -317,19 +317,24 @@ Our first architecture, Milestone 1, used a symmetric three-stage convolutional 
 
 \begin{center}
 \footnotesize
-\begin{tabular}{ccccccc}
+\renewcommand{\arraystretch}{1.1}
+
+\begin{tabular*}{0.78\linewidth}{@{\extracolsep{\fill}}ccccccc@{}}
 \toprule
-\small Input & $\rightarrow$ & \small Enc-1 & $\rightarrow$ & \small Enc-2 & $\rightarrow$ & \small Bottleneck \\
-\small $256{\times}256{\times}3$ & & \small Conv(32) & & \small Conv(64) & & \small $128{\times}32{\times}32$ \\
+Input & $\rightarrow$ & Enc-1 & $\rightarrow$ & Enc-2 & $\rightarrow$ & Bottleneck \\
+$256{\times}256{\times}3$ & & Conv(32) & & Conv(64) & & $128{\times}32{\times}32$ \\
 \bottomrule
-\end{tabular}
-\newline
-\begin{tabular}{ccccccc}
+\end{tabular*}
+
+\vspace{0.45em}
+
+\begin{tabular*}{0.78\linewidth}{@{\extracolsep{\fill}}ccccccc@{}}
 \toprule
-\small Bottleneck & $\rightarrow$ & \small Dec-2 & $\rightarrow$ & \small Dec-1 & $\rightarrow$ & \small Output \\
-\small $128{\times}32{\times}32$ & & \small ConvT(64) & & \small ConvT(32) & & \small $256{\times}256{\times}3$ \\
+Bottleneck & $\rightarrow$ & Dec-2 & $\rightarrow$ & Dec-1 & $\rightarrow$ & Output \\
+$128{\times}32{\times}32$ & & ConvT(64) & & ConvT(32) & & $256{\times}256{\times}3$ \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
+
 \end{center}
 
 We trained with mean squared error (MSE) loss and the Adam optimiser. We extended the training progressively because validation loss was still decreasing at the end of each run, until we achieved the lowest validation reconstruction MSE of the group at 200 epochs.
@@ -369,25 +374,29 @@ Milestone 3 introduced a fourth encoder stage that reduces the latent spatial re
 
 \begin{center}
 \footnotesize
-\begin{tabular}{ccccccccc}
-\toprule
-\small In & $\to$ & \small E-1 & $\to$ & \small E-2 & $\to$ & \small E-3 & $\to$ & \small Bottleneck \\
-\small $256^2{\times}3$ & & \small Conv(32) & & \small Conv(64) & & \small Conv(128) & & \small $128{\times}16{\times}16$ \\
-\bottomrule
-\end{tabular}
+\renewcommand{\arraystretch}{1.1}
 
-\vspace{0.2em}
-\begin{tabular}{ccccccccc}
+\begin{tabular*}{0.82\linewidth}{@{\extracolsep{\fill}}ccccccccc@{}}
 \toprule
-\small Bottleneck & $\to$ & \small D-3 & $\to$ & \small D-2 & $\to$ & \small D-1 & $\to$ & \small Out \\
-\small $128{\times}16{\times}16$ & & \small ConvT(128) & & \small ConvT(64) & & \small ConvT(32) & & \small $256^2{\times}3$ \\
+In & $\rightarrow$ & E-1 & $\rightarrow$ & E-2 & $\rightarrow$ & E-3 & $\rightarrow$ & Bottleneck \\
+$256^2{\times}3$ & & Conv(32) & & Conv(64) & & Conv(128) & & $128{\times}16{\times}16$ \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
+
+\vspace{0.45em}
+
+\begin{tabular*}{0.82\linewidth}{@{\extracolsep{\fill}}ccccccccc@{}}
+\toprule
+Bottleneck & $\rightarrow$ & D-3 & $\rightarrow$ & D-2 & $\rightarrow$ & D-1 & $\rightarrow$ & Out \\
+$128{\times}16{\times}16$ & & ConvT(128) & & ConvT(64) & & ConvT(32) & & $256^2{\times}3$ \\
+\bottomrule
+\end{tabular*}
+
 \end{center}
 
 We kept the MSE loss, clean-input scoring, and the same 200-epoch training schedule. The result was an AUROC of 0.877 and 49 of 63 defects detected. This was the best autoencoder result of the exploration phase by a wide margin.
 
-These results confirmed that stronger compression is the correct architectural lever for reconstruction-based anomaly detection. By squeezing the representation into a $16 \times 16$ spatial grid, we forced the model to discard fine-grained local texture detail and retain only the coarser structural grammar of normal bottles. Anomalous structures cannot be faithfully reconstructed from this highly compressed representation, which in turn produces a visible reconstruction error.
+These results confirmed that stronger compression is the correct architectural lever for our reconstruction approach to anomaly detection. By squeezing the representation into a $16 \times 16$ spatial grid, we forced the model to discard fine-grained local texture detail and retain only the coarser structural grammar of normal bottles. Anomalous structures cannot be faithfully reconstructed from this highly compressed representation, which in turn produces a visible reconstruction error.
 
 We also tested extending the training to 400 epochs, and narrowing the bottleneck further to 32 channels. Both variants performed worse than Milestone 3. Longer training caused the model to over-generalise, and excessive bottleneck narrowing prevented faithful reconstruction even of normal images.
 
@@ -519,7 +528,7 @@ The evaluation setup is therefore as follows:
     \item \textbf{Validation-derived image thresholds.} Each model produces image-level anomaly scores for the same 15\% validation images. Its deployed operating threshold is calculated only from those normal validation scores and is frozen before the test set is opened. Normal test scores must not determine this threshold.
     \item \textbf{Identical final test set and reporting.} Both models are evaluated on the same ordered test-image list. For \textit{bottle}, this is the complete set of 83 official test images. We report the confusion counts TP, FP, and FN together with precision, recall, and F1, rather than reporting F1 alone.
     \item \textbf{Canonical pixel resolution.} Before pixel metrics are compared, both models' anomaly maps and ground-truth masks are converted to $256 \times 256$. Continuous anomaly maps are resized with bilinear interpolation, while binary masks use nearest-neighbour interpolation and remain binary.
-    \item \textbf{Identical metric implementations.} Pixel AUROC is computed through one shared function for both models. AUPIMO is computed through the same full-map \texttt{anomalib.metrics.AUPIMO} path \cite{anomalib} using complete two-dimensional anomaly maps and masks, fixed FPR bounds $(10^{-5},10^{-4})$, and \texttt{num\_thresholds} set to 50,000. Alternative FPR bounds, pooled-pixel substitutes, and fallback metric values are not permitted; a failed metric calculation must be reported as an error.
+    \item \textbf{Identical metric implementations.} Pixel AUROC is computed through one shared function for both models. AUPIMO is computed through the same Anomalib full-map implementation \cite{anomalib} for both models, using complete two-dimensional anomaly maps and masks, fixed FPR bounds $(10^{-5},10^{-4})$, and 50,000 thresholds. Alternative FPR bounds, pooled-pixel substitutes, and fallback metric values are not permitted; a failed metric calculation must be reported as an error.
     \item \textbf{Separation of threshold roles.} The image-classification operating threshold comes from the 15\% validation set. AUPIMO's shared FPR axis is instead calculated from normal images in the final test/evaluation set because this is part of AUPIMO's metric definition. These operations serve different purposes and must not be conflated.
 \end{enumerate}
 
@@ -612,7 +621,8 @@ Zipper & 0.962 & 0.985 & 0.251 & 0.513 & 0.940 & 0.025 \\
 \caption{Image-level reference points derived from the official test-set composition. Prevalence is the no-skill PR-AUC reference; ``all-defective F1'' is obtained by flagging every image as defective.}
 \label{tab:image_references}
 \small
-\begin{tabular}{l cc@{\hspace{1.5em}}l cc@{\hspace{1.5em}}l cc}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{l cc@{\hspace{1em}}l cc@{\hspace{1em}}l cc}
 \toprule
 \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} & \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} & \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} \\
 \midrule
