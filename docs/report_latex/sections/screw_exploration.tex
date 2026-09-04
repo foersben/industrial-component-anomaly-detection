@@ -103,9 +103,9 @@ conclusion Section~\ref{sec:ae3} reaches independently for bottle.
 
 We tested a different strategy for the same underlying goal explored in
 Milestone S2, preventing the model from trivially learning to copy its input,
-adapted from the masked-restoration technique developed for our
-best-performing bottle autoencoder (Section~\ref{sec:ae2}): random patches were zeroed
-and the model was trained to restore the full image. This failed decisively
+adapted from the masked-restoration technique introduced for bottle in
+Milestone 2 (Section~\ref{sec:ae2}): random patches were zeroed and the model
+was trained to restore the full image. This failed decisively
 on screw. We diagnosed the failure quantitatively rather than assuming it: a
 targeted check sampling 500 random $32\times32$ training patches found that
 only 190 (38.0\%) touched the screw object at all, meaning 62.0\% of masked
