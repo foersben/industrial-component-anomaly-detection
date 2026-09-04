@@ -419,6 +419,8 @@ This simple pretrained baseline achieved an AUROC of 0.9881, a PR-AUC of 0.9960,
 
 This result starkly contrasted with our best autoencoder configuration at the time (AUROC 0.877, 49/63 defects). It provided the decisive proof that frozen ImageNet features dramatically outperform models trained from scratch for this specific task, directly motivating our subsequent adoption of the full PatchCore architecture (Section~\ref{sec:patchcore}).
 
+\input{sections/screw_exploration}
+
 \section{The Final Keras CAE (Milestone 5)}
 \label{sec:cae}
 
@@ -1536,5 +1538,8 @@ We also include the baseline evaluation curves for the remaining five categories
 \end{subfigure}
 \caption{Qualitative results for Wood using Keras CAE (Baseline).}
 \end{figure}
+
+\clearpage
+\input{sections/screw_exploration_figures}
 
 \end{document}
