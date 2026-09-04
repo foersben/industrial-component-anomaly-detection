@@ -67,7 +67,7 @@
 \thispagestyle{fancy}
 
 \begin{abstract}
-    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are evaluated across all 15 categories using the same deterministic 85\% training/15\% validation split, with the official test set reserved for final evaluation. The primary metrics are the F1 score at image level and the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
+    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are evaluated across all 15 categories using the same deterministic 85\% training/15\% validation split under the corrected final baseline evaluation protocol. The primary metrics are the F1 score at image level and the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
 \end{abstract}
 
 % \tableofcontents
@@ -119,7 +119,7 @@ We first ran the Kruskal-Wallis H-Test, which tests the null hypothesis that the
 
 As a complementary test, we ran a pixel-level Chi-Square test to assess whether the overall proportion of anomalous pixels differs across categories. The test yielded $\chi^2(14) \approx 41.7 \text{ million}$ with $p \approx 0$. The anomalous-pixel ratios range from 0.34\% for \textit{screw} to 14.5\% for \textit{metal\_nut}, which is a 43-fold spread.
 
-The combined result is unambiguous: a single detection threshold applied uniformly across all 15 categories is statistically indefensible. This finding motivated our decision to tune preprocessing and model hyperparameters separately per category using Optuna.
+The combined result provides strong evidence that the categories differ substantially in defect scale and anomalous-pixel prevalence. Although these tests do not directly determine the optimal anomaly-score threshold for each model, the observed heterogeneity motivated us to investigate category-specific operating points, preprocessing choices, and model configurations rather than assuming that one global configuration would necessarily suit all 15 categories. This motivation contributed to the subsequent Optuna experiments.
 
 \subsection{Defect Shape, Morphology, and Spatial Location}
 \label{sec:morphology}
@@ -165,9 +165,9 @@ At image level, the task is binary classification. Given a test image, we want t
 F_1 = 2 \cdot \frac{P \cdot R}{P + R}, \quad \text{where} \quad P = \frac{\mathrm{TP}}{\mathrm{TP} + \mathrm{FP}} \quad \text{and} \quad R = \frac{\mathrm{TP}}{\mathrm{TP} + \mathrm{FN}}.
 \]
 
-Here, a true positive (TP) is a defective image that the model correctly flags, a false positive (FP) is a normal image that the model incorrectly flags, and a false negative (FN) is a defective image that the model misses. The denominator of precision contains only images that the model actually flagged. It does not involve the large pool of correctly-accepted normal images. This makes F1 immune to the accuracy paradox. The image-level classification threshold is derived exclusively from normal validation images, as described in Section~\ref{sec:leakage}.
+Here, a true positive (TP) is a defective image that the model correctly flags, a false positive (FP) is a normal image that the model incorrectly flags, and a false negative (FN) is a defective image that the model misses. The denominator of precision contains only images that the model actually flagged, so F1 avoids inflation from true negatives; nevertheless, high defective prevalence can still give a trivial all-defective classifier a high F1. The image-level classification threshold is derived exclusively from normal validation images, as described in Section~\ref{sec:leakage}.
 
-We complement the F1 score with the full precision-recall curve, which traces the trade-off across all possible threshold values. The area under this curve summarises ranking quality in a single number that is fully sensitive to the imbalance between normal and defective images.
+We complement the F1 score with the full precision-recall curve, which traces the trade-off across all possible threshold values. The area under this curve summarises ranking quality in a single number that is fully sensitive to the imbalance between normal and defective images. Its no-skill reference is the defective-image prevalence $p$. Because the test sets are themselves 40--84\% defective, we also report the F1 of the trivial rule that flags every image as defective, $F_1=2p/(1+p)$; this makes the confusion counts essential when interpreting operating-point F1.
 
 \subsection{Pixel-Level: AUPIMO}
 
@@ -199,7 +199,7 @@ The integration bounds $L = 10^{-5}$ and $U = 10^{-4}$ are chosen to reflect the
 
 \subsection{Threshold Sensitivity Curves}
 
-For each model, we also report threshold sensitivity curves that show how F1 and AUPIMO evolve as the classification threshold $t$ varies. These curves reveal whether a model's performance is stable across a range of thresholds or collapses abruptly at a specific threshold value. A robust threshold curve is preferable in deployment, because real production conditions always involve some drift in image characteristics over time.
+For each model, we also report threshold trade-off curves showing how precision and recall vary as the decision threshold $t$ changes. These curves help illustrate the trade-off between detecting more anomalies and avoiding false alarms across different operating thresholds. We additionally mark the threshold at which precision and recall are approximately equal as a descriptive breakpoint. This breakpoint is shown only for retrospective interpretation of the evaluation curve and is not used as the deployed classification threshold; final classification uses the operating threshold calibrated from the held-out normal validation set.
 
 \section{Preprocessing Pipeline}
 \label{sec:preprocessing}
@@ -210,7 +210,7 @@ All images pass through a standardised preprocessing pipeline before entering an
 
 We load every image using PIL and immediately convert it to three-channel RGB. This step is mandatory because MVTec images exist in four distinct formats: RGB JPEG, RGBA PNG, 8-bit greyscale PNG, and palette-mapped PNG. Without explicit conversion, feeding a 1-channel greyscale image to a network expecting 3 channels would produce a shape mismatch.
 
-We resize all images to $256 \times 256$ pixels using LANCZOS resampling. LANCZOS implements a windowed sinc function (mathematically defined as $\text{sinc}(x) = \frac{\sin(x)}{x}$), which acts as an ideal mathematical low-pass filter. This mathematically minimises aliasing artefacts while preserving edge sharpness and high-frequency texture detail. We chose it specifically over bilinear or bicubic resampling because some defects are microscopic, and a lower-quality interpolation filter could destroy that signal entirely during downscaling.
+Model input resolution is pipeline-specific: PatchCore operates at $256 \times 256$, while the CAE converts images to RGB and uses LANCZOS resampling to operate and score at $128 \times 128$. For shared pixel evaluation, both continuous anomaly maps are converted to the canonical $256 \times 256$ resolution before comparison with ground-truth masks. LANCZOS implements a windowed sinc function (mathematically defined as $\text{sinc}(x) = \frac{\sin(x)}{x}$), which acts as an ideal mathematical low-pass filter and limits aliasing while preserving edge detail during CAE input downscaling.
 
 Ground-truth defect masks are resized separately using nearest-neighbour interpolation. We deliberately do not use anti-aliasing filters for masks because anti-aliasing would blur the binary mask boundaries, introducing fractional pixel values at the edges of annotated defect regions. After resizing, we binarise all masks at the threshold 127 to ensure strict binary arrays.
 
@@ -225,9 +225,9 @@ For object categories, we apply photometric augmentation only. We vary brightnes
 \subsection{Foreground Extraction}
 \label{sec:foreground}
 
-Industrial inspection images always include a background such as a conveyor belt surface or a mounting jig. This background wastes model capacity and creates a source of false positives. Any slight variation in the background, like a shadow or a piece of dust, generates a reconstruction error that the model may misidentify as a product defect.
+For object categories, industrial inspection images often include background regions such as a supporting surface or mounting area. Such regions can potentially contribute irrelevant variation and false-positive anomaly responses. We therefore implemented foreground extraction as an optional preprocessing step and investigated it during the exploratory hyperparameter-optimisation experiments. It was not enabled in the final baseline comparison reported in Section~\ref{sec:evaluation}.
 
-We remove backgrounds using a two-stage classical computer vision pipeline. In the first stage, we apply Otsu's global thresholding method \cite{otsu1979} to the greyscale version of the image. Otsu's method finds the threshold $T^*$ that maximises the between-class variance:
+When foreground extraction is enabled, backgrounds are removed using a two-stage classical computer vision pipeline. In the first stage, we apply Otsu's global thresholding method \cite{otsu1979} to the greyscale version of the image. Otsu's method finds the threshold $T^*$ that maximises the between-class variance:
 
 \[
 \sigma_B^2(T) = w_0(T) \cdot w_1(T) \cdot \left[\mu_0(T) - \mu_1(T)\right]^2,
@@ -248,12 +248,57 @@ The Contrast Limited Adaptive Histogram Equalization (CLAHE) divides the image i
 
 The Gaussian Blur step applies a $5 \times 5$ Gaussian kernel to the image before it enters the model. The blur acts as a low-pass filter that suppresses high-frequency sensor noise and microscopic surface irregularities. The risk is that blurring destroys fine-grained detail, and if the defects being targeted are microscopic, the blur may erase them from the image before the model can detect them.
 
-We observed during initial experiments that applying both CLAHE and Gaussian Blur together can introduce visual artifacts. CLAHE amplifies high-frequency detail, and Gaussian Blur then smears it into a cloud of intermediate-frequency patterns that neither the normal nor the defective training distribution resembles. We therefore let the Optuna sweep determine the combination of these steps that maximises pixel AUROC for each category individually.
+We observed during initial experiments that applying both CLAHE and Gaussian Blur together can introduce visual artifacts. CLAHE amplifies high-frequency detail, and Gaussian Blur then smears it into a cloud of intermediate-frequency patterns that neither the normal nor the defective training distribution resembles. We therefore included these preprocessing choices in the exploratory Optuna sweeps, allowing their usefulness to be assessed separately for each model and category. As described in Section~\ref{sec:optuna}, the optimisation objective was pixel-level AUROC for PatchCore and pixel-level AUPIMO for the Keras CAE.
+
+The final results in Table~\ref{tab:final_results} use only the baseline configurations below; no tuned preprocessing settings are mixed into that comparison.
+
+\begin{table}[H]
+\centering
+\caption{Preprocessing and scoring configuration active for the final baselines.}
+\label{tab:baseline-config}
+\small
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{0.18\textwidth}
+    >{\raggedright\arraybackslash}p{0.36\textwidth}
+    >{\raggedright\arraybackslash}p{0.36\textwidth}
+}
+\toprule
+\textbf{Setting} &
+\textbf{Keras CAE baseline} &
+\textbf{PatchCore baseline} \\
+\midrule
+Input &
+RGB; LANCZOS resize to $128^2$; scale to $[0,1]$ &
+Three-channel input; antialiased resize to $256^2$; ImageNet normalisation; no centre crop \\
+\addlinespace[0.4em]
+Training augmentation &
+One category-aware augmented copy per training image &
+None \\
+\addlinespace[0.4em]
+Model input / training &
+Overlapping $64^2$ crops, stride 32; masked-image modelling ratio 0.25 &
+Frozen ImageNet-pretrained ResNet-18 feature extractor \\
+\addlinespace[0.4em]
+Optional preprocessing &
+Foreground mask off; CLAHE off; input Gaussian blur off &
+Foreground mask off; CLAHE off; input Gaussian blur off \\
+\addlinespace[0.4em]
+Anomaly-map post-processing &
+Reconstruction-error Gaussian smoothing, $\sigma=2$ &
+Upsampling to input size and Gaussian smoothing, $\sigma=4$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The final comparison standardises the data split, validation-based operating-threshold calibration, test samples, and evaluation metrics, while retaining each model's defined baseline input and modelling configuration. Consequently, the results should be interpreted as a comparison of the complete baseline systems rather than as a controlled ablation isolating the intrinsic effect of model architecture alone.
 
 \section{Exploratory Autoencoder Development}
 \label{sec:exploration}
 
 Our first model development phase consisted of iterative notebook-based experiments. We focused exclusively on the \textit{bottle} category to maintain a consistent comparison base. Under the intended deterministic 85\%/15\% protocol, its 209 normal development images are divided into 177 training images and 32 validation images; the official test set contains 83 images and remains separate. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
+
+Milestones 1--4 were repeatedly compared using performance on that bottle test set. They are therefore exploratory and test-informed rather than unbiased final estimates. Because those comparisons partly informed the final CAE architecture, the final bottle result must be interpreted with the same methodological caution as the test-informed Optuna experiments described later.
 
 We developed several autoencoder variants over the course of the exploration phase. We present four representative milestone architectures that capture the key turning points in our understanding, followed by the final production model as a fifth architecture. We made the decision not to discuss every single iteration to avoid obscuring the main conceptual arc of the project.
 
@@ -296,7 +341,7 @@ From these initial experiments, we discovered the core failure mode of autoencod
 \subsection{Milestone 2: First Masked Restoration Experiment}
 \label{sec:ae2}
 
-The identity-mapping problem, where the autoencoder learns to copy its input rather than learning the structure of normal images, suggested that the training task itself needed to change. We introduced our first masking strategy in Milestone 2, keeping the same three-stage architecture but replacing the clean reconstruction objective with a masked restoration task. During training, we randomly selected two non-overlapping $32 \times 32$ patches in the input image and replaced them with the mean colour of the image. The model could no longer copy its input, as it had to use the surrounding context to infer what should appear in the masked areas.
+The identity-mapping problem, where the autoencoder learns to copy its input rather than learning the structure of normal images, suggested that the training task itself needed to change. We introduced our first masking strategy in Milestone 2, keeping the same three-stage architecture but replacing the clean reconstruction objective with a masked restoration task inspired by masked image modelling \cite{he2022mae}. During training, we randomly selected two non-overlapping $32 \times 32$ patches in the input image and replaced them with the mean colour of the image. The model could no longer copy its input, as it had to use the surrounding context to infer what should appear in the masked areas.
 
 We evaluated the trained checkpoint using a clean-input scoring protocol where we fed the original unmasked image through the encoder, and a masked-restoration scoring protocol where we tiled the image with a fixed set of deterministic masks.
 
@@ -372,45 +417,59 @@ Based on the four milestones, we designed the final production autoencoder in Ke
 
 \subsection{Architecture and Activation Layers}
 
-The encoder uses four stride-2 convolutional stages with $4 \times 4$ kernels and a channel progression of $3 \to 32 \to 64 \to 128 \to 256$. The decoder mirrors the encoder with four transposed-convolution stages of matching channel widths. A final $1 \times 1$ convolutional layer reduces the bottleneck from 256 to 32 channels while preserving the $8 \times 8$ spatial grid. This fully convolutional bottleneck contains $32 \times 8 \times 8 = 2,048$ values, operating on $128 \times 128$ input images to give a compression ratio of approximately 24.
+The CAE pipeline first converts each image to RGB and resizes the full image to $128 \times 128$. Before entering the network, each image is divided into overlapping $64 \times 64$ crops with stride 32. The encoder therefore operates on $64 \times 64$ crops and uses four stride-2 convolutional stages with $4 \times 4$ kernels and a channel progression of $3 \to 32 \to 64 \to 128 \to 256$. The decoder mirrors this structure with four transposed-convolution stages. A final $3 \times 3$ convolutional layer in the encoder reduces the bottleneck channel count from 256 to 32 while preserving the $4 \times 4$ spatial grid. The fully convolutional bottleneck therefore contains $32 \times 4 \times 4 = 512$ values. Relative to the $64 \times 64 \times 3$ network input crop, this gives a compression ratio of 24. After inference, the reconstructed overlapping crops are stitched back together to obtain the full $128 \times 128$ reconstruction used for anomaly scoring.
 
 \begin{center}
 \footnotesize
-\begin{tabular}{ccccccccccc}
-\toprule
-\small In & & \small E-1 & & \small E-2 & & \small E-3 & & \small E-4 & & \small Bottleneck \\
-\small $128^2{\!\times\!}3$ & $\to$ & \small Conv(32) & $\to$ & \small Conv(64) & $\to$ & \small Conv(128) & $\to$ & \small Conv(256) & $\to$ & \small $8{\times}8{\times}32$ \\
-\small & & \small BN+ELU & & \small BN+ELU & & \small BN+ELU & & \small BN+ELU & & \small FCAE \\
-\bottomrule
-\end{tabular}
+\renewcommand{\arraystretch}{1.15}
 
-\vspace{0.2em}
-\begin{tabular}{ccccccccccc}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccccccccc@{}}
 \toprule
-\small Bottleneck & & \small D-4 & & \small D-3 & & \small D-2 & & \small D-1 & & \small Out \\
-\small $8{\times}8{\times}32$ & $\to$ & \small ConvT(256) & $\to$ & \small ConvT(128) & $\to$ & \small ConvT(64) & $\to$ & \small ConvT(32) & $\to$ & \small $128^2{\!\times\!}3$ \\
-\small FCAE & & \small BN+ELU & & \small BN+ELU & & \small BN+ELU & & \small Sigmoid & & \\
+In & & E-1 & & E-2 & & E-3 & & E-4 & & Bottleneck \\
+$64^2{\times}3$ & $\to$ &
+Conv(32) & $\to$ &
+Conv(64) & $\to$ &
+Conv(128) & $\to$ &
+Conv(256) & $\to$ &
+$4{\times}4{\times}32$ \\
+& & BN+ELU & & BN+ELU & & BN+ELU & & BN+ELU & & FCAE \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
+
+\vspace{0.6em}
+
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccccccccc@{}}
+\toprule
+Bottleneck & & D-4 & & D-3 & & D-2 & & D-1 & & Out \\
+$4{\times}4{\times}32$ & $\to$ &
+ConvT(256) & $\to$ &
+ConvT(128) & $\to$ &
+ConvT(64) & $\to$ &
+ConvT(32) & $\to$ &
+$64^2{\times}3$ \\
+FCAE & & BN+ELU & & BN+ELU & & BN+ELU & & Sigmoid & & \\
+\bottomrule
+\end{tabular*}
+
 \end{center}
 
-By calculating the spatial dimensions and channel depths, we can trace the total number of activations (or ``neurons') passed through each stage of the network. The $128 \times 128$ RGB input contains 49,152 values. As the spatial dimensions halve and channels double with each stride-2 convolution, the encoder activations progress from 131,072 (E-1) $\to$ 65,536 (E-2) $\to$ 32,768 (E-3) $\to$ 16,384 (E-4), finally condensing into just 2,048 neurons in the $8 \times 8 \times 32$ bottleneck. The decoder then expands this compressed representation, peaking at 524,288 neurons in D-1 before collapsing back to the 49,152 output pixels.
+For each $64 \times 64$ RGB crop, the input contains 12,288 values. As the spatial dimensions halve and the channel count increases through the four stride-2 encoder stages, the activations progress from 32,768 (E-1) $\to$ 16,384 (E-2) $\to$ 8,192 (E-3) $\to$ 4,096 (E-4), before reaching the $4 \times 4 \times 32 = 512$-value bottleneck. The decoder then expands this representation back to a $64 \times 64 \times 3$ reconstructed crop. The overlapping reconstructed crops are subsequently stitched together to form the complete $128 \times 128$ reconstructed image.
 
-We moved away from the early ReLU and LeakyReLU activations and used Exponential Linear Unit (ELU) activations throughout the network. The ReLU sets its output to zero for all negative inputs, which can cause neurons that consistently receive negative activations to produce zero gradient permanently. ELU avoids this by saturating smoothly toward a negative value for negative inputs, ensuring that the gradient always flows. We use Batch Normalisation after every convolution, which re-centres and re-scales activations within each mini-batch. All convolutional layers omit the bias term, because the Batch Normalisation layer's learnable shift parameter subsumes any constant bias.
+We moved away from the early ReLU and LeakyReLU activations and used Exponential Linear Unit (ELU) activations throughout the network \cite{clevert2016}. The ReLU sets its output to zero for all negative inputs, which can cause neurons that consistently receive negative activations to produce zero gradient permanently. ELU avoids this by saturating smoothly toward a negative value for negative inputs, ensuring that the gradient always flows. We use Batch Normalisation after every convolution, which re-centres and re-scales activations within each mini-batch. All convolutional layers omit the bias term, because the Batch Normalisation layer's learnable shift parameter subsumes any constant bias.
 
-The bottleneck is fully convolutional. Rather than flattening the feature maps into a 1D vector, we apply an additional $1 \times 1$ convolution that reduces the channel count while retaining the $8 \times 8$ spatial grid. During our manual testing on the bottle dataset, we actually tried using a central flatten layer followed by a dense layer for the bottleneck. We observed that this produced a good binary classification score for whether the image as a whole was anomalous or not, but it completely scrambled the spatial localisation map. The decoder had to re-learn coordinate relationships from the flattened vector from scratch. By preserving the spatial topology in the fully convolutional bottleneck, we allowed the decoder to maintain and refine spatial relationships during reconstruction.
+The bottleneck is fully convolutional. Rather than flattening the feature maps into a 1D vector, we apply an additional $3 \times 3$ convolution that reduces the channel count from 256 to 32 while retaining the $4 \times 4$ spatial grid. During our manual testing on the bottle dataset, we also experimented with a central flatten layer followed by a dense bottleneck. This removed the explicit spatial organisation of the latent representation and degraded localisation quality. By preserving the spatial topology in the fully convolutional bottleneck, the decoder retains spatial relationships throughout reconstruction.
 
 \subsection{Masked Image Modelling and Randomisation}
 \label{sec:mim}
 
-We replaced the coarse two-patch masking of Milestone 2 with a principled Masked Image Modelling strategy, implemented as a custom randomisation layer in the sequential Keras pipeline. The layer divides the image into a regular grid of non-overlapping $16 \times 16$ patches. At each training step, the randomisation layer randomly selects 25\% of these patches and sets their pixel values to zero. The encoder receives the masked image, and the training target is the original unmasked image.
+We replaced the coarse two-patch masking of Milestone 2 with a Masked Image Modelling strategy applied dynamically during training. Each $64 \times 64$ training crop is divided into a regular grid of non-overlapping $8 \times 8$ patches, giving 64 candidate patches per crop. At each training step, 25\% of these patches, corresponding to 16 patches, are randomly selected and set to zero. The masked crop is passed to the CAE as input, while the original unmasked crop serves as the reconstruction target.
 
-The random patch selection is re-drawn independently for every image and every training step, ensuring that no patch position is consistently masked. At inference time, the randomisation layer is disabled, and the test image is passed through the network unmodified.
+The masking pattern is re-sampled during training so that different regions are hidden across training iterations. During validation and test inference, no masking is applied: clean $64 \times 64$ crops are passed directly through the trained CAE, and the reconstructed crops are then stitched back together to form the full reconstructed image.
 
 \subsection{Combined SSIM and MSE Loss}
 \label{sec:loss}
 
-We replaced the pure MSE training loss with a combination of the structural similarity index measure (SSIM) and MSE. The combined loss is defined as:
+We replaced the pure MSE training loss with a combination of the structural similarity index measure (SSIM) \cite{wang2004ssim} and MSE. The combined loss is defined as:
 
 \[
 \mathcal{L}(x, \hat{x}) = \alpha \cdot (1 - \text{SSIM}(x, \hat{x})) + (1 - \alpha) \cdot \text{MSE}(x, \hat{x}), \quad \alpha = 0.84.
@@ -420,11 +479,13 @@ SSIM evaluates image quality through three complementary local statistics comput
 
 We note that the original publication by Bergmann et al. \cite{bergmann2019ssim} evaluated SSIM in combination with the L1 loss (Mean Absolute Error) and L2 loss (MSE) and recommended L1 for their specific configuration. We implemented MSE in combination with SSIM because it provided excellent convergence in our Keras pipeline, covering absolute photometric errors while SSIM handles structural differences. The weight parameter $\alpha = 0.84$ controls the balance between structural fidelity and per-pixel accuracy.
 
-\subsection{Optimiser and Callbacks}
+Inference scoring is distinct from this training loss. For each $128 \times 128$ image, the CAE forms a pixel anomaly map as $0.84(1-\mathrm{SSIM})+0.16\,\mathrm{MAE}$, smooths it with a Gaussian filter ($\sigma=2$), and uses the mean of the highest 0.2\% of map values (32 pixels) as the image score. This pooling fraction is substantially smaller than the dataset's median defect area of 1.54\%, so the image score deliberately focuses on the strongest local anomaly evidence rather than averaging the reconstruction error across the full defect footprint or the whole image.
+
+\subsection{Optimiser and Training Control}
 
 We moved from the standard Adam optimiser to the AdamW optimiser \cite{loshchilov2019adamw}. Standard Adam incorporates weight decay by adding it to the gradient before the gradient enters the adaptive moment estimates. This causes weights with large gradient histories to be under-regularised. AdamW decouples the weight decay and applies it as a direct multiplicative shrinkage to each weight independently, ensuring that every weight receives exactly proportional regularisation.
 
-The training process is governed by a set of Keras callbacks that monitor the validation reconstruction loss. We use the \textit{EarlyStopping} callback with a patience of 20 epochs to halt training when the model stops improving, preventing over-generalisation. This is paired with the \textit{ReduceLROnPlateau} callback, which halves the learning rate when the validation loss has not improved for 5 consecutive epochs, allowing the optimiser to settle into narrow local minima. Finally, the \textit{ModelCheckpoint} callback ensures that the network weights from the epoch with the lowest validation loss are restored as the final model, regardless of when the early stopping condition was triggered.
+The training process uses a custom training loop that monitors the validation reconstruction loss and implements early stopping and learning-rate reduction directly. Training is stopped when the validation loss fails to improve for 20 consecutive epochs. Independently, if the validation loss does not improve for 5 consecutive epochs, the learning rate is halved to allow finer optimisation. Whenever a new lowest validation loss is observed, the corresponding model weights are retained in memory. At the end of training, these best-performing weights are restored, ensuring that the final model corresponds to the lowest observed validation reconstruction loss rather than simply the final training epoch.
 
 \section{PatchCore Baseline}
 \label{sec:patchcore}
@@ -436,6 +497,8 @@ In parallel with the autoencoder experiments, we established a state-of-the-art 
 PatchCore operates by passing all normal training images through a frozen pretrained convolutional network. The extracted feature maps are spatially aggregated by computing a neighbourhood average for each spatial position. The collection of all these feature vectors forms a memory bank that represents the full distribution of normal patch appearances.
 
 To manage the memory footprint, PatchCore applies a greedy coreset subsampling step that reduces the memory bank to a configurable fraction of its original size while maintaining good geometric coverage of the distribution. At inference time, each patch feature extracted from a test image is scored by its Euclidean distance to the nearest neighbour in the memory bank. A patch far from all normal patches receives a high anomaly score.
+
+The image score is the largest nearest-memory-bank patch distance multiplied by PatchCore's neighbourhood-density weight, using nine neighbours in the final baseline; it is computed from patch features rather than by pooling the final anomaly map. Together with the CAE's top-error pooling, this emphasises local high-anomaly evidence instead of averaging over the whole image, which is appropriate given the median defect area of only 1.54\%.
 
 \subsection{Backbone: ResNet-18}
 \label{sec:backbone}
@@ -456,7 +519,7 @@ The evaluation setup is therefore as follows:
     \item \textbf{Validation-derived image thresholds.} Each model produces image-level anomaly scores for the same 15\% validation images. Its deployed operating threshold is calculated only from those normal validation scores and is frozen before the test set is opened. Normal test scores must not determine this threshold.
     \item \textbf{Identical final test set and reporting.} Both models are evaluated on the same ordered test-image list. For \textit{bottle}, this is the complete set of 83 official test images. We report the confusion counts TP, FP, and FN together with precision, recall, and F1, rather than reporting F1 alone.
     \item \textbf{Canonical pixel resolution.} Before pixel metrics are compared, both models' anomaly maps and ground-truth masks are converted to $256 \times 256$. Continuous anomaly maps are resized with bilinear interpolation, while binary masks use nearest-neighbour interpolation and remain binary.
-    \item \textbf{Identical metric implementations.} Pixel AUROC is computed through one shared function for both models. AUPIMO is computed through the same full-map \texttt{anomalib.metrics.AUPIMO} path using complete two-dimensional anomaly maps and masks, fixed FPR bounds $(10^{-5},10^{-4})$, and \texttt{num\_thresholds} set to 50,000. Alternative FPR bounds, pooled-pixel substitutes, and fallback metric values are not permitted; a failed metric calculation must be reported as an error.
+    \item \textbf{Identical metric implementations.} Pixel AUROC is computed through one shared function for both models. AUPIMO is computed through the same full-map \texttt{anomalib.metrics.AUPIMO} path \cite{anomalib} using complete two-dimensional anomaly maps and masks, fixed FPR bounds $(10^{-5},10^{-4})$, and \texttt{num\_thresholds} set to 50,000. Alternative FPR bounds, pooled-pixel substitutes, and fallback metric values are not permitted; a failed metric calculation must be reported as an error.
     \item \textbf{Separation of threshold roles.} The image-classification operating threshold comes from the 15\% validation set. AUPIMO's shared FPR axis is instead calculated from normal images in the final test/evaluation set because this is part of AUPIMO's metric definition. These operations serve different purposes and must not be conflated.
 \end{enumerate}
 
@@ -491,7 +554,7 @@ In this section, we present the completed evaluation of the PatchCore and Keras 
 
 We split the official normal MVTec training partition into 85\% for model fitting and 15\% for validation for both models, using random seed 42. The CAE trains its weights on the 85\% subset; PatchCore constructs its memory bank and coreset from that same subset. The held-out 15\% is used for CAE early stopping and for normal-only operating-threshold calibration. It is not included in either model's fitted representation.
 
-The official test set is not used for fitting, validation, threshold calibration, or model selection. It is accessed only after the model and operating threshold have been frozen, for one final evaluation. AUPIMO is computed at this stage from complete two-dimensional test anomaly maps and masks with fixed FPR bounds $(10^{-5},10^{-4})$; its use of normal test maps to define the shared FPR axis is part of the metric calculation itself, not a development decision.
+Under the corrected final baseline evaluation protocol, the official test set is not used for fitting, validation, threshold calibration, or selection between baseline configurations. The models and their operating thresholds are frozen before this final baseline evaluation is performed. AUPIMO is computed at this stage from complete two-dimensional test anomaly maps and masks with fixed FPR bounds $(10^{-5},10^{-4})$; its use of normal test maps to define the shared FPR axis is part of the metric calculation itself, not a development decision. As disclosed in Section~\ref{sec:exploration}, earlier exploratory CAE development on the bottle category was test-informed, so the final bottle result should not be interpreted as a completely untouched prospective estimate.
 
 The baseline PatchCore and Keras CAE models were evaluated across all 15 MVTec categories. The earlier tuned experiments are retained as part of the learning narrative in Section~\ref{sec:optuna}, but their metrics are not included in the final comparison.
 
@@ -509,7 +572,7 @@ Looking at the precision-recall (PR) and threshold trade-off curves provides a d
 
 Table \ref{tab:final_results} records the completed baseline evaluation across all 15 categories using the three metrics most relevant to the final comparison. Image-level F1 measures the frozen operating decision, image-level PR-AUC measures threshold-independent detection ranking under class imbalance, and AUPIMO measures localisation in the low-false-positive regime. Complete operational, confusion-matrix, pixel-level, and protocol metrics are reported in Appendix~\ref{sec:complete_metrics}.
 
-PatchCore achieved mean image-level F1 of 0.929, mean image-level PR-AUC of 0.988, and mean AUPIMO of 0.603. The Keras CAE achieved corresponding means of 0.495, 0.867, and 0.058. PatchCore therefore produced both substantially more reliable image-level decisions and more precise anomaly localisation. The difference between PR-AUC and F1 is also informative: a model can rank defective images reasonably well while still performing poorly at its validation-calibrated operating threshold.
+PatchCore achieved mean image-level F1 of 0.929, mean image-level PR-AUC of 0.988, and mean AUPIMO of 0.603. The Keras CAE achieved corresponding means of 0.495, 0.867, and 0.058. PatchCore therefore produced both substantially more reliable image-level decisions and more precise anomaly localisation. For CAE, the gap between PR-AUC and operating-point F1 indicates reasonable ranking but a poor validation-calibrated threshold for \textit{capsule} (AUROC 0.711, PR-AUC 0.917) and \textit{screw} (AUROC 0.777, PR-AUC 0.887). That explanation does not fit \textit{cable}, \textit{metal nut}, or \textit{tile}: their CAE AUROCs are 0.467, 0.500, and 0.501, while PR-AUCs of 0.624, 0.825, and 0.727 barely exceed prevalences of 0.613, 0.809, and 0.718. Their underlying discrimination is therefore weak, not merely their chosen threshold.
 
 \begin{table}[H]
 \centering
@@ -543,6 +606,26 @@ Zipper & 0.962 & 0.985 & 0.251 & 0.513 & 0.940 & 0.025 \\
 \end{tabular}
 }
 \end{table}
+
+\begin{table}[H]
+\centering
+\caption{Image-level reference points derived from the official test-set composition. Prevalence is the no-skill PR-AUC reference; ``all-defective F1'' is obtained by flagging every image as defective.}
+\label{tab:image_references}
+\small
+\begin{tabular}{l cc@{\hspace{1.5em}}l cc@{\hspace{1.5em}}l cc}
+\toprule
+\textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} & \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} & \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} \\
+\midrule
+Bottle & 0.759 & 0.863 & Cable & 0.613 & 0.760 & Capsule & 0.826 & 0.905 \\
+Carpet & 0.761 & 0.864 & Grid & 0.731 & 0.844 & Hazelnut & 0.636 & 0.778 \\
+Leather & 0.742 & 0.852 & Metal Nut & 0.809 & 0.894 & Pill & 0.844 & 0.916 \\
+Screw & 0.744 & 0.853 & Tile & 0.718 & 0.836 & Toothbrush & 0.714 & 0.833 \\
+Transistor & 0.400 & 0.571 & Wood & 0.759 & 0.863 & Zipper & 0.788 & 0.881 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Comparison with the all-defective reference further illustrates why operating-point F1 must be interpreted alongside ranking metrics and confusion counts. PatchCore exceeds the trivial all-defective F1 in 13 of the 15 categories. The exceptions are \textit{pill} and \textit{screw}, where PatchCore achieves F1 scores of 0.891 and 0.796 compared with trivial-reference values of 0.916 and 0.853, respectively. However, their image-level PR-AUC values remain very high at 0.982 and 0.983, indicating that the underlying ranking remains strong and that the weaker F1 is primarily associated with the frozen validation-calibrated operating threshold. In contrast, the Keras CAE exceeds the trivial all-defective F1 only for \textit{bottle} and \textit{transistor}, reinforcing that its weak operating-point performance is widespread rather than confined to a small number of threshold-calibration failures.
 
 \subsection{Evaluation Curves}
 \label{sec:eval_curves}
@@ -694,9 +777,10 @@ IEEE International Conference on Image Processing (ICIP), 2022.
 \end{thebibliography}
 
 \clearpage
-\section*{Appendix: Complete Metrics and Visualisations}
+\appendix
+\section*{Appendix}
+\section{Complete Metrics and Visualisations}
 \label{sec:complete_metrics}
-\label{sec:appendix_visuals}
 
 \subsection*{Complete Baseline Metrics}
 
@@ -1374,6 +1458,73 @@ We also include the baseline evaluation curves for the remaining five categories
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
 \caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.033.}
+\end{figure}
+
+\clearpage
+\subsection*{Visualisations: Screw (PatchCore)}
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v26/images_regenerated/thread_top/000.png}
+\caption{Thread-top defect, sample 000.}
+\end{subfigure}
+\vspace{0.2cm}
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v26/images_regenerated/thread_top/001.png}
+\caption{Thread-top defect, sample 001.}
+\end{subfigure}
+\caption{Four-panel qualitative results for Screw using PatchCore (ResNet-18).}
+\end{figure}
+
+\clearpage
+\subsection*{Visualisations: Zipper (PatchCore)}
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v31/images_regenerated/broken_teeth/000.png}
+\caption{Broken-teeth defect, sample 000.}
+\end{subfigure}
+\vspace{0.2cm}
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v31/images_regenerated/broken_teeth/001.png}
+\caption{Broken-teeth defect, sample 001.}
+\end{subfigure}
+\caption{Four-panel qualitative results for Zipper using PatchCore (ResNet-18).}
+\end{figure}
+
+\clearpage
+\subsection*{Visualisations: Wood (Keras CAE)}
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/prediction/image_0_prediction.png}
+\caption{Img 0: Anomaly Map Overlay}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
+\caption{Img 0: Anomaly Map + GT Outline}
+\end{subfigure}
+
+\vspace{0.2cm}
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/prediction/image_1_prediction.png}
+\caption{Img 1: Anomaly Map Overlay}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
+\caption{Img 1: Anomaly Map + GT Outline}
+\end{subfigure}
+\caption{Qualitative results for Wood using Keras CAE (Baseline).}
 \end{figure}
 
 \end{document}
