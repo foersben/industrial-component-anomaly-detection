@@ -288,7 +288,7 @@ def build_cae(crop_size: int = 64, latent_channels: int = 32) -> Any:
     # AdamW with decoupled weight decay for regularisation
     optimizer = tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4)
 
-    model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84))
+    model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84), jit_compile=False)
 
     logger.info(
         "Built Keras CAE: crop_size=%d, latent_channels=%d, bottleneck_spatial=%d",
@@ -407,21 +407,25 @@ def train_cae(
         Dictionary containing lists of epoch-average loss values:
         {'train': [...], 'val_good': [...], 'val_anomalous': [...]}.
     """
-    tf = _require_tf()
+    _require_tf()
 
-    class NumpyBatchGenerator(tf.keras.utils.Sequence):  # type: ignore[name-defined,misc]
-        def __init__(self, x: np.ndarray, y: np.ndarray, batch_size: int) -> None:
-            self.x = x
-            self.y = y
-            self.batch_size = batch_size
+    def _batch_loss(result: Any) -> float:
+        """Extract the scalar loss returned by Keras batch APIs."""
+        if isinstance(result, dict):
+            return float(result["loss"])
+        return float(np.asarray(result).reshape(-1)[0])
 
-        def __len__(self) -> int:
-            return int(np.ceil(len(self.x) / float(self.batch_size)))
-
-        def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
-            batch_x = self.x[idx * self.batch_size : (idx + 1) * self.batch_size]
-            batch_y = self.y[idx * self.batch_size : (idx + 1) * self.batch_size]
-            return batch_x, batch_y
+    def _evaluate_loss(images: np.ndarray) -> float:
+        """Evaluate reconstruction loss without creating a tf.data adapter."""
+        weighted_loss = 0.0
+        sample_count = 0
+        for start in range(0, len(images), batch_size):
+            clean_batch = images[start : start + batch_size]
+            model.reset_metrics()
+            loss = _batch_loss(model.test_on_batch(clean_batch, clean_batch))
+            weighted_loss += loss * len(clean_batch)
+            sample_count += len(clean_batch)
+        return weighted_loss / sample_count
 
     n_samples = len(train_images)
     history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
@@ -432,28 +436,30 @@ def train_cae(
     lr_patience_counter = 0
 
     for epoch in range(epochs):
-        # Shuffle training data at the start of each epoch
+        # Only materialise one batch at a time. Creating shuffled copies of the
+        # complete crop tensor (clean + masked) retained gigabytes in TensorFlow's
+        # allocator on every epoch and eventually triggered WSL's OOM killer.
         indices = np.random.permutation(n_samples)
-        shuffled_clean = train_images[indices]
-        shuffled_masked = apply_patch_masking(shuffled_clean, mask_ratio, patch_size)
+        weighted_loss = 0.0
+        sample_count = 0
+        for start in range(0, n_samples, batch_size):
+            batch_indices = indices[start : start + batch_size]
+            clean_batch = train_images[batch_indices]
+            masked_batch = apply_patch_masking(clean_batch, mask_ratio, patch_size)
+            model.reset_metrics()
+            batch_loss = _batch_loss(model.train_on_batch(masked_batch, clean_batch))
+            weighted_loss += batch_loss * len(clean_batch)
+            sample_count += len(clean_batch)
+            del clean_batch, masked_batch
 
-        # Use a Sequence generator to avoid allocating huge CPU tensors and OOMing during copies
-        gen = NumpyBatchGenerator(shuffled_masked, shuffled_clean, batch_size)
-
-        fit_hist = model.fit(
-            gen,
-            epochs=1,
-            verbose=0,
-            shuffle=False,  # We already shuffled manually
-        )
-        avg_loss = fit_hist.history["loss"][0]
+        avg_loss = weighted_loss / sample_count
         history["train"].append(avg_loss)
 
         log_msg = f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_loss:.6f}"
 
         # Evaluate validation losses without masking (simulating test-time reconstruction)
         if val_good_images is not None and len(val_good_images) > 0:
-            val_good_loss = float(model.evaluate(val_good_images, val_good_images, batch_size=batch_size, verbose=0))
+            val_good_loss = _evaluate_loss(val_good_images)
             history["val_good"].append(val_good_loss)
             log_msg += f" | Val Good Loss: {val_good_loss:.6f}"
             monitor_loss = val_good_loss
@@ -461,9 +467,7 @@ def train_cae(
             monitor_loss = avg_loss
 
         if val_anomalous_images is not None and len(val_anomalous_images) > 0:
-            val_an_loss = float(
-                model.evaluate(val_anomalous_images, val_anomalous_images, batch_size=batch_size, verbose=0)
-            )
+            val_an_loss = _evaluate_loss(val_anomalous_images)
             history["val_anomalous"].append(val_an_loss)
             log_msg += f" | Val Anomaly Loss: {val_an_loss:.6f}"
 

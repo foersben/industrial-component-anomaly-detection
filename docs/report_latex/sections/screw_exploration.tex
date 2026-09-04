@@ -1,0 +1,257 @@
+% ============================================================
+% DROP-IN SUBSECTION FOR report.tex
+%
+% Placement:
+%   Insert at the end of Section 5 "Exploratory Autoencoder Development",
+%   immediately after the subsection labelled sec:ali_baseline and before
+%   Section 6 "The Final Keras CAE (Milestone 5)".
+%
+% Recommended include from report.tex:
+%   \input{sections/screw_exploration}
+%
+% Figures:
+%   figures/screw/fig_v2_v4_residual_snr.png
+%   figures/screw/fig_v2_localization_examples.png
+%   figures/screw/fig_v3_masking_bug_vs_fix.png
+%   figures/screw/figures/masking_example_background_miss.png
+%   figures/screw/figures/masking_example_object_hit.png
+%
+% Cross-references below use the existing report labels rather than
+% hardcoded section/table numbers.
+%
+% Note for the main report:
+%   Section 2.2 / 4.2 still need the separate orientation wording update
+%   so that screw is treated as a random-rotation object-category exception.
+% ============================================================
+
+\subsection{Parallel Screw-Category Exploration}
+\label{subsec:screw-exploration}
+
+Alongside the bottle-category exploration described above, we conducted a
+parallel iterative development phase on the screw category. Screw presents
+two structural challenges not shared by bottle: its images are
+single-channel greyscale rather than RGB, and, per the original MVTec AD
+benchmark, its parts are photographed at random rotation on the inspection
+surface rather than arriving in a consistent orientation, one of the
+reasons the benchmark identifies screw as one of the dataset's most
+difficult categories. Under the same deterministic 85\%/15\% protocol used
+throughout this report, screw's 320 normal training images are divided
+into 272 fitting images and 48 validation images. As with the bottle
+milestones above, the official test set (160 images: 41 normal, 119
+defective) is used to score each milestone as it is built, not reserved
+for a single blind check at the end, so the results below are exploratory
+and test-informed in exactly the same sense as Milestones 1-4 for bottle.
+We report this phase for the same reason we report those milestones: the
+dead ends are as informative as the improvements.
+
+This screw exploration was implemented independently in PyTorch, separately
+from the Keras implementation of the final CAE described in
+Section~\ref{sec:cae}. The two are not architecturally identical and share no code.
+
+\textbf{A note on naming.} The five variants below are referred to as
+Milestones S1-S5 in this write-up, to parallel this report's Milestone
+1-5 naming for bottle. The figures accompanying Milestones S3-S5 were
+generated directly by the exploration notebook and keep that notebook's
+own labels (V1, V2, V3, V3b, V4) baked into the image content. The
+mapping is: V1 = S1, V2 = S2, V3 = S3, V3b = S4, V4 = S5. 
+
+Supplementary visualisations from these experiments are collected in
+Appendix~\ref{sec:screw-exploration-figures}.
+
+\subsubsection{Baselines: Z-Score Model and the Accuracy Paradox in Practice}
+
+Before any learned model, we built a non-learned baseline: a per-pixel mean and
+standard deviation computed from the normal training images, with test-time
+pixels flagged when they deviate significantly from that per-pixel statistic,
+conceptually identical to the Variation Model benchmarked in the original
+MVTec AD paper. A dedicated three-seed robustness check (seeds 42, 17, 100)
+confirmed this baseline is stable regardless of the train/validation split
+seed, with a Pixel AP standard deviation of 0.0003 and a Pixel AUROC standard
+deviation of 0.0018; mean Pixel AP across the three seeds is 0.0123 at 98.43\%
+accuracy.
+
+To make the accuracy-paradox argument from Section~\ref{sec:imbalance} concrete on this
+category rather than only cited, we additionally scored a trivial
+``always normal'' classifier against the true defect masks: it achieved
+99.75\% pixel accuracy against just 0.0025 AP. The z-score baseline
+deliberately trades a little accuracy for a large jump in AP, the opposite
+direction accuracy alone would suggest: under the single seed-42 run used
+throughout the rest of this section, it reaches 98.43\% accuracy and 0.0126
+AP, consistent with the three-seed mean above, which is the clearest
+demonstration in our screw experiments of why AP-style metrics are
+necessary here.
+
+\subsubsection{Milestone S1: Baseline Convolutional Autoencoder}
+
+Our first screw architecture used a standard encoder-decoder with an implicit
+spatial bottleneck (no explicit dense compression layer), trained with MSE
+reconstruction loss on normal-only images. This establishes the reference
+point every later change is measured against. The result was a Pixel AP of
+0.0225, a real but modest signal that confirmed the pipeline worked end to end
+without yet being competitive.
+
+\subsubsection{Milestone S2: Explicit 128-Dimensional Bottleneck}
+
+We added a dense linear bottleneck, forcing a much stronger, more deliberate
+compression than Milestone S1's implicit spatial one. The result was a Pixel
+AP of 0.0453, roughly double Milestone S1's. This was the first strong
+confirmation on screw that compression strength is a real, controllable lever
+for anomaly separation, not just capacity for cleaner reconstruction, the same
+conclusion Section~\ref{sec:ae3} reaches independently for bottle.
+
+\subsubsection{Milestone S3: Masked-Restoration Self-Supervision and the Overlap Diagnostic}
+
+We tested a different strategy for the same underlying goal explored in
+Milestone S2, preventing the model from trivially learning to copy its input,
+adapted from the masked-restoration technique introduced for bottle in
+Milestone 2 (Section~\ref{sec:ae2}): random patches were zeroed and the model
+was trained to restore the full image. This failed decisively
+on screw. We diagnosed the failure quantitatively rather than assuming it: a
+targeted check sampling 500 random $32\times32$ training patches found that
+only 190 (38.0\%) touched the screw object at all, meaning 62.0\% of masked
+patches during training were pure background. Most of the training signal
+taught the model nothing about screw structure. The result was a Pixel AP of
+0.0117, the worst model in this phase, below even the non-learned z-score
+baseline (0.0123).
+
+Milestone S3 uses Python's built-in random module for masked-patch placement.
+It calls \texttt{random.randint()}, which is not controlled by
+\texttt{torch.manual\_seed()}. Because \texttt{random.seed()} is never set before this milestone trains, its patch
+locations, and therefore its trained weights and final metrics, depend on
+whatever random state the kernel happens to start with: across two
+independent reruns of identical code, Pixel AP ranged from 0.0146 to 0.0394
+and image-level AUROC ranged from 0.000 to 0.563. Milestone S4 (below) uses
+the same unseeded function but happens to run after an unrelated
+diagnostic cell that calls \texttt{random.seed(0)} as a side effect, which
+is why it reproduces exactly across reruns despite sharing the same
+underlying gap; that reproducibility is an artefact of cell execution
+order, not an intentional seed. The fix is to add
+\texttt{random.seed(RANDOM\_SEED)} alongside the existing PyTorch seed.
+
+Because this milestone's patch placement is unseeded, where the mask lands
+varies from run to run rather than being fixed by the model or data. Two
+additional single-patch examples illustrate this directly: in one run the
+masked patch sits almost entirely on background, away from the screw body;
+in another run of the identical code, the patch lands closer to the object,
+overlapping its edge. This is the same unseeded call landing differently
+each time the kernel starts, not two different bugs, which is exactly why
+this milestone's metrics vary run to run rather than the placement being
+consistently bad or consistently fine.
+
+\subsubsection{Milestone S4: Object-Centred Masking Fix}
+
+We directly addressed the diagnosed Milestone S3 bug by restricting mask
+placement to the object's foreground region, using the same
+foreground-extraction pipeline described in Section~\ref{sec:foreground}, rather than masking
+uniformly at random across the full frame. The bug fix itself is correct and
+verifiable independent of any model score. However, fixing the bug did not
+translate into a competitive result, but it did help: this model's Pixel AP
+(0.0173) is roughly 1.5x Milestone S3's (0.0117) and moves back above the
+non-learned z-score baseline (0.0123), though it still falls well short of
+the bottleneck-based milestones (S1, S2, S5). We consider this an important
+negative-then-partial-recovery result of our screw experiments: it
+demonstrates that a correct bug diagnosis and a correct fix do not
+automatically make the underlying method competitive.
+
+\subsubsection{Milestone S5: L1 Loss Ablation}
+
+Our final screw variant kept Milestone S2's architecture unchanged and
+replaced the MSE reconstruction loss with an L1 (mean absolute error) loss,
+motivated by the hypothesis that L1's sharper, less blur-prone gradient
+behaviour would produce cleaner separation between normal and defective pixel
+errors. This produced the best result of the screw exploration phase: Pixel
+AP 0.0581, Pixel AUROC 0.9075, and a top-1\% defect-pixel capture rate of
+0.2508.
+
+To rule out the simplest alternative explanation, that L1 was simply
+elevating error everywhere including the background rather than genuinely
+separating defect regions better, we measured mean reconstruction error
+inside and outside the ground-truth defect mask across all 119 defective
+screw test images (Table~\ref{tab:screw-snr}). The L1 model's background
+error is only marginally higher than the MSE model's, while its
+defect-region error is proportionally much higher, giving it a higher
+signal-to-noise ratio and ruling out the simple noise-amplification
+explanation. We note this analysis was run against an earlier,
+pre-final checkpoint pair, so the qualitative finding is suggestive rather
+than confirmed against the exact final models in
+Table~\ref{tab:screw-results}.
+
+\begin{table}[h]
+\centering
+\caption{Mean reconstruction error inside and outside the ground-truth defect
+mask, Milestone S2 (MSE) vs.\ Milestone S5 (L1), across all 119 defective
+screw test images. Checkpoints predate the final seed-42 models in
+Table~\ref{tab:screw-results}.}
+\begin{tabular}{lccc}
+\toprule
+Model & Defect Error (signal) & Background Error (noise) & SNR \\
+\midrule
+Milestone S2 (MSE) & 0.018015 & 0.001330 & 13.54 \\
+Milestone S5 (L1 loss) & 0.024089 & 0.001447 & 16.65 \\
+\bottomrule
+\end{tabular}
+\label{tab:screw-snr}
+\end{table}
+
+\subsubsection{Summary of Screw Exploration Results}
+
+Table~\ref{tab:screw-results} summarises the full screw exploration phase.
+All autoencoder rows use seed 42, a 20-epoch training budget, and the 85/15
+split described above; the baseline row is the mean of the three-seed check.
+Pixel F1 and Image F1 use the same validation-derived thresholds as the
+adjacent accuracy columns (99th percentile pixel-level, 95th percentile
+image-level). Milestones S3 and S4's values should be read as a single-run
+snapshot affected by the diagnosed seed-instability issue in their masking
+implementation (unseeded \texttt{random.randint()}, not covered by
+\texttt{torch.manual\_seed()}): as Milestone S3's write-up above shows, a
+different unseeded rerun of the same code can produce materially different
+numbers for this specific pair. Every other row in this table is seed-stable.
+
+\begin{table}[h]
+\centering
+\caption{Screw-category results across the exploratory autoencoder variants.}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+Model & Pixel AP & Pixel Acc & Pixel F1 & Top-1\% Capture & Pixel AUROC & Img F1 & Img MSE AUROC & Top-K AUROC \\
+\midrule
+Z-score baseline & 0.0123 & 0.9843 & -- & -- & 0.6887 & -- & -- & -- \\
+Milestone S1 & 0.0225 & 0.9885 & 0.0557 & 0.1417 & 0.8723 & 0.000 & 0.8541 & 0.9561 \\
+Milestone S2 & 0.0453 & 0.9872 & 0.0900 & 0.2269 & 0.8849 & 0.168 & 0.5431 & 0.7225 \\
+Milestone S3 & 0.0117 & 0.9868 & 0.0320 & 0.0852 & 0.7765 & 0.025 & 0.0047 & 0.3210 \\
+Milestone S4 & 0.0173 & 0.9826 & 0.0526 & 0.2015 & 0.7401 & 0.053 & 0.0842 & 0.0502 \\
+\textbf{Milestone S5 (L1 loss)} & \textbf{0.0581} & 0.9871 & 0.1029 & \textbf{0.2508} & \textbf{0.9075} & 0.126 & 0.8176 & 0.8721 \\
+\bottomrule
+\end{tabular}%
+}
+\label{tab:screw-results}
+\end{table}
+
+Image F1 of 0.000 for Milestone S1 is a genuine measurement at the
+validation-derived operating threshold, not a data error. It means that this
+operating point produced no true-positive image detections on the screw test
+set. The result should therefore be interpreted together with the
+threshold-independent image-level AUROC, which shows that the model can retain
+ranking information even when its chosen operating threshold performs poorly.
+
+These exploratory results predate and motivated the production PatchCore and
+Keras CAE baseline comparison reported in Section~\ref{sec:evaluation}, where screw achieves a
+PatchCore image F1 of 0.796 and pixel AUPIMO of 0.380, and a Keras CAE image
+F1 of 0.421 and pixel AUPIMO of 0.005 (Table~\ref{tab:final_results}), figures that already reflect
+the lessons of this exploration: screw's rotational variability and greyscale
+presentation make it one of the harder categories in the benchmark,
+consistent with what we found here.
+
+The gap is largest on image-level F1 specifically: Milestone S5, the best
+model in this exploration, reaches an image F1 of only 0.126, well short of
+both the PatchCore (0.796) and Keras CAE (0.421) screw baselines above. This
+is expected rather than a weakness specific to screw: none of these
+exploratory autoencoders use a pretrained backbone, and the same
+from-scratch-versus-pretrained-features gap is already visible in this
+report's own bottle exploration (Section~\ref{sec:ali_baseline}), where a frozen-ImageNet
+5-NN baseline (AUROC 0.988) decisively outperformed every from-scratch
+autoencoder variant (best AUROC 0.877) and directly motivated adopting
+PatchCore. The screw milestones here should be read the same way: as
+exploratory evidence about masking, compression, and loss-function choices
+on a from-scratch architecture, not as a competitive alternative to the
+production models above.

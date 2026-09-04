@@ -22,3 +22,4 @@ In this section, you will find:
 5. **[Keras CAE Preprocessing](keras_cae_preprocessing.md):** Data augmentation, image loading, and Otsu+Canny foreground extraction (BGRP-G).
 6. **[Keras CAE Inference & Evaluation](keras_cae_inference.md):** Top-K pooling, adaptive thresholds (Quantile/Mahalanobis), Precision-Recall curves, and strict industrial FPR ($10^{-5}$) validation.
 7. **[Keras CAE Explainability](keras_cae_explainability.md):** Reconstruction error heatmaps, sliding window overlap stitching, robust quantile clamping, and side-by-side ground truth validation.
+8. **[Fair PatchCore and CAE Evaluation Handoff](fair_model_evaluation_handoff.md):** Actionable implementation plan, current gaps, required tests, and acceptance criteria for the shared 85/15 zero-leakage comparison protocol.

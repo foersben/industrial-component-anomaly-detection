@@ -249,6 +249,19 @@ def evaluate_patchcore(category: str, tuned: bool) -> None:
         model_hash=None,
     )
 
+    pixel_metrics = results["pixel_level"]
+    print(
+        f"PatchCore bottle AUPIMO: {pixel_metrics['aupimo']:.6f}"
+        if category == "bottle"
+        else f"PatchCore {category} AUPIMO: {pixel_metrics['aupimo']:.6f}"
+    )
+    print(
+        "PatchCore anomaly maps: "
+        f"min={pixel_metrics['anomaly_map_min']:.8f}, "
+        f"max={pixel_metrics['anomaly_map_max']:.8f}, "
+        f"range={pixel_metrics['anomaly_map_range']:.8f}"
+    )
+
     save_plots_and_heatmaps(results, out_dir, heatmaps_pred_dir, heatmaps_gt_dir)
     print(f"Completed evaluation for {category}. Outputs saved to {out_dir}")
     torch.cuda.empty_cache()

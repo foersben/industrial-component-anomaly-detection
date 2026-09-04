@@ -77,8 +77,19 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from app.domain.data import build_mvtec_manifest
+from app.domain.data import (
+    FAIR_EVALUATION_PROTOCOL,
+    build_fair_evaluation_split,
+    build_mvtec_manifest,
+)
 from app.pipelines.evaluation.cae_metrics import evaluate_cae
+from app.pipelines.evaluation.metrics import (
+    AUPIMO_FPR_BOUNDS,
+    AUPIMO_NUM_THRESHOLDS,
+    CANONICAL_MAP_SIZE,
+    PIXEL_METRICS_VERSION,
+    fair_metric_evidence,
+)
 from app.pipelines.evaluation.scoring import compute_adaptive_threshold, compute_image_scores
 from app.pipelines.modelling.keras_cae.cae_keras import _require_tf, build_cae, train_cae
 from app.pipelines.preprocessing import PreprocessingPipeline, build_pipeline_from_configs
@@ -192,6 +203,7 @@ def find_cached_model(
     preprocessing_steps: list[dict[str, Any]] | None = None,
     target_hash: str | None = None,
     registry_base: Path | str = "data/models/keras_cae",
+    expected_split_evidence: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     """Find the newest cached model matching either a specific hash or the given hyperparameters.
 
@@ -208,6 +220,7 @@ def find_cached_model(
         preprocessing_steps: Optional preprocessing step configurations.
         target_hash: Optional exact model hash to search for.
         registry_base: Path to the keras_cae model registry.
+        expected_split_evidence: Required fair-protocol split evidence, when evaluating a cache hit.
 
     Returns:
         Tuple of (model_dir, metadata_dict) if found, else None.
@@ -229,7 +242,11 @@ def find_cached_model(
                         meta = json.load(f)
                 except Exception:
                     pass
-            return target_dir, meta
+            if expected_split_evidence is None or all(
+                meta.get("dataset_split", {}).get(key) == value for key, value in expected_split_evidence.items()
+            ):
+                return target_dir, meta
+            return None
 
     norm_req_prep = _normalize_preprocessing_steps(preprocessing_steps)
 
@@ -247,6 +264,11 @@ def find_cached_model(
             with open(meta_file, encoding="utf-8") as f:
                 meta = json.load(f)
         except Exception:
+            continue
+
+        if expected_split_evidence is not None and not all(
+            meta.get("dataset_split", {}).get(key) == value for key, value in expected_split_evidence.items()
+        ):
             continue
 
         # Check parameter compatibility
@@ -491,7 +513,7 @@ def run_keras_cae_pipeline(
     4. Normalises images to [0, 1].
     5. Builds and trains the Keras CAE with MIM + SSIM+MSE + AdamW (or loads from cache).
     6. Scores all test images using Top-K pooling.
-    7. Computes an adaptive threshold from normal test scores.
+    7. Computes an adaptive threshold from normal validation scores.
     8. Evaluates with image-level AUROC and pixel-level AUPIMO.
     9. Optionally computes Reconstruction Error Heatmap overlays for every anomalous test image.
 
@@ -519,6 +541,11 @@ def run_keras_cae_pipeline(
     """
     tf = _require_tf()
 
+    manifest = build_mvtec_manifest(data_root)
+    fair_split = build_fair_evaluation_split(manifest, category)
+    split_evidence = fair_split.evidence()
+    cache_evidence = {**split_evidence, **fair_metric_evidence()}
+
     # ── 1. Cache Resolution (Pre-Dataset Loading) ──────────────────────────────
     cached = (
         find_cached_model(
@@ -533,6 +560,7 @@ def run_keras_cae_pipeline(
             mask_patch_size=mask_patch_size,
             preprocessing_steps=preprocessing_steps,
             target_hash=model_hash,
+            expected_split_evidence=cache_evidence,
         )
         if not force_retrain
         else None
@@ -572,7 +600,9 @@ def run_keras_cae_pipeline(
         prep_str = json.dumps(norm_prep, sort_keys=True)
         hp_string = (
             f"{category}_{img_size}_{crop_size}_{crop_stride}_{latent_channels}_"
-            f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}_{prep_str}"
+            f"{epochs}_{batch_size}_{mask_ratio}_{mask_patch_size}_{prep_str}_"
+            f"{json.dumps(cache_evidence, sort_keys=True)}_{CANONICAL_MAP_SIZE}_"
+            f"{AUPIMO_FPR_BOUNDS}_{AUPIMO_NUM_THRESHOLDS}_{PIXEL_METRICS_VERSION}"
         )
         model_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
         registry_dir = Path("data/models/keras_cae") / model_hash
@@ -582,23 +612,10 @@ def run_keras_cae_pipeline(
     logger.info("=== Keras CAE Pipeline: category='%s', img_size=%d, hash='%s' ===", category, img_size, model_hash)
 
     # ── 2. Load Dataset Manifest ────────────────────────────────────────────────
-    manifest = build_mvtec_manifest(data_root)
-    cat = manifest[manifest["product"] == category].copy()
-
-    if cat.empty:
-        raise ValueError(f"No images found for category '{category}' in '{data_root}'")
-
-    from sklearn.model_selection import train_test_split
-
-    full_train_df = cat[(cat["split"] == "train") & (~cat["is_anomaly"])].copy()
-    test_df = cat[cat["split"] == "test"].copy()
-
-    # Reserve 15% of the normal training data for validation to prevent test set leakage
-    train_df, val_df = train_test_split(full_train_df, test_size=0.15, random_state=42)
-
-    train_paths = train_df["path"].tolist()
-    val_paths = val_df["path"].tolist()
-    test_paths = test_df["path"].tolist()
+    train_paths = fair_split.fitting_paths
+    val_paths = fair_split.validation_paths
+    test_df = fair_split.test
+    test_paths = fair_split.test_paths
     test_labels = test_df["is_anomaly"].astype(int).to_numpy()
     mask_paths = test_df["mask_path"].tolist()
 
@@ -633,9 +650,7 @@ def run_keras_cae_pipeline(
     val_an_crops = None  # No anomalous images used during validation tuning
 
     dataset_split = {
-        "train_normal": len(train_paths),
-        "val_normal": len(val_paths),
-        "test_total": len(test_paths),
+        **cache_evidence,
         "test_normal": int(sum(1 for label_val in test_labels if label_val == 0)),
         "test_anomalous": int(sum(1 for label_val in test_labels if label_val == 1)),
     }
@@ -673,6 +688,9 @@ def run_keras_cae_pipeline(
             "k_fraction": k_fraction,
             "preprocessing_steps": preprocessing_steps or [],
             "dataset_split": dataset_split,
+            "protocol": FAIR_EVALUATION_PROTOCOL,
+            "threshold_source": "normal_validation",
+            "pixel_metrics_version": PIXEL_METRICS_VERSION,
             "loss_history": loss_history,
             "timestamp": datetime.now(UTC).isoformat(),
         }
@@ -680,7 +698,7 @@ def run_keras_cae_pipeline(
             json.dump(metadata, f, indent=4)
         logger.info("Saved model and metadata to %s", registry_dir)
 
-    # ── 6. Compute Adaptive Threshold on Normal Test Images ─────────────────────
+    # ── 6. Compute Adaptive Threshold on Normal Validation Images ───────────────
     logger.info("Extracting crops for val_good images and predicting...")
     val_good_reconstructed_crops = model.predict(val_good_crops, batch_size=batch_size, verbose=0)
     val_good_reconstructed = stitch_crops(
@@ -711,18 +729,7 @@ def run_keras_cae_pipeline(
         output_dir=registry_dir,
         reconstructions=test_reconstructed,
     )
-    t_aupimo_min = 0.0
-    aupimo_recall = 0.0
     pixel_file = registry_dir / "pixel_metrics.npz"
-    if pixel_file.exists():
-        try:
-            data = np.load(pixel_file)
-            if "t_aupimo_min" in data:
-                t_aupimo_min = float(data["t_aupimo_min"])
-            if "aupimo" in data:
-                aupimo_recall = float(data["aupimo"])
-        except Exception:
-            pass
 
     results["image_level"] = {
         "auroc": results.get("auroc", 0.0),
@@ -730,17 +737,21 @@ def run_keras_cae_pipeline(
         "precision": results.get("precision", 0.0),
         "recall": results.get("recall", 0.0),
         "threshold": threshold,
+        "true_positives": results["true_positives"],
+        "false_positives": results["false_positives"],
+        "false_negatives": results["false_negatives"],
+        "true_negatives": results["true_negatives"],
         "metrics_path": str(registry_dir / "image_metrics.npz"),
     }
     results["pixel_level"] = {
         "auroc": results.get("pixel_auroc", results.get("auroc", 0.0)),
         "f1_score": results.get("pixel_f1", results.get("f1_score", 0.0)),
         "aupimo_score": results.get("aupimo", 0.0),
-        "threshold_limit": t_aupimo_min,
-        "tpr_at_limit": aupimo_recall,
-        "fpr_lower_bound": 1e-5,
-        "fpr_upper_bound": 1e-4,
-        "t_aupimo_min": t_aupimo_min,
+        "fpr_lower_bound": AUPIMO_FPR_BOUNDS[0],
+        "fpr_upper_bound": AUPIMO_FPR_BOUNDS[1],
+        "aupimo_num_thresholds": AUPIMO_NUM_THRESHOLDS,
+        "canonical_height": CANONICAL_MAP_SIZE[0],
+        "canonical_width": CANONICAL_MAP_SIZE[1],
         "aupimo": results.get("aupimo", 0.0),
         "metrics_path": str(pixel_file),
     }
@@ -752,6 +763,30 @@ def run_keras_cae_pipeline(
 
     # Pass through metadata, hyperparameters, and dataset split for UI/API consumption
     active_meta = cached[1] if cached is not None else metadata
+    active_meta.update(
+        {
+            "protocol": FAIR_EVALUATION_PROTOCOL,
+            "dataset_split": dataset_split,
+            "threshold_source": "normal_validation",
+            "img_threshold": threshold,
+            "true_positives": results["true_positives"],
+            "false_positives": results["false_positives"],
+            "false_negatives": results["false_negatives"],
+            "true_negatives": results["true_negatives"],
+            "precision": results["precision"],
+            "recall": results["recall"],
+            "f1_score": results["f1_score"],
+            "pixel_auroc": results["pixel_auroc"],
+            "pixel_aupimo": results["pixel_aupimo"],
+            "aupimo_fpr_bounds": list(AUPIMO_FPR_BOUNDS),
+            "aupimo_num_thresholds": AUPIMO_NUM_THRESHOLDS,
+            "canonical_height": CANONICAL_MAP_SIZE[0],
+            "canonical_width": CANONICAL_MAP_SIZE[1],
+            "pixel_metrics_version": PIXEL_METRICS_VERSION,
+        }
+    )
+    with open(registry_dir / "metadata.json", "w", encoding="utf-8") as metadata_file:
+        json.dump(active_meta, metadata_file, indent=4)
     results["metadata"] = active_meta
     results["preprocessing_steps"] = (
         active_meta.get("preprocessing_steps")

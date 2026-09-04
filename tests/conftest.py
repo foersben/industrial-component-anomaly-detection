@@ -140,7 +140,11 @@ def mock_keras_cae() -> Any:
 
 @pytest.fixture
 def mock_fast_training() -> Generator[None, None, None]:
-    """Patch train_cae to return dummy loss history without executing training epochs.
+    """Patch expensive training and AUPIMO work for API contract tests.
+
+    The synthetic 32 by 32 maps cannot represent the production FPR lower bound
+    of 1e-5, so these contract tests use a fixed AUPIMO result. Dedicated metric
+    tests verify the genuine AUPIMO configuration and error behavior.
 
     Yields:
         None
@@ -149,5 +153,8 @@ def mock_fast_training() -> Generator[None, None, None]:
     def _mock_train_cae(*_args: Any, **_kwargs: Any) -> dict[str, list[float]]:
         return {"train": [0.1], "val_good": [0.1], "val_anomalous": [0.2]}
 
-    with patch("app.pipelines.modelling.keras_cae.cae_pipeline.train_cae", side_effect=_mock_train_cae):
+    with (
+        patch("app.pipelines.modelling.keras_cae.cae_pipeline.train_cae", side_effect=_mock_train_cae),
+        patch("app.pipelines.evaluation.cae_metrics.compute_aupimo", return_value=0.5),
+    ):
         yield

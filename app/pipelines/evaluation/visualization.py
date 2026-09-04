@@ -20,7 +20,6 @@ class ProcessedEvaluationData(NamedTuple):
         sorted_precisions: Array of precision values sorted in ascending order.
         t_crossover: Threshold value at which precision and recall are approximately equal.
         integrated_aupr: Area Under the Precision-Recall Curve.
-        t_aupimo_min: Threshold value for the AUPIMO metric.
         eval_level_label: Label indicating the evaluation level (image or pixel).
     """
 
@@ -31,7 +30,6 @@ class ProcessedEvaluationData(NamedTuple):
     sorted_precisions: np.ndarray[Any, Any]
     t_crossover: float
     integrated_aupr: float
-    t_aupimo_min: float
     eval_level_label: str
 
 
@@ -49,8 +47,6 @@ def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
     precisions = data["precision"]
     recalls = data["recall"]
     thresholds = data["thresholds"]
-    t_aupimo_min = float(data["t_aupimo_min"]) if "t_aupimo_min" in data else 0.0
-
     # Align shapes if metrics returned boundary values
     if len(precisions) == len(thresholds) + 1:
         precisions = precisions[:-1]
@@ -86,13 +82,12 @@ def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
         sorted_precisions=sorted_precisions,
         t_crossover=t_crossover,
         integrated_aupr=integrated_aupr,
-        t_aupimo_min=t_aupimo_min,
         eval_level_label=eval_level_label,
     )
 
 
 def plot_tradeoff_curve(data: ProcessedEvaluationData) -> Figure:
-    """Generates the Threshold Tradeoff matplotlib figure with optional AUPIMO range.
+    """Generate the precision and recall threshold-tradeoff figure.
 
     Args:
         data: Processed evaluation data.
@@ -101,19 +96,6 @@ def plot_tradeoff_curve(data: ProcessedEvaluationData) -> Figure:
         The matplotlib figure.
     """
     fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
-    is_pixel_level = "Pixel" in data.eval_level_label
-
-    # Shade AUPIMO valid range if present (strictly for pixel localization)
-    if is_pixel_level and data.t_aupimo_min > 0.0:
-        ax.axvspan(
-            data.t_aupimo_min,
-            float(data.thresholds.max()),
-            color="#2ca02c",
-            alpha=0.15,
-            label="AUPIMO Valid Range",
-        )
-        ax.axvline(x=data.t_aupimo_min, color="#2ca02c", linestyle=":", linewidth=2)
-
     ax.plot(data.thresholds, data.precisions, label="Precision", color="#1f77b4", linewidth=2)
     ax.plot(data.thresholds, data.recalls, label="Recall", color="#ff7f0e", linewidth=2)
     ax.axvline(
@@ -132,7 +114,7 @@ def plot_tradeoff_curve(data: ProcessedEvaluationData) -> Figure:
 
 
 def plot_pr_curve(data: ProcessedEvaluationData) -> Figure:
-    """Generates the Precision-Recall matplotlib figure with optional AUPIMO region.
+    """Generate the precision-recall figure.
 
     Args:
         data: Processed evaluation data.
@@ -141,8 +123,6 @@ def plot_pr_curve(data: ProcessedEvaluationData) -> Figure:
         The matplotlib figure.
     """
     fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
-    is_pixel_level = "Pixel" in data.eval_level_label
-
     # Full PR Curve
     ax.plot(
         data.sorted_recalls,
@@ -152,18 +132,6 @@ def plot_pr_curve(data: ProcessedEvaluationData) -> Figure:
         lw=2.5,
     )
     ax.fill_between(data.sorted_recalls, data.sorted_precisions, alpha=0.2, color="#8E44AD")
-
-    # Highlight AUPIMO region if present (strictly for pixel localization)
-    if is_pixel_level and data.t_aupimo_min > 0.0:
-        aupimo_mask = data.thresholds >= data.t_aupimo_min
-        if np.any(aupimo_mask):
-            ax.plot(
-                data.recalls[aupimo_mask],
-                data.precisions[aupimo_mask],
-                color="#2ca02c",
-                lw=3.5,
-                label="AUPIMO Region",
-            )
 
     ax.set_xlim(0.0, 1.03)
     ax.set_ylim(-0.03, 1.05)
@@ -190,17 +158,12 @@ def render_evaluation_curves(data_path: str) -> None:
         st.error(f"Failed to load data from {data_path}: {e}")
         return
 
-    is_pixel_level = "Pixel" in data.eval_level_label
-    show_aupimo = is_pixel_level and data.t_aupimo_min > 0.0
-
     # 1. Streamlit Metrics Header
     st.subheader(f"Model Evaluation Metrics — {data.eval_level_label}")
 
-    cols = st.columns(3 if show_aupimo else 2)
+    cols = st.columns(2)
     cols[0].metric("Optimal Breakpoint (Prec ~= Rec)", f"{data.t_crossover:.4f}")
     cols[1].metric("PR-AUC (AUPR)", f"{data.integrated_aupr:.4f}")
-    if show_aupimo:
-        cols[2].metric("AUPIMO Lower Bound", f"{data.t_aupimo_min:.4f}")
 
     # 2. Streamlit Charts Side-by-Side
     col_chart1, col_chart2 = st.columns(2)

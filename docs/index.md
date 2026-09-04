@@ -56,6 +56,7 @@ The scientific core covering datasets, evaluation methodologies, and metrics:
 
 * [MVTec AD Dataset](data_science/mvtec_ad.md) - Structure, complexity, threshold estimation, baselines, and experimental insights for the primary industrial dataset.
 * [Anomaly Detection Metrics](data_science/anomaly_detection_metrics.md) - Deep mathematical walkthrough of AUROC, AUPRO, and the novel AUPIMO metric under low-false-positive constraints.
+* [Fair PatchCore and CAE Evaluation Handoff](data_science/fair_model_evaluation_handoff.md): Implementation status, required code changes, tests, and acceptance criteria for the controlled baseline comparison.
 
 ### 3. Operational Guides & Planning
 

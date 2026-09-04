@@ -49,22 +49,6 @@
     numbersep=5pt
 }
 
-\newcommand{\placeholder}[2]{%
-    \begin{figure}[t!]
-    \centering
-    \fcolorbox{gray!50}{gray!10}{%
-        \begin{minipage}{0.85\linewidth}
-        \centering
-        \vspace{1.2cm}
-        \textcolor{gray!70}{\Large [Placeholder]}\\[0.4em]
-        \textcolor{gray}{#1}
-        \vspace{1.2cm}
-        \end{minipage}%
-    }
-    \caption{#2}
-    \end{figure}
-}
-
 \title{
     \vspace{-1cm}
     {\LARGE Industrial Component Anomaly Detection}\\[0.5em]
@@ -83,7 +67,7 @@
 \thispagestyle{fancy}
 
 \begin{abstract}
-    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are equipped with category-adaptive preprocessing and automated hyperparameter optimisation via Optuna. All evaluations follow a strict zero-leakage policy and rely primarily on the F1 score at image level and on the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
+    This report documents our complete process of developing unsupervised anomaly detection models for industrial components, evaluated on the MVTec Anomaly Detection dataset. We describe the full trajectory of our work, from exploratory data analysis and iterative prototype experiments to a production-grade software architecture, and we explain each decision in the context of the findings that motivated it. Our final system comprises two complementary approaches: an advanced Keras convolutional autoencoder incorporating masked image modelling and a combined structural and pixel-wise loss function, and a PatchCore model with a ResNet-18 backbone. The choice of ResNet-18 was necessitated by the computational and memory constraints of consumer-grade hardware. Both systems are evaluated across all 15 categories using the same deterministic 85\% training/15\% validation split under the corrected final baseline evaluation protocol. The primary metrics are the F1 score at image level and the Area Under the Per-Image Overlap (AUPIMO) at pixel level, complemented by precision-recall curves and threshold sensitivity curves.
 \end{abstract}
 
 % \tableofcontents
@@ -92,7 +76,7 @@
 \section{Introduction and Task Description}
 \label{sec:introduction}
 
-This project was conducted as part of the Liora data science curriculum and with a difficulty rating of 10 out of 10. The objective was to develop a model capable of detecting anomalies in industrial components from images, using the MVTec AD dataset \cite{bergmann2019mvtec, bergmann2021mvtec}. The task description listed two expected deliverables: a report on data exploration, visualisation, and preprocessing, and a final report together with an associated code repository. This document serves as the final report, covering the complete project from data exploration to the evaluation of the finished system. The task description explicitly references the paper \textit{AUPIMO: Redefining Visual Anomaly Detection Benchmarks with High Speed and Low Tolerance} \cite{bertoldo2024aupimo} as a key bibliographic source. This motivated our adoption of AUPIMO as the primary pixel-level evaluation metric, a choice we justify technically in Section~\ref{sec:metrics}.
+This project was conducted as part of the Liora data science curriculum and with a difficulty rating of 10 out of 10. The objective was to develop a model capable of detecting anomalies in industrial components from images, using the MVTec AD dataset \cite{bergmann2019mvtec, bergmann2021mvtec}. This second report provides the technical account of the project, from data exploration to the evaluation of the completed system, and supplies the scientific basis for the subsequent business report. The task description explicitly references the paper \textit{AUPIMO: Redefining Visual Anomaly Detection Benchmarks with High Speed and Low Tolerance} \cite{bertoldo2024aupimo} as a key bibliographic source. This motivated our adoption of AUPIMO as the primary pixel-level evaluation metric, a choice we justify technically in Section~\ref{sec:metrics}.
 
 Quality control in modern manufacturing operates under a fundamental constraint: defects are rare by design. A well-engineered production line yields thousands of good items for every defect. This scarcity makes supervised classification impractical in the classical sense, as there are simply not enough labelled defect examples to train a reliable closed-world classifier, and future defects take forms that were never seen during development. The standard response to this challenge is unsupervised anomaly detection. Our models train on defect-free normal images and learn compact representations of what normal looks like. At test time, any image that deviates significantly from this learned normal appearance is flagged as anomalous. This is both technically demanding and fundamentally different from standard classification, because the model must determine what is normal and anomalous from normal-only training data, with no exposure to any defect during training.
 
@@ -113,7 +97,7 @@ In total, the dataset contains 3,629 normal training images, 467 normal test ima
 
 \subsection{Objects versus Textures: A Fundamental Structural Split}
 
-The 15 categories divide into two structurally distinct groups that require entirely different treatment throughout the pipeline. The five texture categories (Carpet, Grid, Leather, Tile, and Wood) consist of repetitive, spatially invariant surface patterns. A patch of leather looks statistically the same regardless of whether it has been rotated or mirrored. The ten object categories (bottle, cable, capsule, hazelnut, metal\_nut, pill, screw, toothbrush, transistor, and zipper) are physically shaped items that arrive at the inspection stage in a consistent orientation. Applying aggressive rotational augmentation to a bottle would incorrectly instruct the model that inverted orientations are part of the normal distribution, rendering the detector blind to orientation-based anomalies.
+The 15 categories divide into two structurally distinct groups that require entirely different treatment throughout the pipeline. The five texture categories (Carpet, Grid, Leather, Tile, and Wood) consist of repetitive, spatially invariant surface patterns. A patch of leather looks statistically the same regardless of whether it has been rotated or mirrored. The ten object categories (bottle, cable, capsule, hazelnut, metal\_nut, pill, screw, toothbrush, transistor, and zipper) are physically shaped items, but their pose characteristics differ by category. Some are acquired in roughly consistent orientations, whereas \textit{hazelnut}, \textit{metal\_nut}, and \textit{screw} appear under random rotation. Applying aggressive rotational augmentation to a consistently oriented object such as a bottle would incorrectly instruct the model that inverted orientations are part of the normal distribution, potentially reducing its ability to detect orientation-related anomalies.
 
 We identified this distinction on the first day of the project and carried its implications through to augmentation, foreground extraction, and configuration tuning.
 
@@ -135,7 +119,7 @@ We first ran the Kruskal-Wallis H-Test, which tests the null hypothesis that the
 
 As a complementary test, we ran a pixel-level Chi-Square test to assess whether the overall proportion of anomalous pixels differs across categories. The test yielded $\chi^2(14) \approx 41.7 \text{ million}$ with $p \approx 0$. The anomalous-pixel ratios range from 0.34\% for \textit{screw} to 14.5\% for \textit{metal\_nut}, which is a 43-fold spread.
 
-The combined result is unambiguous: a single detection threshold applied uniformly across all 15 categories is statistically indefensible. This finding motivated our decision to tune preprocessing and model hyperparameters separately per category using Optuna.
+The combined result provides strong evidence that the categories differ substantially in defect scale and anomalous-pixel prevalence. Although these tests do not directly determine the optimal anomaly-score threshold for each model, the observed heterogeneity motivated us to investigate category-specific operating points, preprocessing choices, and model configurations rather than assuming that one global configuration would necessarily suit all 15 categories. This motivation contributed to the subsequent Optuna experiments.
 
 \subsection{Defect Shape, Morphology, and Spatial Location}
 \label{sec:morphology}
@@ -181,9 +165,9 @@ At image level, the task is binary classification. Given a test image, we want t
 F_1 = 2 \cdot \frac{P \cdot R}{P + R}, \quad \text{where} \quad P = \frac{\mathrm{TP}}{\mathrm{TP} + \mathrm{FP}} \quad \text{and} \quad R = \frac{\mathrm{TP}}{\mathrm{TP} + \mathrm{FN}}.
 \]
 
-Here, a true positive (TP) is a defective image that the model correctly flags, a false positive (FP) is a normal image that the model incorrectly flags, and a false negative (FN) is a defective image that the model misses. The denominator of precision contains only images that the model actually flagged. It does not involve the large pool of correctly-accepted normal images. This makes F1 immune to the accuracy paradox. The image-level classification threshold is derived exclusively from normal validation images, as described in Section~\ref{sec:leakage}.
+Here, a true positive (TP) is a defective image that the model correctly flags, a false positive (FP) is a normal image that the model incorrectly flags, and a false negative (FN) is a defective image that the model misses. The denominator of precision contains only images that the model actually flagged, so F1 avoids inflation from true negatives; nevertheless, high defective prevalence can still give a trivial all-defective classifier a high F1. The image-level classification threshold is derived exclusively from normal validation images, as described in Section~\ref{sec:leakage}.
 
-We complement the F1 score with the full precision-recall curve, which traces the trade-off across all possible threshold values. The area under this curve summarises ranking quality in a single number that is fully sensitive to the imbalance between normal and defective images.
+We complement the F1 score with the full precision-recall curve, which traces the trade-off across all possible threshold values. The area under this curve summarises ranking quality in a single number that is fully sensitive to the imbalance between normal and defective images. Its no-skill reference is the defective-image prevalence $p$. Because the test sets are themselves 40--84\% defective, we also report the F1 of the trivial rule that flags every image as defective, $F_1=2p/(1+p)$; this makes the confusion counts essential when interpreting operating-point F1.
 
 \subsection{Pixel-Level: AUPIMO}
 
@@ -215,7 +199,7 @@ The integration bounds $L = 10^{-5}$ and $U = 10^{-4}$ are chosen to reflect the
 
 \subsection{Threshold Sensitivity Curves}
 
-For each model, we also report threshold sensitivity curves that show how F1 and AUPIMO evolve as the classification threshold $t$ varies. These curves reveal whether a model's performance is stable across a range of thresholds or collapses abruptly at a specific threshold value. A robust threshold curve is preferable in deployment, because real production conditions always involve some drift in image characteristics over time.
+For each model, we also report threshold trade-off curves showing how precision and recall vary as the decision threshold $t$ changes. These curves help illustrate the trade-off between detecting more anomalies and avoiding false alarms across different operating thresholds. We additionally mark the threshold at which precision and recall are approximately equal as a descriptive breakpoint. This breakpoint is shown only for retrospective interpretation of the evaluation curve and is not used as the deployed classification threshold; final classification uses the operating threshold calibrated from the held-out normal validation set.
 
 \section{Preprocessing Pipeline}
 \label{sec:preprocessing}
@@ -226,7 +210,7 @@ All images pass through a standardised preprocessing pipeline before entering an
 
 We load every image using PIL and immediately convert it to three-channel RGB. This step is mandatory because MVTec images exist in four distinct formats: RGB JPEG, RGBA PNG, 8-bit greyscale PNG, and palette-mapped PNG. Without explicit conversion, feeding a 1-channel greyscale image to a network expecting 3 channels would produce a shape mismatch.
 
-We resize all images to $256 \times 256$ pixels using LANCZOS resampling. LANCZOS implements a windowed sinc function (mathematically defined as $\text{sinc}(x) = \frac{\sin(x)}{x}$), which acts as an ideal mathematical low-pass filter. This mathematically minimises aliasing artefacts while preserving edge sharpness and high-frequency texture detail. We chose it specifically over bilinear or bicubic resampling because some defects are microscopic, and a lower-quality interpolation filter could destroy that signal entirely during downscaling.
+Model input resolution is pipeline-specific: PatchCore operates at $256 \times 256$, while the CAE converts images to RGB and uses LANCZOS resampling to operate and score at $128 \times 128$. For shared pixel evaluation, both continuous anomaly maps are converted to the canonical $256 \times 256$ resolution before comparison with ground-truth masks. LANCZOS implements a windowed sinc function (mathematically defined as $\text{sinc}(x) = \frac{\sin(x)}{x}$), which acts as an ideal mathematical low-pass filter and limits aliasing while preserving edge detail during CAE input downscaling.
 
 Ground-truth defect masks are resized separately using nearest-neighbour interpolation. We deliberately do not use anti-aliasing filters for masks because anti-aliasing would blur the binary mask boundaries, introducing fractional pixel values at the edges of annotated defect regions. After resizing, we binarise all masks at the threshold 127 to ensure strict binary arrays.
 
@@ -236,14 +220,21 @@ We apply data augmentation to the training set only, in order to increase the ef
 
 For texture categories, we apply heavy spatial augmentation. We randomly rotate images in 90 degree increments, flip them horizontally and vertically, and apply scale jitter by cropping a region sized between 80\% and 100\% of the original image and resizing it back to the target resolution. We additionally vary brightness and contrast by up to 20\%. Every spatially augmented version of a normal texture image is a genuinely valid training example, because texture surfaces are statistically indistinguishable at arbitrary orientations.
 
-For object categories, we apply photometric augmentation only. We vary brightness, contrast, and saturation each by up to 10\% and add Gaussian noise with standard deviation $\sigma = 0.02$. We do not apply any spatial transformation, because an object's orientation on the inspection conveyor is part of its normal appearance, and training on arbitrarily oriented objects would destroy the model's ability to detect orientation-based anomalies.
+For object categories, we primarily apply photometric augmentation. We vary
+brightness, contrast, and saturation each by up to 10\% and add Gaussian noise
+with standard deviation $\sigma = 0.02$. Spatial augmentation is avoided for
+categories whose normal pose is approximately fixed, because arbitrary rotations
+could destroy orientation information that is part of the normal appearance.
+Categories such as \textit{screw}, \textit{hazelnut}, and \textit{metal\_nut},
+whose benchmark images naturally include rotational variation, are exceptions
+to this general orientation assumption.
 
 \subsection{Foreground Extraction}
 \label{sec:foreground}
 
-Industrial inspection images always include a background such as a conveyor belt surface or a mounting jig. This background wastes model capacity and creates a source of false positives. Any slight variation in the background, like a shadow or a piece of dust, generates a reconstruction error that the model may misidentify as a product defect.
+For object categories, industrial inspection images often include background regions such as a supporting surface or mounting area. Such regions can potentially contribute irrelevant variation and false-positive anomaly responses. We therefore implemented foreground extraction as an optional preprocessing step and investigated it during the exploratory hyperparameter-optimisation experiments. It was not enabled in the final baseline comparison reported in Section~\ref{sec:evaluation}.
 
-We remove backgrounds using a two-stage classical computer vision pipeline. In the first stage, we apply Otsu's global thresholding method \cite{otsu1979} to the greyscale version of the image. Otsu's method finds the threshold $T^*$ that maximises the between-class variance:
+When foreground extraction is enabled, backgrounds are removed using a two-stage classical computer vision pipeline. In the first stage, we apply Otsu's global thresholding method \cite{otsu1979} to the greyscale version of the image. Otsu's method finds the threshold $T^*$ that maximises the between-class variance:
 
 \[
 \sigma_B^2(T) = w_0(T) \cdot w_1(T) \cdot \left[\mu_0(T) - \mu_1(T)\right]^2,
@@ -264,12 +255,59 @@ The Contrast Limited Adaptive Histogram Equalization (CLAHE) divides the image i
 
 The Gaussian Blur step applies a $5 \times 5$ Gaussian kernel to the image before it enters the model. The blur acts as a low-pass filter that suppresses high-frequency sensor noise and microscopic surface irregularities. The risk is that blurring destroys fine-grained detail, and if the defects being targeted are microscopic, the blur may erase them from the image before the model can detect them.
 
-We observed during initial experiments that applying both CLAHE and Gaussian Blur together can introduce visual artifacts. CLAHE amplifies high-frequency detail, and Gaussian Blur then smears it into a cloud of intermediate-frequency patterns that neither the normal nor the defective training distribution resembles. We therefore let the Optuna sweep determine the combination of these steps that maximises pixel AUROC for each category individually.
+We observed during initial experiments that applying both CLAHE and Gaussian Blur together can introduce visual artifacts. CLAHE amplifies high-frequency detail, and Gaussian Blur then smears it into a cloud of intermediate-frequency patterns that neither the normal nor the defective training distribution resembles. We therefore included these preprocessing choices in the exploratory Optuna sweeps, allowing their usefulness to be assessed separately for each model and category. As described in Section~\ref{sec:optuna}, the optimisation objective was pixel-level AUROC for PatchCore and pixel-level AUPIMO for the Keras CAE.
+
+The final results in Table~\ref{tab:final_results} use only the baseline configurations below; no tuned preprocessing settings are mixed into that comparison.
+
+\begin{table}[H]
+\centering
+\caption{Preprocessing and scoring configuration active for the final baselines.}
+\label{tab:baseline-config}
+\footnotesize
+\renewcommand{\arraystretch}{1.0}
+\begin{tabular}{
+    >{\raggedright\arraybackslash}p{0.18\textwidth}
+    >{\raggedright\arraybackslash}p{0.36\textwidth}
+    >{\raggedright\arraybackslash}p{0.36\textwidth}
+}
+\toprule
+\textbf{Setting} &
+\textbf{Keras CAE baseline} &
+\textbf{PatchCore baseline} \\
+\midrule
+Input &
+RGB; LANCZOS resize to $128^2$; scale to $[0,1]$ &
+Three-channel input; antialiased resize to $256^2$; ImageNet normalisation; no centre crop \\
+\addlinespace[0.4em]
+Training augmentation &
+One category-aware augmented copy per training image &
+None \\
+\addlinespace[0.4em]
+Model input / training &
+Overlapping $64^2$ crops, stride 32; masked-image modelling ratio 0.25 &
+Frozen ImageNet-pretrained ResNet-18 feature extractor \\
+\addlinespace[0.4em]
+Optional preprocessing &
+Foreground mask off; CLAHE off; input Gaussian blur off &
+Foreground mask off; CLAHE off; input Gaussian blur off \\
+\addlinespace[0.4em]
+Anomaly-map post-processing &
+Reconstruction-error Gaussian smoothing, $\sigma=2$ &
+Upsampling to input size and Gaussian smoothing, $\sigma=4$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The final comparison standardises the data split, validation-based operating-threshold calibration, test samples, and evaluation metrics, while retaining each model's defined baseline input and modelling configuration. Consequently, the results should be interpreted as a comparison of the complete baseline systems rather than as a controlled ablation isolating the intrinsic effect of model architecture alone.
 
 \section{Exploratory Autoencoder Development}
 \label{sec:exploration}
 
-Our first model development phase consisted of iterative notebook-based experiments. We focused exclusively on the \textit{bottle} category to maintain a consistent comparison base. The training set contained 167 normal images, the validation set 42 normal images, and the test set 83 images. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
+Our first model development phase consisted of iterative notebook-based experiments. The primary shared development sequence focused on the \textit{bottle} category
+to maintain a consistent comparison base. A parallel exploratory study on the
+\textit{screw} category is documented separately in Section~\ref{subsec:screw-exploration}. Under the intended deterministic 85\%/15\% protocol, its 209 normal development images are divided into 177 training images and 32 validation images; the official test set contains 83 images and remains separate. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
+
+Milestones 1--4 were repeatedly compared using performance on that bottle test set. They are therefore exploratory and test-informed rather than unbiased final estimates. Because those comparisons partly informed the final CAE architecture, the final bottle result must be interpreted with the same methodological caution as the test-informed Optuna experiments described later.
 
 We developed several autoencoder variants over the course of the exploration phase. We present four representative milestone architectures that capture the key turning points in our understanding, followed by the final production model as a fifth architecture. We made the decision not to discuss every single iteration to avoid obscuring the main conceptual arc of the project.
 
@@ -288,19 +326,24 @@ Our first architecture, Milestone 1, used a symmetric three-stage convolutional 
 
 \begin{center}
 \footnotesize
-\begin{tabular}{ccccccc}
+\renewcommand{\arraystretch}{1.1}
+
+\begin{tabular*}{0.78\linewidth}{@{\extracolsep{\fill}}ccccccc@{}}
 \toprule
-\small Input & $\rightarrow$ & \small Enc-1 & $\rightarrow$ & \small Enc-2 & $\rightarrow$ & \small Bottleneck \\
-\small $256{\times}256{\times}3$ & & \small Conv(32) & & \small Conv(64) & & \small $128{\times}32{\times}32$ \\
+Input & $\rightarrow$ & Enc-1 & $\rightarrow$ & Enc-2 & $\rightarrow$ & Bottleneck \\
+$256{\times}256{\times}3$ & & Conv(32) & & Conv(64) & & $128{\times}32{\times}32$ \\
 \bottomrule
-\end{tabular}
-\newline
-\begin{tabular}{ccccccc}
+\end{tabular*}
+
+\vspace{0.45em}
+
+\begin{tabular*}{0.78\linewidth}{@{\extracolsep{\fill}}ccccccc@{}}
 \toprule
-\small Bottleneck & $\rightarrow$ & \small Dec-2 & $\rightarrow$ & \small Dec-1 & $\rightarrow$ & \small Output \\
-\small $128{\times}32{\times}32$ & & \small ConvT(64) & & \small ConvT(32) & & \small $256{\times}256{\times}3$ \\
+Bottleneck & $\rightarrow$ & Dec-2 & $\rightarrow$ & Dec-1 & $\rightarrow$ & Output \\
+$128{\times}32{\times}32$ & & ConvT(64) & & ConvT(32) & & $256{\times}256{\times}3$ \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
+
 \end{center}
 
 We trained with mean squared error (MSE) loss and the Adam optimiser. We extended the training progressively because validation loss was still decreasing at the end of each run, until we achieved the lowest validation reconstruction MSE of the group at 200 epochs.
@@ -312,7 +355,7 @@ From these initial experiments, we discovered the core failure mode of autoencod
 \subsection{Milestone 2: First Masked Restoration Experiment}
 \label{sec:ae2}
 
-The identity-mapping problem, where the autoencoder learns to copy its input rather than learning the structure of normal images, suggested that the training task itself needed to change. We introduced our first masking strategy in Milestone 2, keeping the same three-stage architecture but replacing the clean reconstruction objective with a masked restoration task. During training, we randomly selected two non-overlapping $32 \times 32$ patches in the input image and replaced them with the mean colour of the image. The model could no longer copy its input, as it had to use the surrounding context to infer what should appear in the masked areas.
+The identity-mapping problem, where the autoencoder learns to copy its input rather than learning the structure of normal images, suggested that the training task itself needed to change. We introduced our first masking strategy in Milestone 2, keeping the same three-stage architecture but replacing the clean reconstruction objective with a masked restoration task inspired by masked image modelling \cite{he2022mae}. During training, we randomly selected two non-overlapping $32 \times 32$ patches in the input image and replaced them with the mean colour of the image. The model could no longer copy its input, as it had to use the surrounding context to infer what should appear in the masked areas.
 
 We evaluated the trained checkpoint using a clean-input scoring protocol where we fed the original unmasked image through the encoder, and a masked-restoration scoring protocol where we tiled the image with a fixed set of deterministic masks.
 
@@ -340,25 +383,29 @@ Milestone 3 introduced a fourth encoder stage that reduces the latent spatial re
 
 \begin{center}
 \footnotesize
-\begin{tabular}{ccccccccc}
-\toprule
-\small In & $\to$ & \small E-1 & $\to$ & \small E-2 & $\to$ & \small E-3 & $\to$ & \small Bottleneck \\
-\small $256^2{\times}3$ & & \small Conv(32) & & \small Conv(64) & & \small Conv(128) & & \small $128{\times}16{\times}16$ \\
-\bottomrule
-\end{tabular}
+\renewcommand{\arraystretch}{1.1}
 
-\vspace{0.2em}
-\begin{tabular}{ccccccccc}
+\begin{tabular*}{0.82\linewidth}{@{\extracolsep{\fill}}ccccccccc@{}}
 \toprule
-\small Bottleneck & $\to$ & \small D-3 & $\to$ & \small D-2 & $\to$ & \small D-1 & $\to$ & \small Out \\
-\small $128{\times}16{\times}16$ & & \small ConvT(128) & & \small ConvT(64) & & \small ConvT(32) & & \small $256^2{\times}3$ \\
+In & $\rightarrow$ & E-1 & $\rightarrow$ & E-2 & $\rightarrow$ & E-3 & $\rightarrow$ & Bottleneck \\
+$256^2{\times}3$ & & Conv(32) & & Conv(64) & & Conv(128) & & $128{\times}16{\times}16$ \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
+
+\vspace{0.45em}
+
+\begin{tabular*}{0.82\linewidth}{@{\extracolsep{\fill}}ccccccccc@{}}
+\toprule
+Bottleneck & $\rightarrow$ & D-3 & $\rightarrow$ & D-2 & $\rightarrow$ & D-1 & $\rightarrow$ & Out \\
+$128{\times}16{\times}16$ & & ConvT(128) & & ConvT(64) & & ConvT(32) & & $256^2{\times}3$ \\
+\bottomrule
+\end{tabular*}
+
 \end{center}
 
 We kept the MSE loss, clean-input scoring, and the same 200-epoch training schedule. The result was an AUROC of 0.877 and 49 of 63 defects detected. This was the best autoencoder result of the exploration phase by a wide margin.
 
-These results confirmed that stronger compression is the correct architectural lever for reconstruction-based anomaly detection. By squeezing the representation into a $16 \times 16$ spatial grid, we forced the model to discard fine-grained local texture detail and retain only the coarser structural grammar of normal bottles. Anomalous structures cannot be faithfully reconstructed from this highly compressed representation, which in turn produces a visible reconstruction error.
+These results confirmed that stronger compression is the correct architectural lever for our reconstruction approach to anomaly detection. By squeezing the representation into a $16 \times 16$ spatial grid, we forced the model to discard fine-grained local texture detail and retain only the coarser structural grammar of normal bottles. Anomalous structures cannot be faithfully reconstructed from this highly compressed representation, which in turn produces a visible reconstruction error.
 
 We also tested extending the training to 400 epochs, and narrowing the bottleneck further to 32 channels. Both variants performed worse than Milestone 3. Longer training caused the model to over-generalise, and excessive bottleneck narrowing prevented faithful reconstruction even of normal images.
 
@@ -381,52 +428,68 @@ This simple pretrained baseline achieved an AUROC of 0.9881, a PR-AUC of 0.9960,
 
 This result starkly contrasted with our best autoencoder configuration at the time (AUROC 0.877, 49/63 defects). It provided the decisive proof that frozen ImageNet features dramatically outperform models trained from scratch for this specific task, directly motivating our subsequent adoption of the full PatchCore architecture (Section~\ref{sec:patchcore}).
 
+\input{sections/screw_exploration}
+
 \section{The Final Keras CAE (Milestone 5)}
 \label{sec:cae}
 
-Based on the four milestones, we designed the final production autoencoder in Keras. This model incorporates the main successful ideas while addressing the remaining weaknesses identified during the exploration phase. We structured the Keras code using a sequential model setup to ensure clean layer definitions and manageable state.
+Based primarily on the four bottle-category milestones, we designed the final production autoencoder in Keras. This model incorporates the main successful ideas while addressing the remaining weaknesses identified during the exploration phase. We structured the Keras code using a sequential model setup to ensure clean layer definitions and manageable state.
 
 \subsection{Architecture and Activation Layers}
 
-The encoder uses four stride-2 convolutional stages with $4 \times 4$ kernels and a channel progression of $3 \to 32 \to 64 \to 128 \to 256$. The decoder mirrors the encoder with four transposed-convolution stages of matching channel widths. A final $1 \times 1$ convolutional layer reduces the bottleneck from 256 to 32 channels while preserving the $8 \times 8$ spatial grid. This fully convolutional bottleneck contains $32 \times 8 \times 8 = 2,048$ values, operating on $128 \times 128$ input images to give a compression ratio of approximately 24.
+The CAE pipeline first converts each image to RGB and resizes the full image to $128 \times 128$. Before entering the network, each image is divided into overlapping $64 \times 64$ crops with stride 32. The encoder therefore operates on $64 \times 64$ crops and uses four stride-2 convolutional stages with $4 \times 4$ kernels and a channel progression of $3 \to 32 \to 64 \to 128 \to 256$. The decoder mirrors this structure with four transposed-convolution stages. A final $3 \times 3$ convolutional layer in the encoder reduces the bottleneck channel count from 256 to 32 while preserving the $4 \times 4$ spatial grid. The fully convolutional bottleneck therefore contains $32 \times 4 \times 4 = 512$ values. Relative to the $64 \times 64 \times 3$ network input crop, this gives a compression ratio of 24. After inference, the reconstructed overlapping crops are stitched back together to obtain the full $128 \times 128$ reconstruction used for anomaly scoring.
 
 \begin{center}
 \footnotesize
-\begin{tabular}{ccccccccccc}
-\toprule
-\small In & & \small E-1 & & \small E-2 & & \small E-3 & & \small E-4 & & \small Bottleneck \\
-\small $128^2{\!\times\!}3$ & $\to$ & \small Conv(32) & $\to$ & \small Conv(64) & $\to$ & \small Conv(128) & $\to$ & \small Conv(256) & $\to$ & \small $8{\times}8{\times}32$ \\
-\small & & \small BN+ELU & & \small BN+ELU & & \small BN+ELU & & \small BN+ELU & & \small FCAE \\
-\bottomrule
-\end{tabular}
+\renewcommand{\arraystretch}{1.15}
 
-\vspace{0.2em}
-\begin{tabular}{ccccccccccc}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccccccccc@{}}
 \toprule
-\small Bottleneck & & \small D-4 & & \small D-3 & & \small D-2 & & \small D-1 & & \small Out \\
-\small $8{\times}8{\times}32$ & $\to$ & \small ConvT(256) & $\to$ & \small ConvT(128) & $\to$ & \small ConvT(64) & $\to$ & \small ConvT(32) & $\to$ & \small $128^2{\!\times\!}3$ \\
-\small FCAE & & \small BN+ELU & & \small BN+ELU & & \small BN+ELU & & \small Sigmoid & & \\
+In & & E-1 & & E-2 & & E-3 & & E-4 & & Bottleneck \\
+$64^2{\times}3$ & $\to$ &
+Conv(32) & $\to$ &
+Conv(64) & $\to$ &
+Conv(128) & $\to$ &
+Conv(256) & $\to$ &
+$4{\times}4{\times}32$ \\
+& & BN+ELU & & BN+ELU & & BN+ELU & & BN+ELU & & FCAE \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
+
+\vspace{0.6em}
+
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccccccccc@{}}
+\toprule
+Bottleneck & & D-4 & & D-3 & & D-2 & & D-1 & & Out \\
+$4{\times}4{\times}32$ & $\to$ &
+ConvT(256) & $\to$ &
+ConvT(128) & $\to$ &
+ConvT(64) & $\to$ &
+ConvT(32) & $\to$ &
+$64^2{\times}3$ \\
+FCAE & & BN+ELU & & BN+ELU & & BN+ELU & & Sigmoid & & \\
+\bottomrule
+\end{tabular*}
+
 \end{center}
 
-By calculating the spatial dimensions and channel depths, we can trace the total number of activations (or ``neurons') passed through each stage of the network. The $128 \times 128$ RGB input contains 49,152 values. As the spatial dimensions halve and channels double with each stride-2 convolution, the encoder activations progress from 131,072 (E-1) $\to$ 65,536 (E-2) $\to$ 32,768 (E-3) $\to$ 16,384 (E-4), finally condensing into just 2,048 neurons in the $8 \times 8 \times 32$ bottleneck. The decoder then expands this compressed representation, peaking at 524,288 neurons in D-1 before collapsing back to the 49,152 output pixels.
+For each $64 \times 64$ RGB crop, the input contains 12,288 values. As the spatial dimensions halve and the channel count increases through the four stride-2 encoder stages, the activations progress from 32,768 (E-1) $\to$ 16,384 (E-2) $\to$ 8,192 (E-3) $\to$ 4,096 (E-4), before reaching the $4 \times 4 \times 32 = 512$-value bottleneck. The decoder then expands this representation back to a $64 \times 64 \times 3$ reconstructed crop. The overlapping reconstructed crops are subsequently stitched together to form the complete $128 \times 128$ reconstructed image.
 
-We moved away from the early ReLU and LeakyReLU activations and used Exponential Linear Unit (ELU) activations throughout the network. The ReLU sets its output to zero for all negative inputs, which can cause neurons that consistently receive negative activations to produce zero gradient permanently. ELU avoids this by saturating smoothly toward a negative value for negative inputs, ensuring that the gradient always flows. We use Batch Normalisation after every convolution, which re-centres and re-scales activations within each mini-batch. All convolutional layers omit the bias term, because the Batch Normalisation layer's learnable shift parameter subsumes any constant bias.
+We moved away from the early ReLU and LeakyReLU activations and used Exponential Linear Unit (ELU) activations throughout the network \cite{clevert2016}. The ReLU sets its output to zero for all negative inputs, which can cause neurons that consistently receive negative activations to produce zero gradient permanently. ELU avoids this by saturating smoothly toward a negative value for negative inputs, ensuring that the gradient always flows. We use Batch Normalisation after every convolution, which re-centres and re-scales activations within each mini-batch. All convolutional layers omit the bias term, because the Batch Normalisation layer's learnable shift parameter subsumes any constant bias.
 
-The bottleneck is fully convolutional. Rather than flattening the feature maps into a 1D vector, we apply an additional $1 \times 1$ convolution that reduces the channel count while retaining the $8 \times 8$ spatial grid. During our manual testing on the bottle dataset, we actually tried using a central flatten layer followed by a dense layer for the bottleneck. We observed that this produced a good binary classification score for whether the image as a whole was anomalous or not, but it completely scrambled the spatial localisation map. The decoder had to re-learn coordinate relationships from the flattened vector from scratch. By preserving the spatial topology in the fully convolutional bottleneck, we allowed the decoder to maintain and refine spatial relationships during reconstruction.
+The bottleneck is fully convolutional. Rather than flattening the feature maps into a 1D vector, we apply an additional $3 \times 3$ convolution that reduces the channel count from 256 to 32 while retaining the $4 \times 4$ spatial grid. During our manual testing on the bottle dataset, we also experimented with a central flatten layer followed by a dense bottleneck. This removed the explicit spatial organisation of the latent representation and degraded localisation quality. By preserving the spatial topology in the fully convolutional bottleneck, the decoder retains spatial relationships throughout reconstruction.
 
 \subsection{Masked Image Modelling and Randomisation}
 \label{sec:mim}
 
-We replaced the coarse two-patch masking of Milestone 2 with a principled Masked Image Modelling strategy, implemented as a custom randomisation layer in the sequential Keras pipeline. The layer divides the image into a regular grid of non-overlapping $16 \times 16$ patches. At each training step, the randomisation layer randomly selects 25\% of these patches and sets their pixel values to zero. The encoder receives the masked image, and the training target is the original unmasked image.
+We replaced the coarse two-patch masking of Milestone 2 with a Masked Image Modelling strategy applied dynamically during training. Each $64 \times 64$ training crop is divided into a regular grid of non-overlapping $8 \times 8$ patches, giving 64 candidate patches per crop. At each training step, 25\% of these patches, corresponding to 16 patches, are randomly selected and set to zero. The masked crop is passed to the CAE as input, while the original unmasked crop serves as the reconstruction target.
 
-The random patch selection is re-drawn independently for every image and every training step, ensuring that no patch position is consistently masked. At inference time, the randomisation layer is disabled, and the test image is passed through the network unmodified.
+The masking pattern is re-sampled during training so that different regions are hidden across training iterations. During validation and test inference, no masking is applied: clean $64 \times 64$ crops are passed directly through the trained CAE, and the reconstructed crops are then stitched back together to form the full reconstructed image.
 
 \subsection{Combined SSIM and MSE Loss}
 \label{sec:loss}
 
-We replaced the pure MSE training loss with a combination of the structural similarity index measure (SSIM) and MSE. The combined loss is defined as:
+We replaced the pure MSE training loss with a combination of the structural similarity index measure (SSIM) \cite{wang2004ssim} and MSE. The combined loss is defined as:
 
 \[
 \mathcal{L}(x, \hat{x}) = \alpha \cdot (1 - \text{SSIM}(x, \hat{x})) + (1 - \alpha) \cdot \text{MSE}(x, \hat{x}), \quad \alpha = 0.84.
@@ -436,11 +499,13 @@ SSIM evaluates image quality through three complementary local statistics comput
 
 We note that the original publication by Bergmann et al. \cite{bergmann2019ssim} evaluated SSIM in combination with the L1 loss (Mean Absolute Error) and L2 loss (MSE) and recommended L1 for their specific configuration. We implemented MSE in combination with SSIM because it provided excellent convergence in our Keras pipeline, covering absolute photometric errors while SSIM handles structural differences. The weight parameter $\alpha = 0.84$ controls the balance between structural fidelity and per-pixel accuracy.
 
-\subsection{Optimiser and Callbacks}
+Inference scoring is distinct from this training loss. For each $128 \times 128$ image, the CAE forms a pixel anomaly map as $0.84(1-\mathrm{SSIM})+0.16\,\mathrm{MAE}$, smooths it with a Gaussian filter ($\sigma=2$), and uses the mean of the highest 0.2\% of map values (32 pixels) as the image score. This pooling fraction is substantially smaller than the dataset's median defect area of 1.54\%, so the image score deliberately focuses on the strongest local anomaly evidence rather than averaging the reconstruction error across the full defect footprint or the whole image.
+
+\subsection{Optimiser and Training Control}
 
 We moved from the standard Adam optimiser to the AdamW optimiser \cite{loshchilov2019adamw}. Standard Adam incorporates weight decay by adding it to the gradient before the gradient enters the adaptive moment estimates. This causes weights with large gradient histories to be under-regularised. AdamW decouples the weight decay and applies it as a direct multiplicative shrinkage to each weight independently, ensuring that every weight receives exactly proportional regularisation.
 
-The training process is governed by a set of Keras callbacks that monitor the validation reconstruction loss. We use the \textit{EarlyStopping} callback with a patience of 20 epochs to halt training when the model stops improving, preventing over-generalisation. This is paired with the \textit{ReduceLROnPlateau} callback, which halves the learning rate when the validation loss has not improved for 5 consecutive epochs, allowing the optimiser to settle into narrow local minima. Finally, the \textit{ModelCheckpoint} callback ensures that the network weights from the epoch with the lowest validation loss are restored as the final model, regardless of when the early stopping condition was triggered.
+The training process uses a custom training loop that monitors the validation reconstruction loss and implements early stopping and learning-rate reduction directly. Training is stopped when the validation loss fails to improve for 20 consecutive epochs. Independently, if the validation loss does not improve for 5 consecutive epochs, the learning rate is halved to allow finer optimisation. Whenever a new lowest validation loss is observed, the corresponding model weights are retained in memory. At the end of training, these best-performing weights are restored, ensuring that the final model corresponds to the lowest observed validation reconstruction loss rather than simply the final training epoch.
 
 \section{PatchCore Baseline}
 \label{sec:patchcore}
@@ -453,102 +518,69 @@ PatchCore operates by passing all normal training images through a frozen pretra
 
 To manage the memory footprint, PatchCore applies a greedy coreset subsampling step that reduces the memory bank to a configurable fraction of its original size while maintaining good geometric coverage of the distribution. At inference time, each patch feature extracted from a test image is scored by its Euclidean distance to the nearest neighbour in the memory bank. A patch far from all normal patches receives a high anomaly score.
 
+The image score is the largest nearest-memory-bank patch distance multiplied by PatchCore's neighbourhood-density weight, using nine neighbours in the final baseline; it is computed from patch features rather than by pooling the final anomaly map. Together with the CAE's top-error pooling, this emphasises local high-anomaly evidence instead of averaging over the whole image, which is appropriate given the median defect area of only 1.54\%.
+
 \subsection{Backbone: ResNet-18}
 \label{sec:backbone}
 
 We use ResNet-18 pretrained on ImageNet as the PatchCore backbone. The larger Wide-ResNet-50-2 backbone triggered repeated out-of-memory exceptions during automated Optuna sweeps. These failures caused the Optuna study to miss entire hyperparameter configurations. We deprecated Wide-ResNet-50-2 and hardcoded ResNet-18 for all sweep runs to ensure stable, reproducible execution.
 
-\subsection{Zero-Leakage Threshold Calibration}
+\subsection{Data Split and Threshold Calibration}
 \label{sec:leakage}
 
-The default evaluation pipeline optimises the classification threshold by finding the value that maximises the F1 score on the test set. Because the test set contains labelled defective images, this is a form of leakage. We intercept the raw continuous anomaly scores before any threshold is applied, and compute the classification threshold manually using only normal images. We set the threshold to the 95th percentile of the validation anomaly scores, and apply it unchanged to all test images to produce the final binary predictions.
+For every category, we deterministically divide the official normal training partition into 85\% model-training data and 15\% normal validation data using random seed 42. The CAE learns its weights from the 85\% subset, while PatchCore builds its feature memory bank and coreset from the same 85\% subset. The 15\% subset is held out from both models. It is used for CAE early stopping and for calibrating each model's image-level operating threshold. We set that threshold from the distribution of normal validation scores and then freeze it before test inference. The official test images, labels, and masks are used only for final metrics and qualitative overlays.
+
+AUPIMO requires a careful distinction. It is not the deployed image-level operating threshold. During final evaluation, AUPIMO uses normal test anomaly maps to construct its shared false-positive-rate axis and anomalous test masks to calculate per-image recall. This use of the test set is intrinsic to computing the final metric and does not select model settings. The FPR bounds $(10^{-5},10^{-4})$ and numerical threshold resolution are fixed before the test run. No AUPIMO result may be fed back into training or model choice during development.
+
+The evaluation setup is therefore as follows:
+
+\begin{enumerate}
+    \item \textbf{Identical data partitions.} Both models use the same exact image lists: 85\% of the official normal training images for fitting and 15\% for validation and calibration. The split is generated once with random seed 42 and reused by both pipelines. For \textit{bottle}, this gives 177 fitting images and 32 validation images.
+    \item \textbf{Validation-derived image thresholds.} Each model produces image-level anomaly scores for the same 15\% validation images. Its deployed operating threshold is calculated only from those normal validation scores and is frozen before the test set is opened. Normal test scores must not determine this threshold.
+    \item \textbf{Identical final test set and reporting.} Both models are evaluated on the same ordered test-image list. For \textit{bottle}, this is the complete set of 83 official test images. We report the confusion counts TP, FP, and FN together with precision, recall, and F1, rather than reporting F1 alone.
+    \item \textbf{Canonical pixel resolution.} Before pixel metrics are compared, both models' anomaly maps and ground-truth masks are converted to $256 \times 256$. Continuous anomaly maps are resized with bilinear interpolation, while binary masks use nearest-neighbour interpolation and remain binary.
+    \item \textbf{Identical metric implementations.} Pixel AUROC is computed through one shared function for both models. AUPIMO is computed through the same Anomalib full-map implementation \cite{anomalib} for both models, using complete two-dimensional anomaly maps and masks, fixed FPR bounds $(10^{-5},10^{-4})$, and 50,000 thresholds. Alternative FPR bounds, pooled-pixel substitutes, and fallback metric values are not permitted; a failed metric calculation must be reported as an error.
+    \item \textbf{Separation of threshold roles.} The image-classification operating threshold comes from the 15\% validation set. AUPIMO's shared FPR axis is instead calculated from normal images in the final test/evaluation set because this is part of AUPIMO's metric definition. These operations serve different purposes and must not be conflated.
+\end{enumerate}
 
 \section{Hyperparameter Optimisation with Optuna}
 \label{sec:optuna}
 
-Both of our models expose a set of hyperparameters that meaningfully affect their performance. Given the sheer size of the search space, doing this manually or via an exhaustive grid search was out of the question. We therefore automated the entire hyperparameter search using Optuna \cite{akiba2019optuna}.
+The EDA showed substantial differences between object and texture categories, so we investigated whether category-specific hyperparameter optimisation could improve both model families. Given the size of the search space, manual experimentation or exhaustive grid search was impractical. We therefore used Optuna \cite{akiba2019optuna} as an experimental branch of the project rather than assuming that one configuration would suit every category.
 
 \subsection{How Optuna Works (The TPE Algorithm)}
 
-Optuna operates using a core algorithm called Tree-structured Parzen Estimator (TPE), which is a form of Bayesian optimisation. Unlike a naive random search that just samples the parameter space uniformly, TPE actually learns from past trials. It builds two separate probability distributions: one for hyperparameters that yielded good results, and another for those that performed poorly. By constantly comparing these two distributions, the algorithm mathematically deduces which regions of the parameter space are most promising and focuses its sampling there. In practice, this means Optuna homes in on the optimal configuration much faster and far more efficiently than standard methods.
+Optuna uses a Tree-structured Parzen Estimator (TPE), a form of Bayesian optimisation. TPE learns from completed trials by modelling promising and unpromising regions of the search space, then prioritises configurations that are more likely to improve the objective. This made it suitable for testing several interacting architectural and preprocessing choices within our limited compute budget.
 
 \subsection{Search Spaces for PatchCore and Keras CAE}
 
-For PatchCore, we optimised six distinct hyperparameters per category. The \textit{feature\_layers} parameter controls which intermediate layers of the ResNet-18 backbone contribute to the memory bank (exploring L2+L3, L3+L4, and L2+L3+L4). The \textit{coreset\_sampling\_ratio}, which determines how many features are retained in the memory bank, was searched on a log-uniform scale between 0.001 and 0.2. The $k$ value for nearest-neighbour scoring (\textit{num\_neighbors}) was swept in the integer range of 1 to 15. Finally, we exposed three binary flags (\textit{use\_clahe}, \textit{use\_gaussian\_blur}, and \textit{use\_foreground\_mask}) to let the optimiser toggle optional preprocessing steps.
+For PatchCore, we explored which ResNet-18 feature layers contributed to the memory bank, coreset sampling ratios between 0.001 and 0.2, nearest-neighbour values from 1 to 15, and optional CLAHE, Gaussian blur, and foreground masking. For the Keras CAE, we explored bottleneck dimensions from 16 to 128 channels together with the same optional preprocessing choices. The studies were configured for 30 trials per category for each model family across six representative categories---\textit{bottle}, \textit{cable}, \textit{capsule}, \textit{carpet}, \textit{grid}, and \textit{hazelnut}---giving up to 360 planned trials, although hardware failures interrupted some runs.
 
-For the Keras CAE, we similarly allowed Optuna to toggle the preprocessing flags, but we also exposed the \textit{latent\_dim} parameter (searching from 16 to 128 channels) to find the optimal bottleneck compression for each specific category. 
-
-For both models, the objective metric we told Optuna to maximise was the pixel-level AUROC on the test set, simply because it acts as a fast, computationally cheap proxy during the optimisation loops.
+The exploratory objectives differed by model: PatchCore maximised pixel-level AUROC, while the Keras CAE maximised pixel-level AUPIMO. These early searches obtained objective feedback from the official test partition. We therefore treat them only as evidence of our experimental process, not as valid final results, and exclude all tuned metrics from the fair baseline comparison.
 
 \subsection{Practical Difficulties During the Sweep Process}
 
-From a practical engineering perspective, the automated hyperparameter tuning proved challenging. We encountered several roadblocks:
+The tuning process produced several useful engineering lessons. Wide-ResNet-50-2 repeatedly exceeded the available GPU memory during PatchCore trials, which led us to standardise on ResNet-18. Sequential TensorFlow trials also accumulated memory, so we designed an orchestrator that ran each CAE trial in an isolated subprocess and allowed the operating system to reclaim its resources afterwards.
 
-Firstly, we suffered from continuous out-of-memory (OOM) exceptions when we initially tried to sweep over the PatchCore backbone architectures. The much larger Wide-ResNet-50-2 completely overwhelmed our consumer-grade GPU memory during the parallel Optuna trials, crashing the scripts and causing us to lose entire trial histories. We ultimately had to deprecate it and hardcode ResNet-18 to ensure a stable, reproducible execution.
-
-Secondly, we wrestled with severe memory leaks caused by TensorFlow during the Keras CAE sweeps. When running hundreds of sequential trials within a single Python process, TensorFlow's garbage collection would consistently fail to free up VRAM, eventually crashing the entire sweep. To circumvent this, we had to architect an orchestrator script that spawns a completely isolated, standalone Python subprocess for every single Optuna trial, forcing the operating system to forcefully reclaim the VRAM after each run.
-
-Finally, the sheer computational duration of running these sweeps across all 15 MVTec AD categories simply exceeded our available time limit. This is precisely why, as mentioned in Section~\ref{sec:evaluation}, we ultimately restricted our final evaluation to a representative subset of six categories.
-
-\subsection{Optimised Hyperparameters}
-
-Tables \ref{tab:patchcore_hyperparams} and \ref{tab:keras_cae_hyperparams} present the final hyperparameters selected by Optuna for the PatchCore and Keras CAE models, respectively.
-
-For PatchCore, the sweep consistently selected shallow feature combinations (L2+L3 or L2+L3+L4) across all categories, demonstrating that mid-level features provide the optimal balance of semantic generalisation and spatial resolution. The coreset sampling ratios varied significantly, from extremely aggressive compression for structurally simple categories like \textit{capsule} ($1.2\%$) to much higher sampling ratios for complex textures like \textit{carpet} ($19.1\%$). Notably, the tuning process generally avoided spatial preprocessing (foreground masking and Gaussian blurring), opting instead for CLAHE on specific categories (\textit{capsule} and \textit{carpet}) to boost structural contrast.
-
-For the Keras CAE, the Optuna sweep identified a clear structural split. Rigid objects with high-frequency surface details (\textit{bottle}, \textit{cable}, \textit{capsule}) required the maximum allowed bottleneck dimension of 128 to reconstruct normal appearances without inducing massive baseline error. Conversely, repetitive textures (\textit{carpet} and \textit{grid}) achieved their best validation scores with severely restricted bottlenecks (32 and 16 dimensions, respectively). Foreground masking and blurring were selectively applied to \textit{cable} and \textit{capsule} to help the autoencoder ignore irrelevant background variations, though as discussed in Section \ref{sec:discussion}, this aggressive smoothing often overfitted and degraded actual test-set recall on real defects.
-
-\begin{table}[b!]
-\centering
-\caption{Optuna-optimised PatchCore hyperparameters per category. The backbone is ResNet-18 for all categories. Coreset ratios are rounded to three decimal places.}
-\label{tab:patchcore_hyperparams}
-\begin{tabular}{l c c c c c c}
-\toprule
-\textbf{Category} & \textbf{Layers} & \textbf{Coreset} & \textbf{k-NN} & \textbf{CLAHE} & \textbf{Blur} & \textbf{FG Mask} \\
-\midrule
-Bottle  & L2+L3+L4 & 0.130 & 3 & No  & No  & No  \\
-Cable   & L2+L3    & 0.030 & 1 & No  & No  & No  \\
-Capsule & L2+L3    & 0.012 & 4 & Yes & No  & No  \\
-Carpet  & L2+L3    & 0.191 & 2 & Yes & No  & No  \\
-Grid    & L2+L3+L4 & 0.116 & 8 & No  & No  & No  \\
-Hazelnut& L2+L3    & 0.024 & 2 & No  & No  & No  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[b!]
-\centering
-\caption{Optuna-optimised Keras CAE hyperparameters per category.}
-\label{tab:keras_cae_hyperparams}
-\begin{tabular}{l c c c c}
-\toprule
-\textbf{Category} & \textbf{Latent Dim} & \textbf{CLAHE} & \textbf{Blur} & \textbf{FG Mask} \\
-\midrule
-Bottle & 128 & No & No & No \\
-Cable & 128 & No & Yes & No \\
-Capsule & 128 & No & Yes & Yes \\
-Carpet & 32 & No & No & No \\
-Grid & 16 & No & No & No \\
-Hazelnut & 32 & No & No & No \\
-\bottomrule
-\end{tabular}
-\end{table}
+More importantly, additional optimisation did not translate into reliable improvements. Tuned configurations frequently performed worse than the simpler baselines, and optional preprocessing could suppress subtle defect evidence while improving the chosen proxy objective. The experiment showed that a more extensively tuned model is not necessarily a better anomaly detector, particularly when optimisation and final evaluation do not use an identical leakage-free protocol. Given the computational cost, inconsistent gains, and methodological limitations of the exploratory objectives, we rejected the tuned variants. The final comparison therefore evaluates only the two reproducible baseline pipelines across all 15 categories.
 
 
 \section{Evaluation Results}
 \label{sec:evaluation}
 
-In this section, we present the comprehensive findings from our model evaluations. We begin by detailing our general evaluation procedure, followed by a qualitative examination of the anomaly maps to assess localisation quality. We then outline the final optimised hyperparameter configurations for both the PatchCore and Keras CAE models. Finally, we provide an in-depth analysis of the quantitative results and the various precision-recall curves to fully contextualise the performance characteristics of each setup.
+In this section, we present the completed evaluation of the PatchCore and Keras CAE baselines. We first describe the shared evaluation procedure, then examine anomaly-map quality, quantitative results, and precision-recall and threshold curves.
 
 \subsection{Evaluation Procedure}
 
-For our evaluation, we split the MVTec training set into 85\% for model training and 15\% for validation. We use this validation set purely for threshold calibration and AUPIMO computation. Naturally, the test set is strictly kept separate and never accessed during training, validation, or whilst selecting thresholds.
+We split the official normal MVTec training partition into 85\% for model fitting and 15\% for validation for both models, using random seed 42. The CAE trains its weights on the 85\% subset; PatchCore constructs its memory bank and coreset from that same subset. The held-out 15\% is used for CAE early stopping and for normal-only operating-threshold calibration. It is not included in either model's fitted representation.
 
-Due to the substantial computational overhead of the automated Optuna sweeps, we found it necessary to limit the scope of the tuning process. Therefore, we decided to restrict our final evaluation to a representative subset of just six categories: \textit{bottle}, \textit{cable}, \textit{capsule}, \textit{carpet}, \textit{grid}, and \textit{hazelnut}. We selected these specifically because they cover both rigid objects and textures, which gives us a well-rounded and balanced assessment of how well the models actually generalise.
+Under the corrected final baseline evaluation protocol, the official test set is not used for fitting, validation, threshold calibration, or selection between baseline configurations. The models and their operating thresholds are frozen before this final baseline evaluation is performed. AUPIMO is computed at this stage from complete two-dimensional test anomaly maps and masks with fixed FPR bounds $(10^{-5},10^{-4})$; its use of normal test maps to define the shared FPR axis is part of the metric calculation itself, not a development decision. As disclosed in Section~\ref{sec:exploration}, earlier exploratory CAE development on the bottle category was test-informed, so the final bottle result should not be interpreted as a completely untouched prospective estimate.
+
+The baseline PatchCore and Keras CAE models were evaluated across all 15 MVTec categories. The earlier tuned experiments are retained as part of the learning narrative in Section~\ref{sec:optuna}, but their metrics are not included in the final comparison.
 
 \subsection{Anomaly Map and Localisation Quality}
 
-We have placed the qualitative visualisations of the anomaly maps in the Appendix to keep the main text readable. For each of the six evaluated categories, you will find side-by-side comparisons of the raw prediction heatmaps and the heatmaps overlaid with the ground-truth defect masks, shown across all four of our model variants.
+We have placed qualitative visualisations of the anomaly maps in the Appendix to keep the main text readable. For six representative categories, the baseline PatchCore examples show the original image, ground-truth mask, anomaly-map overlay, and validation-thresholded prediction. The baseline Keras CAE examples use paired anomaly-map and ground-truth-overlay views.
 
 When interpreting these visualisations, it is important to understand the colour scaling. The heatmaps map raw anomaly scores to a continuous colour spectrum, where dark regions (dark blue or black) indicate normal, low-score areas, and bright, warmer colours (yellows, oranges, and reds) indicate high-confidence anomalies. Consequently, a highly precise model like PatchCore often produces very dark, sparse heatmaps with a single bright peak tightly clustered around the true defect. Conversely, models that struggle with high-frequency background reconstruction (such as the Keras CAE baseline) tend to produce much brighter, noisier heatmaps overall, as their baseline anomaly score remains elevated across the entire image. In practice, this allows for a much more direct visual assessment of how effectively each model actually localises structural defects instead of just flagging background noise.
 
@@ -558,39 +590,67 @@ Looking at the precision-recall (PR) and threshold trade-off curves provides a d
 
 \subsection{Quantitative Results}
 
-Table \ref{tab:final_results} summarises the final evaluation metrics across the six selected categories for all four model variants. We report the image-level F1 score as the primary metric for detection performance, while pixel-level AUROC and AUPIMO serve as the metrics for segmentation accuracy.
+Table \ref{tab:final_results} records the completed baseline evaluation across all 15 categories using the three metrics most relevant to the final comparison. Image-level F1 measures the frozen operating decision, image-level PR-AUC measures threshold-independent detection ranking under class imbalance, and AUPIMO measures localisation in the low-false-positive regime. Complete operational, confusion-matrix, pixel-level, and protocol metrics are reported in Appendix~\ref{sec:complete_metrics}.
 
-The results reveal several critical insights into the models' behaviours. Firstly, PatchCore demonstrates overwhelming superiority in both image-level detection and pixel-level segmentation (AUROC) across all categories, consistently achieving F1 scores above 0.90. However, as previously discussed, PatchCore suffers from the "AUPIMO paradox": its unbounded distance features cause extreme spikes at the threshold boundary, leading to an AUPIMO score of absolute zero across all categories.
+PatchCore achieved mean image-level F1 of 0.929, mean image-level PR-AUC of 0.988, and mean AUPIMO of 0.603. The Keras CAE achieved corresponding means of 0.495, 0.867, and 0.058. PatchCore therefore produced both substantially more reliable image-level decisions and more precise anomaly localisation. For CAE, the gap between PR-AUC and operating-point F1 indicates reasonable ranking but a poor validation-calibrated threshold for \textit{capsule} (AUROC 0.711, PR-AUC 0.917) and \textit{screw} (AUROC 0.777, PR-AUC 0.887). That explanation does not fit \textit{cable}, \textit{metal nut}, or \textit{tile}: their CAE AUROCs are 0.467, 0.500, and 0.501, while PR-AUCs of 0.624, 0.825, and 0.727 barely exceed prevalences of 0.613, 0.809, and 0.718. Their underlying discrimination is therefore weak, not merely their chosen threshold.
 
-Secondly, the Keras CAE models, while generally weaker at pure detection, manage to capture non-zero AUPIMO scores on certain categories (e.g., \textit{bottle} and \textit{grid}) because the autoencoder's mean squared error naturally suppresses these extreme spikes.
-
-Perhaps the most important finding is the effect of the hyperparameter tuning. Across almost all categories, the Optuna-tuned variants (both PatchCore and Keras CAE) performed worse on the test set than their respective baseline models. For instance, the image-level F1 score for PatchCore on \textit{capsule} dropped from 0.977 to 0.917 after tuning. This degradation confirms our hypothesis that aggressive optimisation solely on normal validation data forces the models to overfit to background textures, ultimately harming their ability to generalise and detect actual physical defects at test time.
-
-\begin{table}[b!]
+\begin{table}[H]
 \centering
-\caption{Final evaluation results for the first six categories across all four model variants. Image-level F1 and pixel-level AUPIMO are the primary metrics.}
+\caption{Primary baseline evaluation results across all 15 categories. PR-AUC is computed by trapezoidal integration of the stored image-level precision-recall curve.}
 \label{tab:final_results}
 \resizebox{\textwidth}{!}{
-\begin{tabular}{l ccc ccc ccc ccc}
+\begin{tabular}{l ccc ccc}
 \toprule
-\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{PatchCore (Tuned)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Base)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Tuned)}} \\
-\cmidrule(lr){2-4} \cmidrule(lr){5-7} \cmidrule(lr){8-10} \cmidrule(lr){11-13}
- & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} & \textbf{F1} & \textbf{Px AUC} & \textbf{AUPIMO} \\
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+ & \textbf{Img F1} & \textbf{Img PR-AUC} & \textbf{AUPIMO} & \textbf{Img F1} & \textbf{Img PR-AUC} & \textbf{AUPIMO} \\
 \midrule
-Bottle & 0.992 & 0.978 & 0.000 & 0.992 & 0.979 & 0.000 & 1.000 & 1.000 & 0.511 & 0.992 & 1.000 & 0.468 \\
-Cable & 0.933 & 0.982 & 0.000 & 0.920 & 0.983 & 0.000 & 0.061 & 0.489 & 0.000 & 0.021 & 0.521 & 0.000 \\
-Capsule & 0.977 & 0.988 & 0.000 & 0.917 & 0.987 & 0.000 & 0.500 & 0.690 & 0.037 & 0.150 & 0.656 & 0.003 \\
-Carpet & 0.954 & 0.988 & 0.000 & 0.923 & 0.988 & 0.000 & 0.684 & 0.638 & 0.002 & 0.644 & 0.612 & 0.002 \\
-Grid & 0.906 & 0.968 & 0.000 & 0.895 & 0.969 & 0.000 & 0.760 & 0.770 & 0.087 & 0.643 & 0.781 & 0.104 \\
-Hazelnut & 0.986 & 0.989 & 0.000 & 0.933 & 0.989 & 0.000 & 0.580 & 0.875 & 0.087 & 0.478 & 0.834 & 0.054 \\
+Bottle & 0.962 & 1.000 & 0.982 & 0.992 & 1.000 & 0.507 \\
+Cable & 0.933 & 0.985 & 0.511 & 0.154 & 0.624 & 0.000 \\
+Capsule & 0.982 & 0.996 & 0.563 & 0.476 & 0.917 & 0.052 \\
+Carpet & 0.926 & 0.994 & 0.796 & 0.635 & 0.835 & 0.003 \\
+Grid & 0.916 & 0.986 & 0.506 & 0.602 & 0.901 & 0.077 \\
+Hazelnut & 0.971 & 0.999 & 0.863 & 0.500 & 0.902 & 0.033 \\
+Leather & 0.898 & 0.998 & 0.972 & 0.786 & 0.892 & 0.075 \\
+Metal Nut & 0.963 & 0.998 & 0.760 & 0.243 & 0.825 & 0.002 \\
+Pill & 0.891 & 0.982 & 0.293 & 0.395 & 0.923 & 0.030 \\
+Screw & 0.796 & 0.983 & 0.380 & 0.421 & 0.887 & 0.005 \\
+Tile & 0.951 & 0.993 & 0.685 & 0.132 & 0.727 & 0.001 \\
+Toothbrush & 0.923 & 0.949 & 0.414 & 0.735 & 0.922 & 0.054 \\
+Transistor & 0.916 & 0.976 & 0.427 & 0.657 & 0.758 & 0.005 \\
+Wood & 0.952 & 0.995 & 0.642 & 0.182 & 0.955 & 0.008 \\
+Zipper & 0.962 & 0.985 & 0.251 & 0.513 & 0.940 & 0.025 \\
+\midrule
+\textbf{Mean} & \textbf{0.929} & \textbf{0.988} & \textbf{0.603} & \textbf{0.495} & \textbf{0.867} & \textbf{0.058} \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
 
+\begin{table}[H]
+\centering
+\caption{Image-level reference points derived from the official test-set composition. Prevalence is the no-skill PR-AUC reference; ``all-defective F1'' is obtained by flagging every image as defective.}
+\label{tab:image_references}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{l cc@{\hspace{1em}}l cc@{\hspace{1em}}l cc}
+\toprule
+\textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} & \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} & \textbf{Category} & \textbf{Prev.} & \textbf{All-def. F1} \\
+\midrule
+Bottle & 0.759 & 0.863 & Cable & 0.613 & 0.760 & Capsule & 0.826 & 0.905 \\
+Carpet & 0.761 & 0.864 & Grid & 0.731 & 0.844 & Hazelnut & 0.636 & 0.778 \\
+Leather & 0.742 & 0.852 & Metal Nut & 0.809 & 0.894 & Pill & 0.844 & 0.916 \\
+Screw & 0.744 & 0.853 & Tile & 0.718 & 0.836 & Toothbrush & 0.714 & 0.833 \\
+Transistor & 0.400 & 0.571 & Wood & 0.759 & 0.863 & Zipper & 0.788 & 0.881 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Comparison with the all-defective reference further illustrates why operating-point F1 must be interpreted alongside ranking metrics and confusion counts. PatchCore exceeds the trivial all-defective F1 in 13 of the 15 categories. The exceptions are \textit{pill} and \textit{screw}, where PatchCore achieves F1 scores of 0.891 and 0.796 compared with trivial-reference values of 0.916 and 0.853, respectively. However, their image-level PR-AUC values remain very high at 0.982 and 0.983, indicating that the underlying ranking remains strong and that the weaker F1 is primarily associated with the frozen validation-calibrated operating threshold. In contrast, the Keras CAE exceeds the trivial all-defective F1 only for \textit{bottle} and \textit{transistor}, reinforcing that its weak operating-point performance is widespread rather than confined to a small number of threshold-calibration failures.
+
 \subsection{Evaluation Curves}
 \label{sec:eval_curves}
-We present the precision-recall and threshold trade-off curves to provide a deeper view into the models' operating characteristics. We display these for all four models on the \textit{bottle} category below. The curves for all remaining categories are provided in the Appendix.
+We present precision-recall and threshold trade-off curves to provide a deeper view into the models' operating characteristics. We display both baseline models for the \textit{bottle} category below. Curves for five additional representative categories are provided in the Appendix.
 \begin{figure}[t!]
 \centering
 \begin{subfigure}{0.48\textwidth}
@@ -617,35 +677,7 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.511).}
-\end{figure}
-\begin{figure}[t!]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO achieved is 0.000.}
+\caption{Evaluation curves for the \textit{bottle} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.982.}
 \end{figure}
 \begin{figure}[t!]
 \centering
@@ -673,64 +705,27 @@ We present the precision-recall and threshold trade-off curves to provide a deep
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.511 (Best for this category: 0.511).}
-\end{figure}
-\begin{figure}[t!]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.468 (Best for this category: 0.511).}
+\caption{Evaluation curves for the \textit{bottle} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.507.}
 \end{figure}
 
+\clearpage
 \subsection{Discussion of Evaluations}
 \label{sec:discussion}
 
-The table of quantitative results highlights the performance characteristics of our four test setups across the first six categories. 
+The completed baseline results cover all 15 MVTec categories. The Optuna experiments described in Section~\ref{sec:optuna} informed our learning process but are excluded from this comparison.
 
 \textbf{1. PatchCore + ResNet-18 (Baseline):}
-This setup establishes an exceptionally strong baseline for Image-level F1, consistently scoring above 0.90 for most categories. The robust performance demonstrates the immense advantage of leveraging feature extractors pretrained on ImageNet (ResNet-18). 
+This setup establishes a strong baseline, with mean image-level F1 of 0.929 and mean AUPIMO of 0.603. It achieved image F1 above 0.89 in 14 of the 15 categories; \textit{screw} was the most difficult at 0.796. Localisation varied more strongly by category, from AUPIMO 0.982 for \textit{bottle} and 0.972 for \textit{leather} to 0.251 for \textit{zipper}. The overall performance demonstrates the advantage of pretrained ImageNet features for both detection and localisation.
 
-However, the pixel-level AUPIMO scores present a glaring paradox: PatchCore achieves exactly 0.000 across all categories despite its near-perfect F1 scores and visually sharp heatmaps. This occurs because AUPIMO enforces an extremely strict false positive rate (FPR) limit (e.g., $10^{-4}$). PatchCore computes unbounded raw feature distances; if a normal image contains even a single microscopic anomaly (like a speck of dust or a lighting artefact), PatchCore's distance metric spikes dramatically. To maintain the strict FPR limit required by AUPIMO, the evaluation threshold is forced astronomically high, causing the true positive rate to collapse to zero for all other images. In contrast, the Keras CAE produces bounded, blurry mean squared error scores that suppress extreme outliers, allowing it to maintain a non-zero AUPIMO despite its visually noisier baseline.
-
-\textbf{2. PatchCore + ResNet-18 (Tuned):}
-The hyperparameter sweep for PatchCore is now complete. While we relied on the same powerful ResNet-18 backbone, we found that tuning the coreset sampling ratio, the number of nearest neighbours ($K$), and integrating targeted preprocessing steps did not yield the anticipated gains. In fact, tuning caused slight regressions in F1 scores across several categories (e.g., dropping from 0.977 to 0.917 on \textit{capsule}). Similar to the Keras CAE results discussed below, this highlights the difficulty of optimising hyperparameters using a surrogate objective (like pixel AUROC) on a validation set that lacks true defects.
-
-\textbf{3. Keras CAE (Baseline):}
-The baseline Keras convolutional autoencoder, operating without category-specific preprocessing and with a fixed latent dimension of 32, achieves strong results on simple rigid objects like \textit{bottle} (Image F1 = 1.0). However, it struggles severely on more complex categories like \textit{cable} and \textit{capsule}. The standard reconstruction objective fails to isolate anomalies amidst high-frequency texture noise and background variability.
-
-\textbf{4. Keras CAE (Tuned):}
-Counterintuitively, the rigorous hyperparameter tuning via Optuna often resulted in worse quantitative test performance compared to the naive baseline. We view this failure as a crucial learning outcome regarding hyperparameter overfitting in anomaly detection. Because the MVTec AD validation set contains exactly zero defective images, the Optuna sweep was forced to maximise the pixel-level AUROC using synthetically derived surrogate metrics or by evaluating strictly on normal images. Consequently, the chosen hyperparameters (such as extreme bottleneck compressions or heavy Gaussian blurring) heavily overfit to the normal background textures. While these configurations effectively smoothed out background noise (as visible in the Appendix heatmaps) and improved normal-image reconstruction, they simultaneously washed out the fine structural details required to accurately detect unseen defects in the test set. Furthermore, optimising solely for AUROC---a metric notoriously insensitive to severe class imbalance---failed to translate into meaningful improvements for the F1 or AUPIMO scores on real anomalies. This clearly highlights the immense difficulty of tuning hyperparameters from scratch on extremely limited normal-only datasets, and further justifies our decision to ultimately adopt the pretrained PatchCore model.
+\textbf{2. Keras CAE (Baseline):}
+The baseline Keras convolutional autoencoder, operating without category-specific preprocessing and with a fixed latent dimension of 32, performs strongly on \textit{bottle}, with image F1 of 0.992 and AUPIMO of 0.507. Its performance is much less stable across the complete dataset: mean image F1 is 0.495 and mean AUPIMO is 0.058. It struggles particularly on \textit{tile}, \textit{cable}, and \textit{wood}. Even where pixel AUROC is high, low AUPIMO shows that reconstruction error often remains too spatially diffuse for precise localisation at a low false-positive rate.
 
 
 \section{Conclusion}
 
-We developed an end-to-end unsupervised anomaly detection system for industrial components, building to a production-grade modular pipeline with automated hyperparameter optimisation. We traced the complete arc of the project, including the conceptual missteps, as we believe these are highly instructive.
+We developed an end-to-end unsupervised anomaly detection system for industrial components, building a production-grade modular pipeline and investigating automated hyperparameter optimisation as an experimental branch. We traced the complete arc of the project, including the conceptual missteps and rejected variants, because these were central to what we learned.
 
-The most important technical lessons we established revolve around the often paradoxical relationship between model confidence and evaluation metrics. We demonstrated that standard metrics used in the anomaly detection literature are poorly suited to the extreme class imbalance of MVTec AD, and that rigid threshold-based metrics like AUPIMO severely penalise highly sensitive models. Because ultra-precise models like PatchCore compute unbounded feature distances, a single microscopic false-positive spike on a normal image can mathematically force the strict AUPIMO threshold so high that true recall collapses to zero---yielding a score of exactly 0.000 despite near-perfect F1 scores and visually pristine heatmaps. We also observed that reconstruction quality and anomaly detection quality are not the same and can even be inversely related in autoencoders. Ultimately, however, a frozen pretrained feature extractor built from ImageNet images dramatically outperforms a model trained from scratch, underlining the overriding importance of transfer learning when labelled training data is scarce.
-
-Final quantitative results for the representative six categories clearly demonstrate these trade-offs, concluding our evaluation of both the baseline and tuned detection systems.
+Across all 15 categories, PatchCore clearly outperformed the Keras CAE baseline. Its mean image F1 was 0.929 compared with 0.495, and its mean AUPIMO was 0.603 compared with 0.058. The CAE remained competitive on \textit{bottle}, but its reconstruction errors were not sufficiently selective across more complex objects and textures. We therefore select PatchCore with the ResNet-18 backbone as the final model. The CAE remains valuable as an interpretable reconstruction-based reference and as evidence of the limitations of training anomaly representations from scratch on small normal-only datasets.
 
 % \clearpage
 \begin{thebibliography}{99}
@@ -803,241 +798,227 @@ IEEE International Conference on Image Processing (ICIP), 2022.
 \end{thebibliography}
 
 \clearpage
-\section*{Appendix: Qualitative Visualisations and Evaluation Curves}
-\label{sec:appendix_visuals}
+\appendix
+\section*{Appendix}
+\section{Complete Metrics and Visualisations}
+\label{sec:complete_metrics}
 
-For each of the six evaluated categories, we present qualitative anomaly maps across the four model variants. We show two defective test images per category. 
+\subsection*{Complete Baseline Metrics}
 
-\textbf{How to read the heatmaps:} For each defective sample, the left image ("Pred") shows the raw predicted anomaly heatmap. Darker colours indicate that the model considers the region to be normal, while warmer, brighter colours signify regions predicted to be anomalous. A highly confident and precise detection (such as those produced by PatchCore) will appear as a small bright spot on an otherwise mostly dark background. In contrast, models with a higher baseline error (like the Keras CAE) struggle to reconstruct high-frequency background textures; consequently, their heatmaps appear much brighter and noisier overall, as the anomaly scores are elevated across the entire image. The right image ("GT Overlay") superimposes the ground-truth defect mask (typically outlined in red or yellow) onto the prediction heatmap, allowing you to visually verify if the model's highest predicted scores align with the actual defect location.
+Tables~\ref{tab:appendix_image_metrics}--\ref{tab:appendix_pixel_metrics} report the complete, non-duplicated performance metrics collected for the two final baseline models. Image PR-AUC is obtained by trapezoidal integration of each stored precision-recall curve. Accuracy is intentionally omitted because the normal/defective class imbalance makes it less informative than precision, recall, F1, and the confusion counts. Repeated aliases and anomaly-map range diagnostics are likewise omitted because they are not independent performance measures.
 
-We also include the full evaluation curves for the remaining five categories (the curves for the \textit{bottle} category are in the main text). The visualisations and curves for the tuned PatchCore model are currently placeholders pending completion of the hyperparameter sweep.
-\newpage
+\begin{table}[H]
+\centering
+\caption{Complete image-level ranking and operating-point metrics. All operating-point metrics use category-specific thresholds calibrated exclusively from normal validation images.}
+\label{tab:appendix_image_metrics}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l ccccc ccccc}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{5}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{5}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-6} \cmidrule(lr){7-11}
+ & \textbf{AUROC} & \textbf{PR-AUC} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} & \textbf{AUROC} & \textbf{PR-AUC} & \textbf{F1} & \textbf{Precision} & \textbf{Recall} \\
+\midrule
+Bottle & 1.000 & 1.000 & 0.962 & 0.926 & 1.000 & 1.000 & 1.000 & 0.992 & 1.000 & 0.984 \\
+Cable & 0.975 & 0.985 & 0.933 & 0.955 & 0.913 & 0.467 & 0.624 & 0.154 & 0.667 & 0.087 \\
+Capsule & 0.983 & 0.996 & 0.982 & 0.982 & 0.982 & 0.711 & 0.917 & 0.476 & 0.921 & 0.321 \\
+Carpet & 0.980 & 0.994 & 0.926 & 0.871 & 0.989 & 0.635 & 0.835 & 0.635 & 0.797 & 0.528 \\
+Grid & 0.960 & 0.986 & 0.916 & 0.980 & 0.860 & 0.749 & 0.901 & 0.602 & 0.962 & 0.439 \\
+Hazelnut & 0.999 & 0.999 & 0.971 & 1.000 & 0.943 & 0.863 & 0.902 & 0.500 & 0.923 & 0.343 \\
+Leather & 0.997 & 0.998 & 0.898 & 0.814 & 1.000 & 0.696 & 0.892 & 0.786 & 0.740 & 0.837 \\
+Metal Nut & 0.993 & 0.998 & 0.963 & 0.939 & 0.989 & 0.500 & 0.825 & 0.243 & 0.929 & 0.140 \\
+Pill & 0.914 & 0.982 & 0.891 & 0.983 & 0.816 & 0.660 & 0.923 & 0.395 & 0.972 & 0.248 \\
+Screw & 0.957 & 0.983 & 0.796 & 0.976 & 0.672 & 0.777 & 0.887 & 0.421 & 0.970 & 0.269 \\
+Tile & 0.981 & 0.993 & 0.951 & 0.987 & 0.917 & 0.501 & 0.727 & 0.132 & 0.857 & 0.071 \\
+Toothbrush & 0.900 & 0.949 & 0.923 & 0.857 & 1.000 & 0.783 & 0.922 & 0.735 & 0.947 & 0.600 \\
+Transistor & 0.985 & 0.976 & 0.916 & 0.884 & 0.950 & 0.848 & 0.758 & 0.657 & 0.767 & 0.575 \\
+Wood & 0.987 & 0.995 & 0.952 & 0.922 & 0.983 & 0.859 & 0.955 & 0.182 & 1.000 & 0.100 \\
+Zipper & 0.954 & 0.985 & 0.962 & 0.966 & 0.958 & 0.787 & 0.940 & 0.513 & 1.000 & 0.345 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Image-level calibrated thresholds and confusion counts on the official test set.}
+\label{tab:appendix_confusion_metrics}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l crrrr crrrr}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{5}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{5}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-6} \cmidrule(lr){7-11}
+ & \textbf{Threshold} & \textbf{TP} & \textbf{FP} & \textbf{FN} & \textbf{TN} & \textbf{Threshold} & \textbf{TP} & \textbf{FP} & \textbf{FN} & \textbf{TN} \\
+\midrule
+Bottle & 7.371 & 63 & 5 & 0 & 15 & 0.407 & 62 & 0 & 1 & 20 \\
+Cable & 15.064 & 84 & 4 & 8 & 54 & 0.811 & 8 & 4 & 84 & 54 \\
+Capsule & 6.646 & 107 & 2 & 2 & 21 & 0.412 & 35 & 3 & 74 & 20 \\
+Carpet & 7.338 & 88 & 13 & 1 & 15 & 0.467 & 47 & 12 & 42 & 16 \\
+Grid & 9.984 & 49 & 1 & 8 & 20 & 0.445 & 25 & 1 & 32 & 20 \\
+Hazelnut & 14.282 & 66 & 0 & 4 & 40 & 0.492 & 24 & 2 & 46 & 38 \\
+Leather & 6.924 & 92 & 21 & 0 & 11 & 0.495 & 77 & 27 & 15 & 5 \\
+Metal Nut & 11.597 & 92 & 6 & 1 & 16 & 0.598 & 13 & 1 & 80 & 21 \\
+Pill & 10.507 & 115 & 2 & 26 & 24 & 0.414 & 35 & 1 & 106 & 25 \\
+Screw & 10.511 & 80 & 2 & 39 & 39 & 0.496 & 32 & 1 & 87 & 40 \\
+Tile & 10.931 & 77 & 1 & 7 & 32 & 0.857 & 6 & 1 & 78 & 32 \\
+Toothbrush & 9.525 & 30 & 5 & 0 & 7 & 0.669 & 18 & 1 & 12 & 11 \\
+Transistor & 11.466 & 38 & 5 & 2 & 55 & 0.599 & 23 & 7 & 17 & 53 \\
+Wood & 10.032 & 59 & 5 & 1 & 14 & 0.700 & 6 & 0 & 54 & 19 \\
+Zipper & 7.867 & 114 & 4 & 5 & 28 & 0.625 & 41 & 0 & 78 & 32 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Complete stored pixel-level metrics. Pixel AUROC is retained here for conventional reference but is not used as a primary model-selection metric.}
+\label{tab:appendix_pixel_metrics}
+\begin{tabular}{l ccc ccc}
+\toprule
+\multirow{2}{*}{\textbf{Category}} & \multicolumn{3}{c}{\textbf{PatchCore (ResNet-18)}} & \multicolumn{3}{c}{\textbf{Keras CAE (Baseline)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+ & \textbf{Px AUROC} & \textbf{Px F1$^{\dagger}$} & \textbf{AUPIMO} & \textbf{Px AUROC} & \textbf{Px F1$^{\dagger}$} & \textbf{AUPIMO} \\
+\midrule
+Bottle & 0.978 & 0.406 & 0.982 & 0.967 & 0.519 & 0.507 \\
+Cable & 0.982 & 0.540 & 0.511 & 0.747 & 0.000 & 0.000 \\
+Capsule & 0.988 & 0.176 & 0.563 & 0.947 & 0.162 & 0.052 \\
+Carpet & 0.988 & 0.169 & 0.796 & 0.949 & 0.202 & 0.003 \\
+Grid & 0.970 & 0.200 & 0.506 & 0.972 & 0.270 & 0.077 \\
+Hazelnut & 0.989 & 0.517 & 0.863 & 0.890 & 0.067 & 0.033 \\
+Leather & 0.989 & 0.070 & 0.972 & 0.976 & 0.433 & 0.075 \\
+Metal Nut & 0.984 & 0.758 & 0.760 & 0.691 & 0.002 & 0.002 \\
+Pill & 0.978 & 0.591 & 0.293 & 0.888 & 0.188 & 0.030 \\
+Screw & 0.991 & 0.132 & 0.380 & 0.970 & 0.101 & 0.005 \\
+Tile & 0.929 & 0.532 & 0.685 & 0.634 & 0.003 & 0.001 \\
+Toothbrush & 0.989 & 0.280 & 0.414 & 0.925 & 0.091 & 0.054 \\
+Transistor & 0.969 & 0.598 & 0.427 & 0.787 & 0.037 & 0.005 \\
+Wood & 0.919 & 0.273 & 0.642 & 0.853 & 0.000 & 0.008 \\
+Zipper & 0.980 & 0.302 & 0.251 & 0.933 & 0.049 & 0.025 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\parbox{0.96\textwidth}{\footnotesize $^{\dagger}$Pixel F1 is included as a stored operating-point diagnostic, but the two implementations are not directly comparable: PatchCore uses the 99th percentile of normal-validation pixel scores, whereas the CAE reuses its normal-validation image-score threshold on the pixel error map. AUPIMO is the protocol-consistent pixel metric used for the final comparison.}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Shared evaluation protocol and stored metric provenance.}
+\label{tab:appendix_metric_protocol}
+\begin{tabular}{p{0.31\textwidth} p{0.60\textwidth}}
+\toprule
+\textbf{Item} & \textbf{Protocol} \\
+\midrule
+Image operating threshold & Category-specific 95th percentile of normal-validation image scores; frozen before official test inference. \\
+PatchCore pixel-F1 threshold & Category-specific 99th percentile of normal-validation pixel scores. \\
+CAE pixel-F1 threshold & Normal-validation image-score threshold reused on pixel error scores; reported only as a diagnostic. \\
+AUPIMO false-positive range & Shared FPR from $10^{-5}$ to $10^{-4}$ on a logarithmic scale. \\
+AUPIMO thresholds & 50,000 thresholds. \\
+Canonical pixel-map size & $256 \times 256$ for both predictions and ground-truth masks. \\
+Image PR-AUC & Trapezoidal area under the stored image precision-recall curve. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\clearpage
+\subsection*{Qualitative Visualisations and Evaluation Curves}
+
+For six representative categories, we present qualitative anomaly maps for the two baseline models. We show two defective test images per category.
+
+\textbf{How to read the visualisations:} Each baseline PatchCore example is a four-panel inference result showing the original image, the binary ground-truth mask, the continuous anomaly-map overlay, and the final predicted mask. The predicted mask uses the category-specific threshold fixed at the 99th percentile of anomaly scores from normal validation pixels; the official test masks do not influence this threshold. The baseline Keras CAE uses paired anomaly-map overlays, with the second panel adding the ground-truth defect outline. Darker colours indicate regions considered normal, while warmer, brighter colours indicate higher anomaly scores. These views distinguish the model's continuous localisation evidence from its final thresholded decision.
+
+We also include the baseline evaluation curves for the remaining five categories; the corresponding \textit{bottle} curves are in the main text.
+\clearpage
 \subsection*{Visualisations and Curves: Bottle}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v17/images_regenerated/broken_large/000.png}
+\caption{Broken-large defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v17/images_regenerated/broken_large/001.png}
+\caption{Broken-large defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Bottle using PatchCore (ResNet-18).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Bottle using PatchCore (Custom/Tuned).}
+\caption{Four-panel qualitative results for Bottle using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Bottle using Keras CAE (Baseline).}
 \end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/bottle/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Bottle using Keras CAE (Tuned).}
-\end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Cable}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v18/images_regenerated/bent_wire/000.png}
+\caption{Bent-wire defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v18/images_regenerated/bent_wire/001.png}
+\caption{Bent-wire defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Cable using PatchCore (ResNet-18).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Cable using PatchCore (Custom/Tuned).}
+\caption{Four-panel qualitative results for Cable using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Cable using Keras CAE (Baseline).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Cable using Keras CAE (Tuned).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1065,35 +1046,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/cable/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.000).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/cable/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO is pending sweep completion.}
+\caption{Evaluation curves for the \textit{cable} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.511.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1121,149 +1074,52 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/cable/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.000).}
+\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.000.}
 \end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/cable/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{cable} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.000).}
-\end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Capsule}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v19/images_regenerated/crack/000.png}
+\caption{Crack defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v19/images_regenerated/crack/001.png}
+\caption{Crack defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Capsule using PatchCore (ResNet-18).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Capsule using PatchCore (Custom/Tuned).}
+\caption{Four-panel qualitative results for Capsule using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Capsule using Keras CAE (Baseline).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Capsule using Keras CAE (Tuned).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1291,35 +1147,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/capsule/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.037).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/capsule/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO is pending sweep completion.}
+\caption{Evaluation curves for the \textit{capsule} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.563.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1347,149 +1175,52 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/capsule/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.037 (Best for this category: 0.037).}
+\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.052.}
 \end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/capsule/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{capsule} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.003 (Best for this category: 0.037).}
-\end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Carpet}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v20/images_regenerated/color/000.png}
+\caption{Colour defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v20/images_regenerated/color/001.png}
+\caption{Colour defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Carpet using PatchCore (ResNet-18).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Carpet using PatchCore (Custom/Tuned).}
+\caption{Four-panel qualitative results for Carpet using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Carpet using Keras CAE (Baseline).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Carpet using Keras CAE (Tuned).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1517,35 +1248,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/carpet/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.002).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/carpet/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO is pending sweep completion.}
+\caption{Evaluation curves for the \textit{carpet} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.796.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1573,149 +1276,52 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/carpet/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.002 (Best for this category: 0.002).}
+\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.003.}
 \end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/carpet/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{carpet} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.002 (Best for this category: 0.002).}
-\end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Grid}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v21/images_regenerated/bent/000.png}
+\caption{Bent defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v21/images_regenerated/bent/001.png}
+\caption{Bent defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Grid using PatchCore (ResNet-18).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Grid using PatchCore (Custom/Tuned).}
+\caption{Four-panel qualitative results for Grid using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Grid using Keras CAE (Baseline).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Grid using Keras CAE (Tuned).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1743,35 +1349,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/grid/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.104).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/grid/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO is pending sweep completion.}
+\caption{Evaluation curves for the \textit{grid} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.506.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1799,149 +1377,52 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/grid/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.087 (Best for this category: 0.104).}
+\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.077.}
 \end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/grid/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{grid} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.104 (Best for this category: 0.104).}
-\end{figure}
-\newpage
+\clearpage
 \subsection*{Visualisations and Curves: Hazelnut}
 \begin{figure}[htbp]
 \centering
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v22/images_regenerated/crack/000.png}
+\caption{Crack defect, sample 000.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
 \vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
+\begin{subfigure}{0.98\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\includegraphics[width=\textwidth]{../../results/Patchcore/v22/images_regenerated/crack/001.png}
+\caption{Crack defect, sample 001.}
 \end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Hazelnut using PatchCore (ResNet-18).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Hazelnut using PatchCore (Custom/Tuned).}
+\caption{Four-panel qualitative results for Hazelnut using PatchCore (ResNet-18).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
 \vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
 \caption{Qualitative results for Hazelnut using Keras CAE (Baseline).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/prediction/image_0_prediction.png}
-\caption{Img 0: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
-\caption{Img 0: GT Overlay}
-\end{subfigure}
-
-\vspace{0.2cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/prediction/image_1_prediction.png}
-\caption{Img 1: Pred}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
-\caption{Img 1: GT Overlay}
-\end{subfigure}
-\caption{Qualitative results for Hazelnut using Keras CAE (Tuned).}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -1969,35 +1450,7 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore/hazelnut/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using PatchCore (ResNet-18). The pixel-level AUPIMO achieved is 0.000 (Best for this category: 0.087).}
-\end{figure}
-\begin{figure}[htbp]
-\centering
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
-\end{subfigure}
-
-\vspace{0.5cm}
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.48\textwidth}
-\centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/patchcore_tuned/hazelnut/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
-\end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using PatchCore (Custom/Tuned). The pixel-level AUPIMO is pending sweep completion.}
+\caption{Evaluation curves for the \textit{hazelnut} category using PatchCore (ResNet-18). The pixel-level AUPIMO is 0.863.}
 \end{figure}
 \begin{figure}[htbp]
 \centering
@@ -2025,35 +1478,77 @@ We also include the full evaluation curves for the remaining five categories (th
 \includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/hazelnut/pixel_level_tradeoff_curve.png}
 \caption{Pixel-Level Threshold Tradeoff}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Baseline). The pixel-level AUPIMO achieved is 0.087 (Best for this category: 0.087).}
+\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Baseline). The pixel-level AUPIMO is 0.033.}
 \end{figure}
+
+\clearpage
+\subsection*{Visualisations: Screw (PatchCore)}
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v26/images_regenerated/thread_top/000.png}
+\caption{Thread-top defect, sample 000.}
+\end{subfigure}
+\vspace{0.2cm}
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v26/images_regenerated/thread_top/001.png}
+\caption{Thread-top defect, sample 001.}
+\end{subfigure}
+\caption{Four-panel qualitative results for Screw using PatchCore (ResNet-18).}
+\end{figure}
+
+\clearpage
+\subsection*{Visualisations: Zipper (PatchCore)}
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v31/images_regenerated/broken_teeth/000.png}
+\caption{Broken-teeth defect, sample 000.}
+\end{subfigure}
+\vspace{0.2cm}
+\begin{subfigure}{0.98\textwidth}
+\centering
+\includegraphics[width=\textwidth]{../../results/Patchcore/v31/images_regenerated/broken_teeth/001.png}
+\caption{Broken-teeth defect, sample 001.}
+\end{subfigure}
+\caption{Four-panel qualitative results for Zipper using PatchCore (ResNet-18).}
+\end{figure}
+
+\clearpage
+\subsection*{Visualisations: Wood (Keras CAE)}
 \begin{figure}[htbp]
 \centering
 \begin{subfigure}{0.48\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/image_level_pr_curve.png}
-\caption{Image-Level PR Curve}
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/prediction/image_0_prediction.png}
+\caption{Img 0: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/pixel_level_pr_curve.png}
-\caption{Pixel-Level PR Curve}
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/ground_truth_overlay/image_0_gt_overlay.png}
+\caption{Img 0: Anomaly Map + GT Outline}
 \end{subfigure}
 
-\vspace{0.5cm}
+\vspace{0.2cm}
 \begin{subfigure}{0.48\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/image_level_tradeoff_curve.png}
-\caption{Image-Level Threshold Tradeoff}
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/prediction/image_1_prediction.png}
+\caption{Img 1: Anomaly Map Overlay}
 \end{subfigure}
 \hfill
 \begin{subfigure}{0.48\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae/hazelnut/pixel_level_tradeoff_curve.png}
-\caption{Pixel-Level Threshold Tradeoff}
+\includegraphics[width=0.95\textwidth]{../../results/evaluation/keras_cae_baseline/wood/heatmaps/ground_truth_overlay/image_1_gt_overlay.png}
+\caption{Img 1: Anomaly Map + GT Outline}
 \end{subfigure}
-\caption{Evaluation curves for the \textit{hazelnut} category using Keras CAE (Tuned). The pixel-level AUPIMO achieved is 0.054 (Best for this category: 0.087).}
+\caption{Qualitative results for Wood using Keras CAE (Baseline).}
 \end{figure}
+
+\clearpage
+\input{sections/screw_exploration_figures}
 
 \end{document}
