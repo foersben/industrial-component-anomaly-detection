@@ -97,7 +97,7 @@ In total, the dataset contains 3,629 normal training images, 467 normal test ima
 
 \subsection{Objects versus Textures: A Fundamental Structural Split}
 
-The 15 categories divide into two structurally distinct groups that require entirely different treatment throughout the pipeline. The five texture categories (Carpet, Grid, Leather, Tile, and Wood) consist of repetitive, spatially invariant surface patterns. A patch of leather looks statistically the same regardless of whether it has been rotated or mirrored. The ten object categories (bottle, cable, capsule, hazelnut, metal\_nut, pill, screw, toothbrush, transistor, and zipper) are physically shaped items that arrive at the inspection stage in a consistent orientation. Applying aggressive rotational augmentation to a bottle would incorrectly instruct the model that inverted orientations are part of the normal distribution, rendering the detector blind to orientation-based anomalies.
+The 15 categories divide into two structurally distinct groups that require entirely different treatment throughout the pipeline. The five texture categories (Carpet, Grid, Leather, Tile, and Wood) consist of repetitive, spatially invariant surface patterns. A patch of leather looks statistically the same regardless of whether it has been rotated or mirrored. The ten object categories (bottle, cable, capsule, hazelnut, metal\_nut, pill, screw, toothbrush, transistor, and zipper) are physically shaped items, but their pose characteristics differ by category. Some are acquired in roughly consistent orientations, whereas \textit{hazelnut}, \textit{metal\_nut}, and \textit{screw} appear under random rotation. Applying aggressive rotational augmentation to a consistently oriented object such as a bottle would incorrectly instruct the model that inverted orientations are part of the normal distribution, potentially reducing its ability to detect orientation-related anomalies.
 
 We identified this distinction on the first day of the project and carried its implications through to augmentation, foreground extraction, and configuration tuning.
 
@@ -220,7 +220,14 @@ We apply data augmentation to the training set only, in order to increase the ef
 
 For texture categories, we apply heavy spatial augmentation. We randomly rotate images in 90 degree increments, flip them horizontally and vertically, and apply scale jitter by cropping a region sized between 80\% and 100\% of the original image and resizing it back to the target resolution. We additionally vary brightness and contrast by up to 20\%. Every spatially augmented version of a normal texture image is a genuinely valid training example, because texture surfaces are statistically indistinguishable at arbitrary orientations.
 
-For object categories, we apply photometric augmentation only. We vary brightness, contrast, and saturation each by up to 10\% and add Gaussian noise with standard deviation $\sigma = 0.02$. We do not apply any spatial transformation, because an object's orientation on the inspection conveyor is part of its normal appearance, and training on arbitrarily oriented objects would destroy the model's ability to detect orientation-based anomalies.
+For object categories, we primarily apply photometric augmentation. We vary
+brightness, contrast, and saturation each by up to 10\% and add Gaussian noise
+with standard deviation $\sigma = 0.02$. Spatial augmentation is avoided for
+categories whose normal pose is approximately fixed, because arbitrary rotations
+could destroy orientation information that is part of the normal appearance.
+Categories such as \textit{screw}, \textit{hazelnut}, and \textit{metal\_nut},
+whose benchmark images naturally include rotational variation, are exceptions
+to this general orientation assumption.
 
 \subsection{Foreground Extraction}
 \label{sec:foreground}
@@ -296,7 +303,9 @@ The final comparison standardises the data split, validation-based operating-thr
 \section{Exploratory Autoencoder Development}
 \label{sec:exploration}
 
-Our first model development phase consisted of iterative notebook-based experiments. We focused exclusively on the \textit{bottle} category to maintain a consistent comparison base. Under the intended deterministic 85\%/15\% protocol, its 209 normal development images are divided into 177 training images and 32 validation images; the official test set contains 83 images and remains separate. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
+Our first model development phase consisted of iterative notebook-based experiments. The primary shared development sequence focused on the \textit{bottle} category
+to maintain a consistent comparison base. A parallel exploratory study on the
+\textit{screw} category is documented separately in Section~\ref{subsec:screw-exploration}. Under the intended deterministic 85\%/15\% protocol, its 209 normal development images are divided into 177 training images and 32 validation images; the official test set contains 83 images and remains separate. We deliberately chose to document this process as a progression of insights, because the dead ends and missteps are as informative as the improvements.
 
 Milestones 1--4 were repeatedly compared using performance on that bottle test set. They are therefore exploratory and test-informed rather than unbiased final estimates. Because those comparisons partly informed the final CAE architecture, the final bottle result must be interpreted with the same methodological caution as the test-informed Optuna experiments described later.
 
@@ -424,7 +433,7 @@ This result starkly contrasted with our best autoencoder configuration at the ti
 \section{The Final Keras CAE (Milestone 5)}
 \label{sec:cae}
 
-Based on the four milestones, we designed the final production autoencoder in Keras. This model incorporates the main successful ideas while addressing the remaining weaknesses identified during the exploration phase. We structured the Keras code using a sequential model setup to ensure clean layer definitions and manageable state.
+Based primarily on the four bottle-category milestones, we designed the final production autoencoder in Keras. This model incorporates the main successful ideas while addressing the remaining weaknesses identified during the exploration phase. We structured the Keras code using a sequential model setup to ensure clean layer definitions and manageable state.
 
 \subsection{Architecture and Activation Layers}
 
