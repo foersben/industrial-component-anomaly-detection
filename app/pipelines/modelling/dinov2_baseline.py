@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 import numpy as np
+import pandas as pd
 from anomalib.data import MVTecAD
 from anomalib.engine import Engine
 from anomalib.models import AnomalyDINO
@@ -137,7 +138,7 @@ def _load_completed_category_result(
         result["image_level"]["average_precision"] = float(metadata["image_average_precision"])
         return result
     except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
-        logger.warning("Ignoring incomplete DINOv2 artifacts in %s: %s", base_dir, exc)
+        logger.warning("Ignoring incomplete DINO artifacts in %s: %s", base_dir, exc)
         return None
 
 
@@ -171,8 +172,13 @@ def _run_dinov2_category(
     position_radius: int = 1,
     spatial_weight: float = 0.05,
     density_neighbors: int = 5,
+    model_generation: Literal["dinov2", "dinov3"] = "dinov2",
+    model_name: str = "DINOv2",
+    input_size: int = DINO_V2_INPUT_SIZE,
+    patch_size: int = 14,
+    manifest: pd.DataFrame | None = None,
 ) -> BaselineResult:
-    """Evaluate frozen DINOv2 patch tokens with a normal-only nearest-neighbour bank.
+    """Evaluate frozen DINO patch tokens with a normal-only nearest-neighbour bank.
 
     The fitting partition supplies the memory bank, the normal validation
     partition supplies both deployment thresholds, and the official test set is
@@ -198,6 +204,11 @@ def _run_dinov2_category(
         position_radius: Patch-grid search radius used by the enhanced scorer.
         spatial_weight: Spatial-distance penalty used by the enhanced scorer.
         density_neighbors: Normal neighbours used to estimate local density.
+        model_generation: Encoder family used for validation and artifact identity.
+        model_name: Human-readable model label used in logs and evaluation plots.
+        input_size: Square model input size recorded in the run metadata.
+        patch_size: Encoder patch size recorded in the run metadata.
+        manifest: Optional prebuilt dataset manifest for all-category orchestration.
 
     Returns:
         Results using the same schema and metric artifacts as PatchCore.
@@ -206,8 +217,10 @@ def _run_dinov2_category(
         raise ValueError(f"fair-eval-v1 requires fpr_limit={AUPIMO_FPR_BOUNDS[1]}")
     if num_neighbors < 1:
         raise ValueError("num_neighbors must be at least 1")
-    if "dinov2" not in encoder_name:
-        raise ValueError("encoder_name must identify a pretrained DINOv2 encoder")
+    if model_generation not in {"dinov2", "dinov3"}:
+        raise ValueError("model_generation must be one of: dinov2, dinov3")
+    if model_generation not in encoder_name:
+        raise ValueError(f"encoder_name must identify a pretrained {model_name} encoder")
     use_masking = resolve_masking(masking, category)
 
     steps_config = pipeline if pipeline is not None else preprocessing_steps
@@ -218,8 +231,8 @@ def _run_dinov2_category(
         proc_pipeline = build_pipeline_from_configs(steps_config)
         raw_prep_list = _normalize_preprocessing_steps(steps_config)
 
-    manifest = build_mvtec_manifest(data_root)
-    fair_split = build_fair_evaluation_split(manifest, category)
+    active_manifest = manifest if manifest is not None else build_mvtec_manifest(data_root)
+    fair_split = build_fair_evaluation_split(active_manifest, category)
     cache_evidence = {
         **fair_split.evidence(),
         **fair_metric_evidence(),
@@ -238,6 +251,10 @@ def _run_dinov2_category(
         "preprocessing_steps": raw_prep_list,
         "evaluation": cache_evidence,
     }
+    # Preserve the hashes of existing DINOv2 artifacts while namespacing the
+    # newer generation explicitly in its own run identity.
+    if model_generation != "dinov2":
+        identity["model_generation"] = model_generation
     if variant == "enhanced":
         enhanced_scorer: dict[str, Any] = {
             "feature_layers": list(feature_layers),
@@ -258,7 +275,7 @@ def _run_dinov2_category(
     if reuse_complete:
         completed_result = _load_completed_category_result(base_dir, category, model_hash, run_heatmap)
         if completed_result is not None:
-            logger.info("Reusing complete DINOv2 result for %s (Hash: %s)", category, model_hash)
+            logger.info("Reusing complete %s result for %s (Hash: %s)", model_name, category, model_hash)
             return completed_result
 
     datamodule = MVTecAD(
@@ -276,14 +293,22 @@ def _run_dinov2_category(
     )
 
     _seed_patchcore_run(model_seed)
+    model_kwargs: dict[str, Any] = {
+        "num_neighbours": num_neighbors,
+        "encoder_name": encoder_name,
+        "masking": use_masking,
+        "coreset_subsampling": False,
+        "post_processor": False,
+        "evaluator": False,
+        "visualizer": _RawScoreImageVisualizer(),
+    }
+    if model_generation == "dinov3":
+        # AnomalyDINO defaults to 252px for the ViT-S/14 DINOv2 backbone.
+        # DINOv3 ViT-S/16 is pretrained at 256px and requires a patch-aligned
+        # input for an exact 16x16 token grid.
+        model_kwargs["pre_processor"] = AnomalyDINO.configure_pre_processor((input_size, input_size))
     model = AnomalyDINO(
-        num_neighbours=num_neighbors,
-        encoder_name=encoder_name,
-        masking=use_masking,
-        coreset_subsampling=False,
-        post_processor=False,
-        evaluator=False,
-        visualizer=_RawScoreImageVisualizer(),
+        **model_kwargs,
     )
     if variant == "enhanced":
         from app.pipelines.modelling.enhanced_dinov2 import EnhancedAnomalyDINOModel
@@ -306,8 +331,14 @@ def _run_dinov2_category(
     validation_dataloader = datamodule.val_dataloader()
     test_dataloader = datamodule.test_dataloader()
 
-    logger.info("Building DINOv2 normal patch bank for %s (Hash: %s)...", category, model_hash)
+    logger.info("Building %s normal patch bank for %s (Hash: %s)...", model_name, category, model_hash)
     engine.fit(model, train_dataloaders=train_dataloader)
+    memory_bank = getattr(model.model, "memory_bank", None)
+    if memory_bank is not None and hasattr(memory_bank, "numel") and memory_bank.numel() == 0:
+        raise RuntimeError(
+            f"{model_name} fitting produced an empty memory bank for category '{category}'. "
+            "Check that the fitting loader contains normal images and that foreground masking retains patches."
+        )
     (
         image_f1,
         pixel_f1,
@@ -334,7 +365,7 @@ def _run_dinov2_category(
         test_dataloader,
         base_dir,
         run_heatmap,
-        model_name="DINOv2",
+        model_name=model_name,
     )
 
     with np.load(base_dir / "image_metrics.npz", allow_pickle=False) as image_metrics:
@@ -349,8 +380,8 @@ def _run_dinov2_category(
     }
     hyperparameters = {
         "encoder_name": encoder_name,
-        "input_size": DINO_V2_INPUT_SIZE,
-        "patch_size": 14,
+        "input_size": input_size,
+        "patch_size": patch_size,
         "num_neighbors": num_neighbors,
         "masking_mode": masking,
         "masking": use_masking,
@@ -378,7 +409,8 @@ def _run_dinov2_category(
     heatmap_archive = _save_heatmap_overlays(heatmap_overlays, base_dir / "heatmap_overlays.npz")
     metadata = {
         "hash": model_hash,
-        "model_type": "dinov2_enhanced_knn" if variant == "enhanced" else "dinov2_knn",
+        "model_type": f"{model_generation}_enhanced_knn" if variant == "enhanced" else f"{model_generation}_knn",
+        "model_generation": model_generation,
         "category": category,
         "encoder_name": encoder_name,
         "num_neighbors": num_neighbors,
