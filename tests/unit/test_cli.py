@@ -119,3 +119,20 @@ def test_cli_dinov2_accepts_all_categories() -> None:
         main()
 
     assert mock_run.call_args.kwargs["category"] == "all"
+
+
+def test_cli_dinov3_accepts_all_categories() -> None:
+    """The CLI exposes the DINOv3 all-category baseline."""
+    with (
+        patch.object(sys, "argv", ["main.py", "dinov3", "--category", "all"]),
+        patch("app.pipelines.modelling.dinov3_baseline.run_dinov3_baseline") as mock_run,
+    ):
+        main()
+
+    mock_run.assert_called_once_with(
+        data_root="data/raw/mvtec_ad",
+        category="all",
+        fpr_limit=1e-4,
+        num_neighbors=1,
+        run_heatmap=False,
+    )

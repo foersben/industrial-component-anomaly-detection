@@ -15,6 +15,7 @@ from app.pipelines.modelling.baseline import (
     run_baseline,
 )
 from app.pipelines.modelling.dinov2_baseline import run_dinov2_baseline
+from app.pipelines.modelling.dinov3_baseline import run_dinov3_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
 from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 
@@ -31,6 +32,7 @@ __all__ = [
     "run_autoencoder_pipeline",
     "run_baseline",
     "run_dinov2_baseline",
+    "run_dinov3_baseline",
     "run_dummy_evaluation",
     "run_keras_cae_pipeline",
     "run_real_data_dummy",
