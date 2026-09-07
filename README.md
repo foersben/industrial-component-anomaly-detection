@@ -96,6 +96,9 @@ The project supports multiple anomaly detection pipelines with artifacts under `
 PatchCore and the Keras CAE are available in the Streamlit application. The DINOv2 baseline is intentionally exposed
 through the CLI and API first, keeping the initial research integration small and auditable.
 
+For the repository-only comparison—including the deployment-primary **Image F1** metric—see
+[DINOv2 experiment results](docs/data_science/dinov2_experiment_results.md).
+
 The existing interactive pipelines support:
 
 * **Instant Cached Evaluation**: Evaluations are hashed and cached (under 100ms load time).

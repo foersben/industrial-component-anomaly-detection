@@ -1,0 +1,5 @@
+model,variant,image_f1,image_pr_auc,pixel_f1,pixel_auroc,aupimo,categories,protocol,primary_metric,notes
+DINOv2,baseline_single_layer_1nn,0.9408920688,0.9891396220,0.2904254142,0.9694857139,0.6019705088,15,fair-eval-v1,image_f1,Preferred deployment candidate
+PatchCore,baseline,0.929,0.988,,,0.603,15,fair-eval-v1,image_f1,Shared report Table 1 baseline
+DINOv2,enhanced_multilayer_position_5nn,0.9195966422,0.9832522539,0.3852010473,0.9788926921,0.5445434489,15,fair-eval-v1,image_f1,Repository experiment
+Keras CAE,baseline,0.495,0.867,,,0.058,15,fair-eval-v1,image_f1,Shared report Table 1 baseline
