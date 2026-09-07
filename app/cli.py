@@ -93,6 +93,12 @@ def _setup_dinov2_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
     )
     parser.add_argument("--num-neighbors", type=int, default=1, help="Normal patch neighbors per query patch")
     parser.add_argument(
+        "--variant",
+        choices=("baseline", "enhanced"),
+        default="baseline",
+        help="Stock scorer or multi-layer position/density-aware scorer",
+    )
+    parser.add_argument(
         "--masking",
         choices=("off", "on", "published"),
         default="published",
@@ -184,6 +190,7 @@ def _handle_dinov2_command(args: argparse.Namespace) -> None:
         num_neighbors=args.num_neighbors,
         masking=args.masking,
         run_heatmap=args.heatmap,
+        variant=args.variant,
     )
 
 

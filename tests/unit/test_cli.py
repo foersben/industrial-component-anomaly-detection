@@ -95,7 +95,19 @@ def test_cli_dinov2_exposes_only_justified_baseline_options() -> None:
         num_neighbors=3,
         masking="published",
         run_heatmap=False,
+        variant="baseline",
     )
+
+
+def test_cli_dinov2_accepts_enhanced_variant() -> None:
+    """The CLI exposes the pre-registered enhanced DINOv2 scorer."""
+    with (
+        patch.object(sys, "argv", ["main.py", "dinov2", "--category", "bottle", "--variant", "enhanced"]),
+        patch("app.pipelines.modelling.dinov2_baseline.run_dinov2_baseline") as mock_run,
+    ):
+        main()
+
+    assert mock_run.call_args.kwargs["variant"] == "enhanced"
 
 
 def test_cli_dinov2_accepts_all_categories() -> None:

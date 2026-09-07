@@ -62,6 +62,8 @@ MVTEC_CATEGORIES = (
 )
 ANOMALY_DINO_MASKED_CATEGORIES = frozenset({"capsule", "hazelnut", "pill", "screw", "toothbrush"})
 MaskingMode = Literal["off", "on", "published"]
+DINOv2Variant = Literal["baseline", "enhanced"]
+ENHANCED_DINO_LAYERS = (8, 10, 11)
 
 
 class AllCategoriesResult(TypedDict):
@@ -164,6 +166,11 @@ def _run_dinov2_category(
     registry_base: Path | str = "data/models/dinov2",
     model_seed: int = PATCHCORE_MODEL_SEED,
     reuse_complete: bool = False,
+    variant: DINOv2Variant = "baseline",
+    feature_layers: tuple[int, ...] = ENHANCED_DINO_LAYERS,
+    position_radius: int = 1,
+    spatial_weight: float = 0.05,
+    density_neighbors: int = 5,
 ) -> BaselineResult:
     """Evaluate frozen DINOv2 patch tokens with a normal-only nearest-neighbour bank.
 
@@ -186,6 +193,11 @@ def _run_dinov2_category(
         registry_base: Directory in which evaluation artifacts are written.
         model_seed: Shared deterministic model and data-loader seed.
         reuse_complete: Reuse complete artifacts for this exact configuration.
+        variant: Stock final-block scorer or enhanced multi-layer scorer.
+        feature_layers: Transformer block indices used by the enhanced scorer.
+        position_radius: Patch-grid search radius used by the enhanced scorer.
+        spatial_weight: Spatial-distance penalty used by the enhanced scorer.
+        density_neighbors: Normal neighbours used to estimate local density.
 
     Returns:
         Results using the same schema and metric artifacts as PatchCore.
@@ -226,6 +238,20 @@ def _run_dinov2_category(
         "preprocessing_steps": raw_prep_list,
         "evaluation": cache_evidence,
     }
+    if variant == "enhanced":
+        enhanced_scorer: dict[str, Any] = {
+            "feature_layers": list(feature_layers),
+            "feature_normalization": "l2_after_pca_mask",
+            "position_radius": position_radius,
+            "spatial_weight": spatial_weight,
+            "position_fallback": "global_with_spatial_penalty",
+            "density_neighbors": density_neighbors,
+            "density_normalization": "global_median_quarter_power_clipped_0.5_2.0",
+            "image_aggregation": "patchcore_neighborhood_reweighting",
+        }
+        identity["enhanced_scorer"] = enhanced_scorer
+    elif variant != "baseline":
+        raise ValueError("variant must be one of: baseline, enhanced")
     model_hash = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:12]
     base_dir = Path(registry_base) / model_hash
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -259,6 +285,18 @@ def _run_dinov2_category(
         evaluator=False,
         visualizer=_RawScoreImageVisualizer(),
     )
+    if variant == "enhanced":
+        from app.pipelines.modelling.enhanced_dinov2 import EnhancedAnomalyDINOModel
+
+        model.model = EnhancedAnomalyDINOModel(
+            num_neighbours=num_neighbors,
+            encoder_name=encoder_name,
+            masking=use_masking,
+            feature_layers=feature_layers,
+            position_radius=position_radius,
+            spatial_weight=spatial_weight,
+            density_neighbours=density_neighbors,
+        )
     # Anomalib already executes this extractor under torch.no_grad(). Freezing
     # the parameter flags as well makes the transfer-learning contract explicit
     # and prevents future trainer changes from accidentally enabling updates.
@@ -321,7 +359,10 @@ def _run_dinov2_category(
         "eval_batch_size": DINO_V2_BATCH_SIZE,
         "model_seed": model_seed,
         "score_space": PATCHCORE_SCORE_SPACE,
+        "variant": variant,
     }
+    if variant == "enhanced":
+        hyperparameters.update(enhanced_scorer)
     raw_results: dict[str, float] = {
         "image_F1Score": image_f1,
         "image_Precision": image_precision,
@@ -337,13 +378,14 @@ def _run_dinov2_category(
     heatmap_archive = _save_heatmap_overlays(heatmap_overlays, base_dir / "heatmap_overlays.npz")
     metadata = {
         "hash": model_hash,
-        "model_type": "dinov2_knn",
+        "model_type": "dinov2_enhanced_knn" if variant == "enhanced" else "dinov2_knn",
         "category": category,
         "encoder_name": encoder_name,
         "num_neighbors": num_neighbors,
         "masking_mode": masking,
         "masking": use_masking,
         "coreset_subsampling": False,
+        "variant": variant,
         "preprocessing_steps": raw_prep_list,
         "hyperparameters": hyperparameters,
         "dataset_split": split_info,
@@ -426,6 +468,11 @@ def run_dinov2_baseline(
     preprocessing_steps: list[dict[str, Any]] | None = None,
     registry_base: Path | str = "data/models/dinov2",
     model_seed: int = PATCHCORE_MODEL_SEED,
+    variant: DINOv2Variant = "baseline",
+    feature_layers: tuple[int, ...] = ENHANCED_DINO_LAYERS,
+    position_radius: int = 1,
+    spatial_weight: float = 0.05,
+    density_neighbors: int = 5,
 ) -> BaselineResult | AllCategoriesResult:
     """Run one MVTec category or all canonical categories sequentially.
 
@@ -446,6 +493,11 @@ def run_dinov2_baseline(
             preprocessing_steps=preprocessing_steps,
             registry_base=registry_base,
             model_seed=model_seed,
+            variant=variant,
+            feature_layers=feature_layers,
+            position_radius=position_radius,
+            spatial_weight=spatial_weight,
+            density_neighbors=density_neighbors,
         )
 
     category_results: dict[str, BaselineResult] = {}
@@ -464,6 +516,11 @@ def run_dinov2_baseline(
                 registry_base=registry_base,
                 model_seed=model_seed,
                 reuse_complete=True,
+                variant=variant,
+                feature_layers=feature_layers,
+                position_radius=position_radius,
+                spatial_weight=spatial_weight,
+                density_neighbors=density_neighbors,
             )
             # Heatmaps are already persisted as a compressed artifact. Keeping
             # their nested Python lists for every category can consume many GB.
