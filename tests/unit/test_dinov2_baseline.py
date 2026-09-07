@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from app.pipelines.modelling.dinov2_baseline import (
     ANOMALY_DINO_MASKED_CATEGORIES,
@@ -14,6 +15,7 @@ from app.pipelines.modelling.dinov2_baseline import (
     resolve_masking,
     run_dinov2_baseline,
 )
+from app.pipelines.modelling.enhanced_dinov2 import EnhancedAnomalyDINOModel
 
 
 def test_dinov2_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -34,6 +36,55 @@ def test_dinov2_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response["status"] == "success"
     assert captured["masking"] == "on"
     assert captured["num_neighbors"] == 3
+    assert captured["variant"] == "baseline"
+
+
+def test_enhanced_knn_restricts_matches_to_patch_position() -> None:
+    """A visually identical token at the wrong position is not a valid exact match."""
+    model = EnhancedAnomalyDINOModel.__new__(EnhancedAnomalyDINOModel)
+    torch.nn.Module.__init__(model)
+    model.num_neighbours = 1
+    model.position_radius = 0
+    model.spatial_weight = 0.05
+    model.memory_bank = torch.tensor([[[1.0, 0.0], [0.0, 1.0]]])
+    model.memory_valid = torch.ones((1, 2), dtype=torch.bool)
+    model.memory_density = torch.ones((1, 2))
+    model.density_reference = torch.tensor(1.0)
+    queries = torch.tensor([[[0.0, 1.0], [0.0, 1.0]]])
+
+    patch_scores, _ = model._score_features(queries, grid_size=(1, 2))
+
+    assert patch_scores[0, 0] == pytest.approx(1.0)
+    assert patch_scores[0, 1] == pytest.approx(0.0)
+
+
+def test_enhanced_image_score_reweights_the_worst_patch() -> None:
+    """Image aggregation applies neighborhood confidence to the worst patch."""
+    neighbours = torch.tensor([[[0.1, 0.2, 0.3], [1.0, 1.2, 1.4]]])
+
+    score = EnhancedAnomalyDINOModel.patchcore_image_score(neighbours)
+
+    assert score.shape == (1, 1)
+    assert 0 < score.item() < neighbours[0, 1].mean().item()
+
+
+def test_enhanced_knn_falls_back_when_masking_empties_local_window() -> None:
+    """Masked local windows use spatially penalized global normal candidates."""
+    model = EnhancedAnomalyDINOModel.__new__(EnhancedAnomalyDINOModel)
+    torch.nn.Module.__init__(model)
+    model.num_neighbours = 1
+    model.position_radius = 0
+    model.spatial_weight = 0.05
+    model.memory_bank = torch.tensor([[[1.0, 0.0], [0.0, 1.0]]])
+    model.memory_valid = torch.tensor([[False, True]])
+    model.memory_density = torch.ones((1, 2))
+    model.density_reference = torch.tensor(1.0)
+    queries = torch.tensor([[[0.0, 1.0], [0.0, 1.0]]])
+
+    patch_scores, _ = model._score_features(queries, grid_size=(1, 2))
+
+    assert patch_scores[0, 0] == pytest.approx(0.05)
+    assert patch_scores[0, 1] == pytest.approx(0.0)
 
 
 def test_published_masking_policy_matches_full_shot_categories() -> None:

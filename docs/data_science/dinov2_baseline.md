@@ -76,6 +76,23 @@ The API exposes the same runner at `POST /api/pipelines/dinov2`. Artifacts are w
 heatmap overlays. Metadata includes the exact path digests, split parameters, masking policy, thresholds, metric
 settings, and raw summary values needed to audit comparisons.
 
+## Enhanced position-aware experiment
+
+An explicitly selectable `enhanced` variant combines transformer blocks 8, 10, and 11, searches five neighbours
+within a one-patch spatial radius, applies a small spatial-distance penalty, uses a bounded local-density correction,
+and applies PatchCore-style neighbourhood reweighting to the image score:
+
+```bash
+pixi run -e dev python -m app.cli dinov2 --category all --variant enhanced --num-neighbors 5 --masking published
+```
+
+This fixed configuration was evaluated once across all 15 categories under the same fair protocol. It achieved mean
+image F1 `0.920`, image average precision `0.983`, pixel AUROC `0.979`, pixel F1 `0.385`, and AUPIMO `0.545`. The
+original single-layer DINOv2 baseline achieved `0.941`, `0.989`, `0.969`, `0.290`, and `0.602`, respectively. The
+enhanced scorer therefore remains an ablation, not a replacement. It improved AUPIMO on capsule, carpet, metal nut,
+and transistor, but reduced it on the other eleven categories. Position constraints and foreground masking were
+especially brittle for hazelnut, screw, and toothbrush.
+
 ## Interpretation
 
 The anomaly map is a patch-feature distance map, not an attention map. It localizes regions whose DINOv2 tokens are

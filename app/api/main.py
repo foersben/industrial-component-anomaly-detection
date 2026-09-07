@@ -73,6 +73,7 @@ class DINOv2EvaluationRequest(BaseModel):
     num_neighbors: int = 1
     masking: Literal["off", "on", "published"] = "published"
     run_heatmap: bool = False
+    variant: Literal["baseline", "enhanced"] = "baseline"
 
 
 class AutoencoderEvaluationRequest(BaseModel):
@@ -188,6 +189,7 @@ def run_dinov2_pipeline(req: DINOv2EvaluationRequest) -> dict[str, Any]:
         num_neighbors=req.num_neighbors,
         masking=req.masking,
         run_heatmap=req.run_heatmap,
+        variant=req.variant,
     )
     return {
         "status": "success",
