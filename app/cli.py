@@ -80,6 +80,48 @@ def _setup_baseline_parser(subparsers: argparse._SubParsersAction[argparse.Argum
     )
 
 
+def _setup_dinov2_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Configure the minimal frozen DINOv2 baseline subcommand."""
+    parser = subparsers.add_parser("dinov2", help="Run frozen DINOv2 patch nearest-neighbour baseline")
+    parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Path to MVTec AD dataset root")
+    parser.add_argument("--category", type=str, default="bottle", help="MVTec AD category or 'all'")
+    parser.add_argument(
+        "--fpr-limit",
+        type=float,
+        default=1e-4,
+        help="Fair-protocol AUPIMO upper FPR bound (must remain 1e-4)",
+    )
+    parser.add_argument("--num-neighbors", type=int, default=1, help="Normal patch neighbors per query patch")
+    parser.add_argument(
+        "--variant",
+        choices=("baseline", "enhanced"),
+        default="baseline",
+        help="Stock scorer or multi-layer position/density-aware scorer",
+    )
+    parser.add_argument(
+        "--masking",
+        choices=("off", "on", "published"),
+        default="published",
+        help="PCA foreground masking policy (default: published category policy)",
+    )
+    parser.add_argument("--heatmap", action="store_true", help="Render anomalous test-image heatmaps")
+
+
+def _setup_dinov3_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Configure the frozen DINOv3 baseline subcommand."""
+    parser = subparsers.add_parser("dinov3", help="Run frozen DINOv3 patch nearest-neighbour baseline")
+    parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Path to MVTec AD dataset root")
+    parser.add_argument("--category", type=str, default="bottle", help="MVTec AD category or 'all'")
+    parser.add_argument(
+        "--fpr-limit",
+        type=float,
+        default=1e-4,
+        help="Fair-protocol AUPIMO upper FPR bound (must remain 1e-4)",
+    )
+    parser.add_argument("--num-neighbors", type=int, default=1, help="Normal patch neighbors per query patch")
+    parser.add_argument("--heatmap", action="store_true", help="Render anomalous test-image heatmaps")
+
+
 def _parse_preprocessing_steps(args: argparse.Namespace) -> list[dict[str, Any]] | None:
     """Extract preprocessing steps from a JSON file/string or CLI flags.
 
@@ -152,6 +194,34 @@ def _handle_baseline_command(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_dinov2_command(args: argparse.Namespace) -> None:
+    """Execute the frozen DINOv2 baseline subcommand."""
+    from app.pipelines.modelling.dinov2_baseline import run_dinov2_baseline
+
+    run_dinov2_baseline(
+        data_root=args.data_root,
+        category=args.category,
+        fpr_limit=args.fpr_limit,
+        num_neighbors=args.num_neighbors,
+        masking=args.masking,
+        run_heatmap=args.heatmap,
+        variant=args.variant,
+    )
+
+
+def _handle_dinov3_command(args: argparse.Namespace) -> None:
+    """Execute the frozen DINOv3 baseline subcommand."""
+    from app.pipelines.modelling.dinov3_baseline import run_dinov3_baseline
+
+    run_dinov3_baseline(
+        data_root=args.data_root,
+        category=args.category,
+        fpr_limit=args.fpr_limit,
+        num_neighbors=args.num_neighbors,
+        run_heatmap=args.heatmap,
+    )
+
+
 def main() -> None:
     """Run the main CLI."""
     preprocess_sys_argv()
@@ -161,6 +231,8 @@ def main() -> None:
 
     _setup_dummy_parser(subparsers)
     _setup_baseline_parser(subparsers)
+    _setup_dinov2_parser(subparsers)
+    _setup_dinov3_parser(subparsers)
 
     args = parser.parse_args()
 
@@ -168,6 +240,10 @@ def main() -> None:
         _handle_dummy_command(args)
     elif args.command == "baseline":
         _handle_baseline_command(args)
+    elif args.command == "dinov2":
+        _handle_dinov2_command(args)
+    elif args.command == "dinov3":
+        _handle_dinov3_command(args)
     else:
         parser.print_help()
         sys.exit(1)
