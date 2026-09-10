@@ -47,7 +47,7 @@ def test_cli_patchcore_preprocessing_flags() -> None:
             {"name": "gaussian_blur", "params": {"kernel_size": 5}},
         ]
 
-        assert kwargs["preprocessing_steps"] == expected_steps
+        assert kwargs["pipeline"] == expected_steps
 
 
 def test_cli_patchcore_preprocessing_json_string() -> None:
@@ -63,7 +63,7 @@ def test_cli_patchcore_preprocessing_json_string() -> None:
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
 
-        assert kwargs["preprocessing_steps"] == [{"name": "clahe", "params": {"clip_limit": 2.5}}]
+        assert kwargs["pipeline"] == [{"name": "clahe", "params": {"clip_limit": 2.5}}]
 
 
 def test_cli_patchcore_preprocessing_json_file(tmp_path: Path) -> None:
@@ -84,7 +84,7 @@ def test_cli_patchcore_preprocessing_json_file(tmp_path: Path) -> None:
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
 
-        assert kwargs["preprocessing_steps"] == [{"name": "gaussian_blur", "params": {"kernel_size": 3}}]
+        assert kwargs["pipeline"] == [{"name": "gaussian_blur", "params": {"kernel_size": 3}}]
 
 
 def test_cli_dinov2_exposes_only_justified_baseline_options() -> None:
@@ -93,7 +93,7 @@ def test_cli_dinov2_exposes_only_justified_baseline_options() -> None:
 
     with (
         patch.object(sys, "argv", test_args),
-        patch("app.pipelines.modelling.dinov2_baseline.run_dinov2_baseline") as mock_run,
+        patch("app.pipelines.modelling.dino.run_dinov2_baseline") as mock_run,
     ):
         main()
 
@@ -102,6 +102,7 @@ def test_cli_dinov2_exposes_only_justified_baseline_options() -> None:
         category="capsule",
         fpr_limit=1e-4,
         num_neighbors=3,
+        pipeline=None,
         masking="published",
         run_heatmap=False,
         variant="baseline",
@@ -112,7 +113,7 @@ def test_cli_dinov2_accepts_enhanced_variant() -> None:
     """The CLI exposes the pre-registered enhanced DINOv2 scorer."""
     with (
         patch.object(sys, "argv", ["main.py", "dinov2", "--category", "bottle", "--variant", "enhanced"]),
-        patch("app.pipelines.modelling.dinov2_baseline.run_dinov2_baseline") as mock_run,
+        patch("app.pipelines.modelling.dino.run_dinov2_baseline") as mock_run,
     ):
         main()
 
@@ -123,7 +124,7 @@ def test_cli_dinov2_accepts_all_categories() -> None:
     """The CLI forwards the all-category selector to the model dispatcher."""
     with (
         patch.object(sys, "argv", ["main.py", "dinov2", "--category", "all"]),
-        patch("app.pipelines.modelling.dinov2_baseline.run_dinov2_baseline") as mock_run,
+        patch("app.pipelines.modelling.dino.run_dinov2_baseline") as mock_run,
     ):
         main()
 
@@ -134,7 +135,7 @@ def test_cli_dinov3_accepts_all_categories() -> None:
     """The CLI exposes the DINOv3 all-category baseline."""
     with (
         patch.object(sys, "argv", ["main.py", "dinov3", "--category", "all"]),
-        patch("app.pipelines.modelling.dinov3_baseline.run_dinov3_baseline") as mock_run,
+        patch("app.pipelines.modelling.dino.run_dinov3_baseline") as mock_run,
     ):
         main()
 
@@ -176,7 +177,7 @@ def test_cli_patchcore_subcommand() -> None:
         num_neighbors=9,
         run_heatmap=True,
         force_retrain=False,
-        preprocessing_steps=None,
+        pipeline=None,
     )
 
 
@@ -213,7 +214,7 @@ def test_cli_cae_subcommand() -> None:
         mask_patch_size=8,
         threshold_method="quantile",
         k_fraction=0.002,
-        preprocessing_steps=None,
+        pipeline=None,
         run_heatmap=True,
         force_retrain=False,
     )

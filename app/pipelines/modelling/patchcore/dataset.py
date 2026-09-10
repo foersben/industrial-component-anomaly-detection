@@ -7,11 +7,7 @@ from typing import Any
 from anomalib.data import MVTecAD
 from lightning import seed_everything
 
-from app.domain.data import (
-    FairEvaluationSplit,
-    build_fair_evaluation_split,
-    build_mvtec_manifest,
-)
+from app.domain.data import FairEvaluationSplit
 from app.pipelines.preprocessing.adapter import (
     PreprocessedAnomalibDataset,
     PreprocessingTransformAdapter,
@@ -81,9 +77,3 @@ def _configure_patchcore_partitions(
     datamodule.train_data = train_data
     datamodule.val_data = validation_data
     datamodule.test_data = test_data
-
-
-__all__ = [
-    "build_fair_evaluation_split",
-    "build_mvtec_manifest",
-]

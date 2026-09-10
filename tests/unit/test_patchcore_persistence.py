@@ -265,7 +265,7 @@ def test_find_cached_patchcore_model_resolution(tmp_path: Path) -> None:
         backbone="resnet18",
         coreset_sampling_ratio=0.1,
         fpr_limit=1e-4,
-        preprocessing_steps=[{"name": "clahe", "params": {}}],
+        pipeline=[{"name": "clahe", "params": {}}],
         registry_base=tmp_path,
     )
     assert hit is not None
@@ -420,7 +420,7 @@ def test_run_patchcore_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
         backbone="resnet18",
         coreset_sampling_ratio=0.1,
         fpr_limit=1e-4,
-        preprocessing_steps=[],
+        pipeline=[],
         registry_base=tmp_path,
     )
 

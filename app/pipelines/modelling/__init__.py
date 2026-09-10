@@ -5,8 +5,7 @@ from app.pipelines.modelling.autoencoder import (
     evaluate_autoencoder,
     run_autoencoder_pipeline,
 )
-from app.pipelines.modelling.dinov2_baseline import run_dinov2_baseline
-from app.pipelines.modelling.dinov3_baseline import run_dinov3_baseline
+from app.pipelines.modelling.dino import run_dinov2_baseline, run_dinov3_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
 from app.pipelines.modelling.keras_cae.cae_pipeline import run_keras_cae_pipeline
 from app.pipelines.modelling.patchcore import (

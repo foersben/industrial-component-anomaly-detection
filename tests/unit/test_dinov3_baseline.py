@@ -6,14 +6,14 @@ from typing import Any
 
 import pytest
 
-from app.pipelines.modelling.dinov2_baseline import MVTEC_CATEGORIES
-from app.pipelines.modelling.dinov3_baseline import (
+from app.domain.categories import MVTEC_CATEGORIES
+from app.pipelines.modelling.dino import (
     DINO_V3_ENCODER,
     DINO_V3_INPUT_SIZE,
     DINO_V3_PATCH_SIZE,
-    _run_dinov3_category,
     run_dinov3_baseline,
 )
+from app.pipelines.modelling.dino.v3 import _run_dinov3_category
 
 
 def test_dinov3_category_uses_shared_evaluator(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -24,7 +24,7 @@ def test_dinov3_category_uses_shared_evaluator(monkeypatch: pytest.MonkeyPatch) 
         captured.update(kwargs)
         return {"image_level": {}, "pixel_level": {}}
 
-    monkeypatch.setattr("app.pipelines.modelling.dinov3_baseline._run_dinov2_category", fake_run)
+    monkeypatch.setattr("app.pipelines.modelling.dino.v3.run_dino_category", fake_run)
 
     _run_dinov3_category(category="capsule")
 
@@ -64,9 +64,9 @@ def test_dinov3_all_category_dispatch_reports_macro_averages(
             "heatmap_overlays": {0: {"heatmap": [[[1]]]}},
         }
 
-    monkeypatch.setattr("app.pipelines.modelling.dinov3_baseline._run_dinov3_category", fake_category)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.run_dino_category", fake_category)
     fake_manifest = object()
-    monkeypatch.setattr("app.pipelines.modelling.dinov3_baseline.build_mvtec_manifest", lambda _root: fake_manifest)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.build_mvtec_manifest", lambda _root: fake_manifest)
 
     result = run_dinov3_baseline(category="all", registry_base=tmp_path)
 
@@ -78,22 +78,3 @@ def test_dinov3_all_category_dispatch_reports_macro_averages(
     summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert summary["macro_average"]["image_f1"] == pytest.approx(8 / 15)
     assert (tmp_path / "category_metrics.csv").is_file()
-
-
-def test_dinov3_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The API forwards the DINOv3 evaluation configuration."""
-    from app.api.main import DINOv3EvaluationRequest, run_dinov3_pipeline
-
-    captured: dict[str, Any] = {}
-
-    def fake_run(**kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
-        return {"image_level": {"f1_score": 0.8}}
-
-    monkeypatch.setattr("app.api.main.run_dinov3_baseline", fake_run)
-    response = run_dinov3_pipeline(DINOv3EvaluationRequest(category="capsule", num_neighbors=3))
-
-    assert response["status"] == "success"
-    assert captured["encoder_name"] == DINO_V3_ENCODER
-    assert captured["num_neighbors"] == 3
-    assert captured["masking"] == "off"

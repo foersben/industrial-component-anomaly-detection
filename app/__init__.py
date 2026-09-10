@@ -1,12 +1,13 @@
 """The application package for the industrial component anomaly detection system.
 
-This package contains the CLI, API, UI, and evaluation pipelines.
+This package contains the CLI, UI, and evaluation pipelines.
 
-- **CLI**: `app.main`
-- **API**: `app.api`
+- **CLI**: `app.cli`
 - **UI**: `app.ui`
 - **Pipelines**: `app.pipelines`
 """
+
+from app.cli import main
 
 __all__ = ["main"]
 

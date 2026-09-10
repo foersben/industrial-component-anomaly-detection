@@ -36,7 +36,7 @@ Through our internal evaluation, we discovered that the default Patchcore implem
 - **Wide-ResNet50-2 (Deprecated)**: While theoretically yielding richer feature maps, we actively deprecated this backbone due to critical stability issues. It frequently triggered internal `timm` hook crashes and OOM exceptions during dynamic feature extraction within `anomalib`, causing unrecoverable trial failures during hyperparameter sweeps.
 
 !!! warning "Jupyter Notebook Stability & Recursion Errors"
-    When running PatchCore hyperparameter sweeps inside Jupyter Notebooks (e.g. Google Colab), you may encounter a `maximum recursion depth exceeded` error. This is caused by a known conflict between Anomalib's greedy coreset `tqdm` progress bar and PyTorch Lightning's logging hooks, which trap `sys.stdout` in an infinite recursive loop. To fix this, our pipeline monkeypatches the `tqdm` instance in `patchcore_optuna_study.py` to run silently during sweeps. Ensure your kernel is restarted if a previous trial crashes, as Lightning will silently hold the VRAM, leading to immediate OOM errors on subsequent runs.
+    When running PatchCore hyperparameter sweeps inside Jupyter Notebooks (e.g. Google Colab), you may encounter a `maximum recursion depth exceeded` error. This is caused by a known conflict between Anomalib's greedy coreset `tqdm` progress bar and PyTorch Lightning's logging hooks, which trap `sys.stdout` in an infinite recursive loop. To fix this, our pipeline monkeypatches the `tqdm` instance in `app/pipelines/modelling/patchcore/optuna_study.py` to run silently during sweeps. Ensure your kernel is restarted if a previous trial crashes, as Lightning will silently hold the VRAM, leading to immediate OOM errors on subsequent runs.
 
 ### 2. Coreset Sampling Ratio
 
@@ -71,7 +71,7 @@ In a real industrial factory, you do not have labeled defects to tune your thres
 
 To ensure our evaluation is industrially valid and strictly prevents data leakage, we intercept the raw anomaly scores from Anomalib and calculate the threshold manually.
 
-**Implementation**: [`baseline.py: extract_and_save_pr_metrics`](../../app/pipelines/modelling/baseline.py)
+**Implementation**: [`app.pipelines.modelling.patchcore.evaluation`](../api_reference.md)
 
 Here is exactly how we solve it:
 
@@ -140,7 +140,7 @@ Models can be safely deleted without risking permanent data loss:
 
 ### 4. Training Run Overview
 
-The Streamlit UI and FastAPI endpoints expose a comprehensive **Model Run Overview** card displaying:
+The Streamlit UI and CLI entrypoints expose a comprehensive **Model Run Overview** card displaying:
 
 - **🔧 Preprocessing Configuration**: Active filters with descriptive badges (e.g., `🟢 Foreground Mask (Otsu + Canny)`, `🟢 CLAHE`, `🟢 Gaussian Blur`) or `⚪ None (Raw unmodified images)`.
 - **⚙️ Model Hyperparameters**: Category, Backbone architecture (`resnet18` / `wide_resnet50_2`), Coreset Sampling Ratio, and FPR Limit bounds.

@@ -6,12 +6,82 @@ import numpy as np
 import streamlit as st
 
 
+def _render_prediction_heatmap_grid(
+    indices: list[int],
+    overlays: dict[Any, Any],
+    cols_per_row: int = 2,
+) -> None:
+    """Render a grid of prediction heatmaps for selected image indices.
+
+    Args:
+        indices: Image indices to render.
+        overlays: Heatmap overlays dictionary.
+        cols_per_row: Number of grid columns per row.
+    """
+    st.subheader("Prediction Heatmap")
+    for row_start in range(0, len(indices), cols_per_row):
+        row_indices = indices[row_start : row_start + cols_per_row]
+        cols = st.columns(len(row_indices))
+        for col, idx in zip(cols, row_indices, strict=False):
+            overlay_data = overlays.get(idx) or overlays.get(str(idx))
+            if isinstance(overlay_data, dict) and "heatmap" in overlay_data:
+                hm_arr = np.array(overlay_data["heatmap"], dtype=np.uint8)
+                col.image(hm_arr, caption=f"Image #{idx}", width="stretch")
+            elif isinstance(overlay_data, list):
+                col.image(np.array(overlay_data, dtype=np.uint8), caption=f"Image #{idx}")
+
+
+def _extract_gt_overlay_array(overlay_data: Any) -> np.ndarray | None:
+    """Extract ground truth overlay image array from overlay dictionary or list.
+
+    Args:
+        overlay_data: Dictionary or list containing ground truth overlay image data.
+
+    Returns:
+        NumPy array representation of the overlay image, or None if missing.
+    """
+    if not isinstance(overlay_data, dict):
+        return None
+    if "gt_and_heatmap" in overlay_data:
+        return np.array(overlay_data["gt_and_heatmap"], dtype=np.uint8)
+    if "gt_overlay" in overlay_data:
+        return np.array(overlay_data["gt_overlay"], dtype=np.uint8)
+    return None
+
+
+def _render_gt_heatmap_grid(
+    indices: list[int],
+    overlays: dict[Any, Any],
+    cols_per_row: int = 2,
+) -> None:
+    """Render a grid of ground truth and prediction overlay heatmaps.
+
+    Args:
+        indices: Image indices to render.
+        overlays: Heatmap overlays dictionary.
+        cols_per_row: Number of grid columns per row.
+    """
+    st.subheader("Ground Truth + Heatmap")
+    for row_start in range(0, len(indices), cols_per_row):
+        row_indices = indices[row_start : row_start + cols_per_row]
+        cols = st.columns(len(row_indices))
+        for col, idx in zip(cols, row_indices, strict=False):
+            overlay_data = overlays.get(idx) or overlays.get(str(idx))
+            gt_hm_arr = _extract_gt_overlay_array(overlay_data)
+            if gt_hm_arr is not None:
+                col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
+
+
 def _render_heatmap_gallery(overlays: dict[Any, Any], anomalous_indices: list[int]) -> None:
     """Render a grid of Error heatmap overlays for all anomalous images.
 
     Displays two rectangular areas (grids) side-by-side:
     - Left Grid: Original image + Model Prediction Heatmap
     - Right Grid: Ground Truth Mask + Model Prediction Heatmap
+
+    Args:
+        overlays: Dictionary mapping image index to overlay dictionaries.
+        anomalous_indices: List of detected anomalous image indices.
     """
     st.success(f"Heatmaps computed for {len(overlays)} image(s).")
 
@@ -20,35 +90,10 @@ def _render_heatmap_gallery(overlays: dict[Any, Any], anomalous_indices: list[in
         return
 
     main_col1, main_col2 = st.columns(2)
-    cols_per_row = 2
-
     with main_col1:
-        st.subheader("Prediction Heatmap")
-        for row_start in range(0, len(indices), cols_per_row):
-            row_indices = indices[row_start : row_start + cols_per_row]
-            cols = st.columns(len(row_indices))
-            for col, idx in zip(cols, row_indices, strict=False):
-                overlay_data = overlays.get(idx) or overlays.get(str(idx))
-                if isinstance(overlay_data, dict) and "heatmap" in overlay_data:
-                    hm_arr = np.array(overlay_data["heatmap"], dtype=np.uint8)
-                    col.image(hm_arr, caption=f"Image #{idx}", width="stretch")
-                elif isinstance(overlay_data, list):
-                    col.image(np.array(overlay_data, dtype=np.uint8), caption=f"Image #{idx}")
-
+        _render_prediction_heatmap_grid(indices, overlays)
     with main_col2:
-        st.subheader("Ground Truth + Heatmap")
-        for row_start in range(0, len(indices), cols_per_row):
-            row_indices = indices[row_start : row_start + cols_per_row]
-            cols = st.columns(len(row_indices))
-            for col, idx in zip(cols, row_indices, strict=False):
-                overlay_data = overlays.get(idx) or overlays.get(str(idx))
-                if isinstance(overlay_data, dict):
-                    if "gt_and_heatmap" in overlay_data:
-                        gt_hm_arr = np.array(overlay_data["gt_and_heatmap"], dtype=np.uint8)
-                        col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
-                    elif "gt_overlay" in overlay_data:
-                        gt_hm_arr = np.array(overlay_data["gt_overlay"], dtype=np.uint8)
-                        col.image(gt_hm_arr, caption=f"Image #{idx}", width="stretch")
+        _render_gt_heatmap_grid(indices, overlays)
 
     st.caption(
         "Heatmaps derived directly from the per-pixel Mean Squared Error between the original "

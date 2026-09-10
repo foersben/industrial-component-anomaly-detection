@@ -20,6 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app.domain.categories import MVTEC_CATEGORIES
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
@@ -28,23 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger("sweep")
 
 # All 15 official MVTec AD benchmark categories
-ALL_CATEGORIES: list[str] = [
-    "bottle",
-    "cable",
-    "capsule",
-    "carpet",
-    "grid",
-    "hazelnut",
-    "leather",
-    "metal_nut",
-    "pill",
-    "screw",
-    "tile",
-    "toothbrush",
-    "transistor",
-    "wood",
-    "zipper",
-]
+ALL_CATEGORIES: list[str] = list(MVTEC_CATEGORIES)
 
 
 def sweep_keras(
@@ -163,7 +149,7 @@ def sweep_patchcore(
             cmd = [
                 sys.executable,
                 "-m",
-                "app.pipelines.modelling.patchcore_optuna_study",
+                "app.pipelines.modelling.patchcore.optuna_study",
                 "--category",
                 category,
                 "--n-trials",

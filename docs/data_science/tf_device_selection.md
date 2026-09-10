@@ -608,8 +608,8 @@ graph TD
     DEC -- CPU --> ENV["setenv:\nTF_ENABLE_ONEDNN_OPTS=1\nOMP_NUM_THREADS=N\nTF_NUM_INTRAOP_THREADS=N\nTF_NUM_INTEROP_THREADS=1"]
     MEMGROW & ENV --> MODEL["build_cae()\ntrain_cae() via MIM\nSSIM+MSE + AdamW"]
     MODEL --> PIPELINE["cae_pipeline.py\nrun_keras_cae_pipeline()"]
-    PIPELINE --> API["FastAPI\nPOST /api/pipelines/keras_cae"]
-    API --> UI["Streamlit Tab\nKeras CAE State-of-the-Art"]
+    PIPELINE --> UI["Streamlit Tab\nKeras CAE State-of-the-Art"]
+    PIPELINE --> CLI["CLI & Scripts\npython -m app.main cae"]
 
     style TFDEV fill:#4a9,color:#fff
     style DEC fill:#a84,color:#fff

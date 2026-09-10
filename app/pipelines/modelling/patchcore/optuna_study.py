@@ -1,4 +1,8 @@
-"""Category-Adaptive Optuna Optimization for PatchCore."""
+"""Category-Adaptive Optuna Optimization for PatchCore.
+
+Performs Bayesian hyperparameter sweeps across backbone architectures,
+feature extraction layers, coreset sampling ratios, and domain preprocessing.
+"""
 
 import json
 from pathlib import Path
@@ -12,26 +16,22 @@ from anomalib.engine import Engine
 from anomalib.models import Patchcore
 
 from app.core.logger import logger
+from app.domain.categories import OBJECT_CATEGORIES, TEXTURE_CATEGORIES
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.factory import build_pipeline_from_configs
 
+OBJECTS = OBJECT_CATEGORIES
+TEXTURES = TEXTURE_CATEGORIES
+
+__all__ = [
+    "OBJECTS",
+    "TEXTURES",
+    "objective",
+    "run_study",
+]
+
 # Monkeypatch tqdm in k_center_greedy to prevent Jupyter RecursionError loops
 kcg.tqdm = lambda iterable, *_, **__: iterable  # type: ignore[attr-defined]
-
-# MVTec AD Categorization
-TEXTURES = {"carpet", "grid", "leather", "tile", "wood"}
-OBJECTS = {
-    "bottle",
-    "cable",
-    "capsule",
-    "hazelnut",
-    "metal_nut",
-    "pill",
-    "screw",
-    "toothbrush",
-    "transistor",
-    "zipper",
-}
 
 
 def _evaluate_patchcore(
@@ -45,20 +45,33 @@ def _evaluate_patchcore(
     use_foreground_mask: bool,
     data_root: str = "data/raw/mvtec_ad",
 ) -> float:
-    """Evaluates a Patchcore configuration and returns the Pixel AUPIMO."""
-    # Build preprocessing pipeline
-    preprocessing_steps = []
-    if use_foreground_mask:
-        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
-    if use_clahe:
-        preprocessing_steps.append({"name": "clahe", "params": {}})
-    if use_gaussian_blur:
-        preprocessing_steps.append({"name": "gaussian_blur", "params": {}})
+    """Evaluate a single PatchCore hyperparameter configuration.
 
-    proc_pipeline = build_pipeline_from_configs(preprocessing_steps)
+    Args:
+        category_name: Target MVTec AD category name.
+        backbone: Name of torchvision backbone feature extractor.
+        feature_layers: Layer identifiers to tap for patch representations.
+        coreset_ratio: Sampling fraction for greedy coreset memory subsampling.
+        num_neighbors: K parameter for nearest-neighbor score distance.
+        use_clahe: Whether CLAHE contrast enhancement is active.
+        use_gaussian_blur: Whether Gaussian smoothing is active.
+        use_foreground_mask: Whether foreground segmentation is active.
+        data_root: Local root directory of the MVTec AD dataset.
+
+    Returns:
+        Validation/test pixel AUROC score for the trial.
+    """
+    pipeline = []
+    if use_foreground_mask:
+        pipeline.append({"name": "foreground_mask", "params": {}})
+    if use_clahe:
+        pipeline.append({"name": "clahe", "params": {}})
+    if use_gaussian_blur:
+        pipeline.append({"name": "gaussian_blur", "params": {}})
+
+    proc_pipeline = build_pipeline_from_configs(pipeline)
     transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
 
-    # Initialize datamodule with subclassed setup to persist transforms
     class PreprocessedMVTecAD(MVTecAD):
         def setup(self, stage: str | None = None) -> None:
             super().setup(stage)
@@ -81,7 +94,6 @@ def _evaluate_patchcore(
         eval_batch_size=16,
     )
 
-    # Initialize model
     model = Patchcore(
         backbone=backbone,
         layers=feature_layers,
@@ -89,13 +101,10 @@ def _evaluate_patchcore(
         num_neighbors=num_neighbors,
     )
 
-    # Run engine (No epochs for patchcore fit, just feature extraction)
     engine = Engine(accelerator="gpu", devices=1)
 
     try:
         engine.fit(model, datamodule)
-
-        # We use pixel_AUROC as a fast proxy for optimization
         test_results = engine.test(model=model, datamodule=datamodule)
         if test_results and len(test_results) > 0:
             return float(test_results[0].get("pixel_AUROC", 0.0))
@@ -104,18 +113,23 @@ def _evaluate_patchcore(
         logger.error("Trial failed with error: %s", e)
         raise optuna.exceptions.TrialPruned() from e
     finally:
-        # Prevent OOM between trials
         torch.cuda.empty_cache()
 
 
 def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/raw/mvtec_ad") -> float:
-    """Optuna objective function for tuning Patchcore."""
-    is_texture = category_name in TEXTURES
+    """Optuna objective function for tuning PatchCore hyperparameters.
 
-    # Backbone & Layers
+    Args:
+        trial: Active Optuna trial instance.
+        category_name: MVTec AD category string.
+        data_root: Root dataset folder path.
+
+    Returns:
+        Objective evaluation metric score for the trial.
+    """
+    is_texture = category_name in TEXTURES
     backbone = "resnet18"
 
-    # Layers (Patchcore expects sequence of strings)
     layer_config = trial.suggest_categorical("feature_layers", ["l2_l3", "l2_l3_l4"])
     feature_layers: tuple[str, ...]
     if layer_config == "l2_l3":
@@ -123,20 +137,13 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
     else:
         feature_layers = ("layer2", "layer3", "layer4")
 
-    # Coreset Sampling
     coreset_ratio = trial.suggest_float("coreset_sampling_ratio", 0.001, 0.20, log=True)
-
-    # Nearest Neighbors
     num_neighbors = trial.suggest_int("num_neighbors", 1, 9)
 
-    # Preprocessing
     use_clahe = trial.suggest_categorical("use_clahe", [True, False])
     use_gaussian_blur = trial.suggest_categorical("use_gaussian_blur", [True, False])
 
-    if is_texture:
-        use_foreground_mask = False
-    else:
-        use_foreground_mask = trial.suggest_categorical("use_foreground_mask", [True, False])
+    use_foreground_mask = False if is_texture else trial.suggest_categorical("use_foreground_mask", [True, False])
 
     return _evaluate_patchcore(
         category_name=category_name,
@@ -152,7 +159,16 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
 
 
 def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
-    """Runs an Optuna study for Patchcore and returns the best configuration."""
+    """Execute Optuna optimization study for PatchCore on a specific category.
+
+    Args:
+        category_name: Target category to tune.
+        n_trials: Maximum number of trials to evaluate.
+        data_root: Dataset root directory path.
+
+    Returns:
+        Structured configuration dictionary of the best hyperparameter settings found.
+    """
     study_name = f"patchcore_{category_name}"
 
     storage_path = Path("data/hyperparameters/patchcore_optuna.db")
@@ -180,7 +196,7 @@ def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw
 
     is_texture = category_name in TEXTURES
 
-    cfg: dict[str, Any] = {
+    return {
         "target_metric": "pixel_auroc",
         "score": best_trial.value,
         "preprocessing": {
@@ -195,7 +211,6 @@ def run_study(category_name: str, n_trials: int = 30, data_root: str = "data/raw
             "num_neighbors": best_trial.params["num_neighbors"],
         },
     }
-    return cfg
 
 
 if __name__ == "__main__":
@@ -211,8 +226,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Best trial retrieval will crash if NO trials are completed yet, so we only fetch
-    # and save if trials have run.
     best_cfg = run_study(category_name=args.category, n_trials=args.n_trials, data_root=args.data_root)
 
     out_path = Path("data/hyperparameters/patchcore_best.json")

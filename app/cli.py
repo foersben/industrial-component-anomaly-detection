@@ -55,7 +55,7 @@ def _setup_patchcore_parser(subparsers: argparse._SubParsersAction[argparse.Argu
     Args:
         subparsers: Subparsers action to add the patchcore parser to.
     """
-    parser = subparsers.add_parser("patchcore", help="Run PatchCore pipeline on MVTec AD dataset")
+    parser = subparsers.add_parser("patchcore", aliases=["baseline"], help="Run PatchCore pipeline on MVTec AD dataset")
     parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Path to MVTec AD dataset root")
     parser.add_argument("--category", type=str, default="bottle", help="MVTec AD category")
     parser.add_argument(
@@ -178,7 +178,8 @@ def _parse_preprocessing_steps(args: argparse.Namespace) -> list[dict[str, Any]]
     """
     preprocessing_steps: list[dict[str, Any]] = []
 
-    if args.preprocessing_config:
+    config_path = getattr(args, "preprocessing_config", None)
+    if config_path:
         config_str_or_path = args.preprocessing_config.strip()
         path = Path(config_str_or_path)
 
@@ -195,10 +196,12 @@ def _parse_preprocessing_steps(args: argparse.Namespace) -> list[dict[str, Any]]
             sys.exit(1)
 
     # Fallback to individual CLI flags
-    if args.clahe:
-        preprocessing_steps.append({"name": "clahe", "params": {"clip_limit": args.clahe_clip_limit}})
-    if args.gaussian_blur:
-        preprocessing_steps.append({"name": "gaussian_blur", "params": {"kernel_size": args.blur_kernel_size}})
+    if getattr(args, "clahe", False):
+        preprocessing_steps.append({"name": "clahe", "params": {"clip_limit": getattr(args, "clahe_clip_limit", 2.0)}})
+    if getattr(args, "gaussian_blur", False):
+        preprocessing_steps.append(
+            {"name": "gaussian_blur", "params": {"kernel_size": getattr(args, "blur_kernel_size", 3)}}
+        )
 
     return preprocessing_steps if preprocessing_steps else None
 
@@ -240,7 +243,7 @@ def _handle_patchcore_command(args: argparse.Namespace) -> None:
         num_neighbors=getattr(args, "num_neighbors", 9),
         run_heatmap=getattr(args, "heatmap", False),
         force_retrain=getattr(args, "force_retrain", False),
-        preprocessing_steps=preprocessing_steps,
+        pipeline=preprocessing_steps,
     )
 
 
@@ -267,7 +270,7 @@ def _handle_cae_command(args: argparse.Namespace) -> None:
         mask_patch_size=args.mask_patch_size,
         threshold_method=args.threshold_method,
         k_fraction=args.k_fraction,
-        preprocessing_steps=preprocessing_steps,
+        pipeline=preprocessing_steps,
         run_heatmap=getattr(args, "heatmap", False),
         force_retrain=getattr(args, "force_retrain", False),
     )
@@ -275,13 +278,16 @@ def _handle_cae_command(args: argparse.Namespace) -> None:
 
 def _handle_dinov2_command(args: argparse.Namespace) -> None:
     """Execute the frozen DINOv2 baseline subcommand."""
-    from app.pipelines.modelling.dinov2_baseline import run_dinov2_baseline
+    from app.pipelines.modelling.dino import run_dinov2_baseline
+
+    preprocessing_steps = _parse_preprocessing_steps(args)
 
     run_dinov2_baseline(
         data_root=args.data_root,
         category=args.category,
         fpr_limit=args.fpr_limit,
         num_neighbors=args.num_neighbors,
+        pipeline=preprocessing_steps,
         masking=args.masking,
         run_heatmap=args.heatmap,
         variant=args.variant,
@@ -290,7 +296,7 @@ def _handle_dinov2_command(args: argparse.Namespace) -> None:
 
 def _handle_dinov3_command(args: argparse.Namespace) -> None:
     """Execute the frozen DINOv3 baseline subcommand."""
-    from app.pipelines.modelling.dinov3_baseline import run_dinov3_baseline
+    from app.pipelines.modelling.dino import run_dinov3_baseline
 
     run_dinov3_baseline(
         data_root=args.data_root,
@@ -318,7 +324,7 @@ def main() -> None:
 
     if args.command == "dummy":
         _handle_dummy_command(args)
-    elif args.command == "patchcore":
+    elif args.command in ("patchcore", "baseline"):
         _handle_patchcore_command(args)
     elif args.command == "cae":
         _handle_cae_command(args)
