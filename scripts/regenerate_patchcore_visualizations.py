@@ -15,7 +15,7 @@ from anomalib.models import Patchcore
 
 from app.domain.data import build_fair_evaluation_split, build_mvtec_manifest
 from app.pipelines.evaluation.scoring import compute_adaptive_threshold
-from app.pipelines.modelling.baseline import (
+from app.pipelines.modelling.patchcore import (
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     _configure_patchcore_partitions,
     _RawScoreImageVisualizer,

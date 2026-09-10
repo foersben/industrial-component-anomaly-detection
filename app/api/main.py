@@ -36,7 +36,6 @@ from app.api.routers.keras_cae import (
     router as keras_cae_router,
 )
 from app.api.routers.patchcore import (
-    BaselineEvaluationRequest,
     PatchcoreEvaluationRequest,
     run_patchcore_endpoint,
 )
@@ -44,7 +43,6 @@ from app.api.routers.patchcore import (
     router as patchcore_router,
 )
 from app.pipelines.modelling.autoencoder import run_autoencoder_pipeline
-from app.pipelines.modelling.baseline import run_baseline
 from app.pipelines.modelling.dinov2_baseline import run_dinov2_baseline
 from app.pipelines.modelling.dinov3_baseline import DINO_V3_ENCODER, run_dinov3_baseline
 from app.pipelines.modelling.dummy_classifier import run_dummy_evaluation, run_real_data_dummy
@@ -97,11 +95,6 @@ def run_dinov3_pipeline(req: DINOv3EvaluationRequest) -> dict[str, Any]:
     }
 
 
-def run_baseline_pipeline(req: BaselineEvaluationRequest) -> dict[str, Any]:
-    """Compatibility wrapper for baseline PatchCore evaluation."""
-    return run_patchcore_endpoint(req)
-
-
 def create_app() -> FastAPI:
     """Application factory for FastAPI backend."""
     app = FastAPI(
@@ -143,7 +136,6 @@ app = create_app()
 __all__ = [
     "DINO_V3_ENCODER",
     "AutoencoderEvaluationRequest",
-    "BaselineEvaluationRequest",
     "DINOv2EvaluationRequest",
     "DINOv3EvaluationRequest",
     "DummyEvaluationRequest",
@@ -153,8 +145,6 @@ __all__ = [
     "create_app",
     "run_autoencoder_endpoint",
     "run_autoencoder_pipeline",
-    "run_baseline",
-    "run_baseline_pipeline",
     "run_dinov2_baseline",
     "run_dinov2_pipeline",
     "run_dinov3_baseline",

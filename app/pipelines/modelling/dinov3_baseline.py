@@ -10,13 +10,13 @@ import pandas as pd
 
 from app.core.logger import logger
 from app.domain.data import build_mvtec_manifest
-from app.pipelines.modelling.baseline import PATCHCORE_MODEL_SEED, BaselineResult
 from app.pipelines.modelling.dinov2_baseline import (
     MVTEC_CATEGORIES,
     MaskingMode,
     _release_accelerator_memory,
     _run_dinov2_category,
 )
+from app.pipelines.modelling.patchcore import PATCHCORE_MODEL_SEED, BaselineResult
 from app.pipelines.preprocessing.base import PreprocessingPipeline
 
 DINO_V3_ENCODER = "vit_small_patch16_dinov3.lvd1689m"

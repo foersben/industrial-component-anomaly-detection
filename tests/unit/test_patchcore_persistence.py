@@ -12,7 +12,7 @@ from PIL import Image
 
 from app.domain.data import build_fair_evaluation_split
 from app.pipelines.evaluation.metrics import fair_metric_evidence
-from app.pipelines.modelling.baseline import (
+from app.pipelines.modelling.patchcore import (
     PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
     PATCHCORE_MODEL_SEED,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
@@ -28,7 +28,7 @@ from app.pipelines.modelling.baseline import (
     list_trashed_patchcore_models,
     purge_patchcore_trash,
     restore_cached_patchcore_model,
-    run_baseline,
+    run_patchcore_pipeline,
 )
 
 
@@ -331,8 +331,8 @@ def test_patchcore_purge_trash(tmp_path: Path) -> None:
     assert len(list_trashed_patchcore_models(registry_base=tmp_path)) == 0
 
 
-def test_run_baseline_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
-    """Verify run_baseline directly loads cached results when matching model exists.
+def test_run_patchcore_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
+    """Verify run_patchcore_pipeline directly loads cached results when matching model exists.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -378,7 +378,7 @@ def test_run_baseline_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
         "image_threshold_quantile": PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
         "pixel_threshold_quantile": PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     }
-    monkeypatch.setattr("app.pipelines.modelling.baseline.build_mvtec_manifest", lambda _root: manifest)
+    monkeypatch.setattr("app.pipelines.modelling.patchcore.pipeline.build_mvtec_manifest", lambda _root: manifest)
     meta = {
         "hash": "cached_run",
         "category": "bottle",
@@ -410,7 +410,7 @@ def test_run_baseline_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
     with open(model_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(meta, f)
 
-    result = run_baseline(
+    result = run_patchcore_pipeline(
         data_root=tmp_path,
         category="bottle",
         backbone="resnet18",

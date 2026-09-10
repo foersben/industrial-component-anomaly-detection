@@ -1,6 +1,5 @@
 """Modelling pipelines."""
 
-from app.domain.data import MVTecImageDataset, build_mvtec_manifest
 from app.pipelines.modelling.autoencoder import (
     ConvAutoencoder,
     evaluate_autoencoder,
@@ -16,14 +15,11 @@ from app.pipelines.modelling.patchcore import (
     list_trashed_patchcore_models,
     purge_patchcore_trash,
     restore_cached_patchcore_model,
-    run_baseline,
     run_patchcore_pipeline,
 )
 
 __all__ = [
     "ConvAutoencoder",
-    "MVTecImageDataset",
-    "build_mvtec_manifest",
     "delete_cached_patchcore_model",
     "evaluate_autoencoder",
     "find_cached_patchcore_model",
@@ -31,7 +27,6 @@ __all__ = [
     "purge_patchcore_trash",
     "restore_cached_patchcore_model",
     "run_autoencoder_pipeline",
-    "run_baseline",
     "run_dinov2_baseline",
     "run_dinov3_baseline",
     "run_dummy_evaluation",

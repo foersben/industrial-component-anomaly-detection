@@ -25,8 +25,6 @@ tags: [api, reference, structural]
 
 ::: app.pipelines.modelling.dinov3_baseline
 
-::: app.pipelines.modelling.baseline
-
 ## Preprocessing Subpackage
 
 ::: app.pipelines.preprocessing.factory

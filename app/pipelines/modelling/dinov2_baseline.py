@@ -22,7 +22,7 @@ from app.pipelines.evaluation.metrics import (
     PIXEL_METRICS_VERSION,
     fair_metric_evidence,
 )
-from app.pipelines.modelling.baseline import (
+from app.pipelines.modelling.patchcore import (
     PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
     PATCHCORE_MODEL_SEED,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,

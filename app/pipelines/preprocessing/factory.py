@@ -42,3 +42,30 @@ def build_pipeline_from_configs(
             pipeline.add_step(step_cls(**params))
 
     return pipeline
+
+
+def normalize_preprocessing_steps(
+    steps: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Normalize a list of preprocessing step dicts for deterministic hashing and registry lookups.
+
+    Sorts parameter keys alphabetically and strips extraneous or unhashable attributes.
+
+    Args:
+        steps: List of raw preprocessing step dictionaries (e.g. `[{"name": "clahe", "params": {...}}]`).
+
+    Returns:
+        List of normalized step dictionaries with sorted param dictionaries.
+    """
+    if not steps:
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for step in steps:
+        if isinstance(step, dict):
+            item: dict[str, Any] = {"name": step.get("name")}
+            params = step.get("params")
+            if isinstance(params, dict):
+                item["params"] = dict(sorted(params.items()))
+            normalized.append(item)
+    return normalized

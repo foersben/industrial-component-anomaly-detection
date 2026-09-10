@@ -49,37 +49,6 @@ def _setup_dummy_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     dummy_parser.add_argument("--category", type=str, default="bottle", help="MVTec AD category")
 
 
-def _setup_baseline_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Configure arguments for the Patchcore baseline subcommand.
-
-    Args:
-        subparsers: Subparsers action to add the baseline parser to.
-    """
-    baseline_parser = subparsers.add_parser("baseline", help="Run Patchcore baseline on MVTec AD dataset")
-    baseline_parser.add_argument(
-        "--data-root", type=str, default="data/raw/mvtec_ad", help="Path to MVTec AD dataset root"
-    )
-    baseline_parser.add_argument("--category", type=str, default="bottle", help="MVTec AD category")
-    baseline_parser.add_argument(
-        "--fpr-limit", type=float, default=1e-4, help="Max False Positive Rate limit for AUPIMO threshold"
-    )
-    baseline_parser.add_argument(
-        "--preprocessing-config",
-        "--preprocessing-json",
-        type=str,
-        default=None,
-        help="JSON string or file path containing preprocessing steps configuration",
-    )
-    baseline_parser.add_argument("--clahe", action="store_true", help="Enable CLAHE preprocessing step")
-    baseline_parser.add_argument(
-        "--clahe-clip-limit", type=float, default=2.0, help="CLAHE clip limit parameter (default: 2.0)"
-    )
-    baseline_parser.add_argument("--gaussian-blur", action="store_true", help="Enable Gaussian Blur preprocessing step")
-    baseline_parser.add_argument(
-        "--blur-kernel-size", type=int, default=5, help="Gaussian Blur kernel size (default: 5)"
-    )
-
-
 def _setup_patchcore_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Configure arguments for the PatchCore anomaly detection subcommand.
 
@@ -252,24 +221,6 @@ def _handle_dummy_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def _handle_baseline_command(args: argparse.Namespace) -> None:
-    """Execute the Patchcore baseline subcommand.
-
-    Args:
-        args: Command line arguments.
-    """
-    from app.pipelines.modelling.baseline import run_baseline
-
-    preprocessing_steps = _parse_preprocessing_steps(args)
-
-    run_baseline(
-        data_root=args.data_root,
-        category=args.category,
-        fpr_limit=args.fpr_limit,
-        preprocessing_steps=preprocessing_steps,
-    )
-
-
 def _handle_patchcore_command(args: argparse.Namespace) -> None:
     """Execute the PatchCore pipeline subcommand.
 
@@ -358,7 +309,6 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     _setup_dummy_parser(subparsers)
-    _setup_baseline_parser(subparsers)
     _setup_patchcore_parser(subparsers)
     _setup_cae_parser(subparsers)
     _setup_dinov2_parser(subparsers)
@@ -368,8 +318,6 @@ def main() -> None:
 
     if args.command == "dummy":
         _handle_dummy_command(args)
-    elif args.command == "baseline":
-        _handle_baseline_command(args)
     elif args.command == "patchcore":
         _handle_patchcore_command(args)
     elif args.command == "cae":
