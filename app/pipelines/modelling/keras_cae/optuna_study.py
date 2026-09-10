@@ -156,9 +156,14 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
+    from app.core.tf_device import configure_tensorflow, preload_cuda_shared_libraries
+
+    preload_cuda_shared_libraries()
+    configure_tensorflow()
+
     parser = argparse.ArgumentParser(description="Run Optuna study for Keras CAE")
     parser.add_argument("--category", type=str, required=True, help="MVTec category name")
-    parser.add_argument("--n-trials", type=int, default=10, help="Number of trials to run")
+    parser.add_argument("--n-trials", type=int, default=30, help="Number of trials to run (default: 30)")
     parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Dataset root directory")
 
     args = parser.parse_args()
