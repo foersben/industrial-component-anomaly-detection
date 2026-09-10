@@ -136,3 +136,75 @@ def test_cli_dinov3_accepts_all_categories() -> None:
         num_neighbors=1,
         run_heatmap=False,
     )
+
+
+def test_cli_patchcore_subcommand() -> None:
+    """The CLI correctly dispatches the patchcore subcommand."""
+    test_args = [
+        "main.py",
+        "patchcore",
+        "--category",
+        "bottle",
+        "--backbone",
+        "resnet18",
+        "--coreset-sampling-ratio",
+        "0.2",
+        "--heatmap",
+    ]
+
+    with (
+        patch.object(sys, "argv", test_args),
+        patch("app.pipelines.modelling.patchcore.run_patchcore_pipeline") as mock_run,
+    ):
+        main()
+
+    mock_run.assert_called_once_with(
+        data_root="data/raw/mvtec_ad",
+        category="bottle",
+        fpr_limit=1e-4,
+        backbone="resnet18",
+        coreset_sampling_ratio=0.2,
+        num_neighbors=9,
+        run_heatmap=True,
+        force_retrain=False,
+        preprocessing_steps=None,
+    )
+
+
+def test_cli_cae_subcommand() -> None:
+    """The CLI correctly dispatches the cae subcommand."""
+    test_args = [
+        "main.py",
+        "cae",
+        "--category",
+        "bottle",
+        "--epochs",
+        "10",
+        "--batch-size",
+        "32",
+        "--heatmap",
+    ]
+
+    with (
+        patch.object(sys, "argv", test_args),
+        patch("app.pipelines.modelling.keras_cae.run_keras_cae_pipeline") as mock_run,
+    ):
+        main()
+
+    mock_run.assert_called_once_with(
+        data_root="data/raw/mvtec_ad",
+        category="bottle",
+        img_size=256,
+        crop_size=64,
+        crop_stride=32,
+        latent_channels=32,
+        epochs=10,
+        batch_size=32,
+        mask_ratio=0.25,
+        mask_patch_size=8,
+        threshold_method="quantile",
+        k_fraction=0.002,
+        preprocessing_steps=None,
+        run_heatmap=True,
+        force_retrain=False,
+    )

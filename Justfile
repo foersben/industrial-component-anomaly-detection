@@ -98,10 +98,20 @@ fetch-data: download-data
 run-dummy *args:
 	pixi run --frozen -e dev python -m app.main dummy {{args}}
 
-# Run the Patchcore baseline on the MVTec AD dataset
+# Run the Patchcore baseline on the MVTec AD dataset (backward compatibility alias)
 # Example: just run-baseline category="bottle"
 run-baseline *args:
 	pixi run --frozen -e dev python -m app.main baseline {{args}}
+
+# Run the PatchCore pipeline on the MVTec AD dataset
+# Example: just run-patchcore category="bottle"
+run-patchcore *args:
+	pixi run --frozen -e dev python -m app.main patchcore {{args}}
+
+# Run the Keras Convolutional Autoencoder (CAE) pipeline on the MVTec AD dataset
+# Example: just run-cae category="bottle" epochs=20
+run-cae *args:
+	pixi run --frozen -e dev python -m app.main cae {{args}}
 
 # Run model evaluations
 # Example: just evaluate keras --tuned
