@@ -143,10 +143,3 @@ def _print_patchcore_results_table(results: Mapping[str, float]) -> None:
     for name, value in results.items():
         table.add_row(name, f"{value:.6f}")
     Console().print(table)
-
-
-__all__ = [
-    "_RawScoreImageVisualizer",
-    "_add_panel_headers",
-    "_print_patchcore_results_table",
-]

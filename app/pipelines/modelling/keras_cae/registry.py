@@ -284,7 +284,6 @@ def purge_trash(
 
 
 __all__ = [
-    "_normalize_preprocessing_steps",
     "delete_cached_model",
     "find_cached_model",
     "list_trashed_models",

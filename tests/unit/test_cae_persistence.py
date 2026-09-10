@@ -7,8 +7,7 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-from app.pipelines.modelling.keras_cae.cae_keras import build_cae
-from app.pipelines.modelling.keras_cae.cae_pipeline import (
+from app.pipelines.modelling.keras_cae import (
     delete_cached_model,
     find_cached_model,
     list_trashed_models,
@@ -16,6 +15,7 @@ from app.pipelines.modelling.keras_cae.cae_pipeline import (
     restore_cached_model,
     run_keras_cae_pipeline,
 )
+from app.pipelines.modelling.keras_cae.cae_keras import build_cae
 
 
 def test_keras_cae_save_and_load_numerical_consistency(tmp_path: Path) -> None:

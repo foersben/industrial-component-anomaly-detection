@@ -17,11 +17,6 @@ from app.pipelines.modelling.patchcore import (
     PATCHCORE_MODEL_SEED,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     PATCHCORE_SCORE_SPACE,
-    _add_panel_headers,
-    _configure_patchcore_partitions,
-    _load_heatmap_overlays,
-    _save_heatmap_overlays,
-    _seed_patchcore_run,
     delete_cached_patchcore_model,
     extract_and_save_pr_metrics,
     find_cached_patchcore_model,
@@ -30,6 +25,15 @@ from app.pipelines.modelling.patchcore import (
     restore_cached_patchcore_model,
     run_patchcore_pipeline,
 )
+from app.pipelines.modelling.patchcore.dataset import (
+    _configure_patchcore_partitions,
+    _seed_patchcore_run,
+)
+from app.pipelines.modelling.patchcore.evaluation import (
+    _load_heatmap_overlays,
+    _save_heatmap_overlays,
+)
+from app.pipelines.modelling.patchcore.visualization import _add_panel_headers
 
 
 def test_patchcore_visualization_headers_do_not_cover_panels() -> None:

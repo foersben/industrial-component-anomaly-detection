@@ -1,69 +1,19 @@
-"""End-to-end orchestrator for the Keras CAE anomaly detection pipeline.
+"""End-to-end orchestrator for the Keras Convolutional Autoencoder (CAE) pipeline.
 
-This module ties together all the modular components developed in this package
-into a single, configurable pipeline that can be triggered from the API.
-
-Data Flow
-=========
-See the ASCII diagram below for the complete pipeline flow:
-
-    [MVTec Dataset]
-          │
-          ▼
-    ┌────────────────────────────────┐
-    │ 1. Data Loading                │  build_mvtec_manifest + filter by category
-    │    (framework-agnostic, numpy) │
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 2. Foreground Extraction       │  OtsuCannySegmentor → BGRP-G masking
-    │    (segmentation.py)           │  Eliminates background noise from scoring
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 3. Category-Aware Augmentation │  get_augmenter(category) → applied to TRAIN only
-    │    (augmentation.py)           │  Texture: heavy spatial; Object: light photometric
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 4. Normalise to [0, 1]         │  Divide by 255
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 5. Build & Train Keras CAE     │  ELU activations, AdamW, SSIM+MSE loss
-    │    (cae_keras.py)              │  With Masked Image Modeling (patch masking)
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 6. Score Test Images           │  Top-K pooling (image-level) +
-    │    (scoring.py)                │  Pixel error maps (pixel-level)
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 7. Adaptive Threshold          │  Calibrated from normal image scores
-    │    (scoring.py)                │  quantile or Mahalanobis method
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 8. Full Evaluation             │  Image AUROC + Pixel AUPIMO (FPR 1e-5..1e-4)
-    │    (evaluation.py)             │  + Accuracy / Precision / Recall
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    ┌────────────────────────────────┐
-    │ 9. [Optional] SHAP XAI         │  SLIC superpixels + KernelExplainer
-    │    (explainability.py)         │  Attribution: red=anomaly, blue=normal
-    └──────────────┬─────────────────┘
-                   │
-                   ▼
-    [Results Dictionary → API → Streamlit UI]
+Coordinates the complete anomaly detection workflow for MVTec AD categories under
+the deterministic `fair-eval-v1` evaluation protocol:
+    1. Data Loading & Partitioning: Loads dataset manifests and partitions normal
+       samples into 85% fit and 15% validation subsets with zero test leakage.
+    2. Preprocessing & Patching: Applies optional filters (CLAHE, blur, foreground
+       masks) and extracts sliding-window crops.
+    3. CAE Modeling: Builds and trains a convolutional autoencoder using Masked
+       Image Modeling (MIM) with joint SSIM and MSE reconstruction loss.
+    4. Scoring & Calibration: Generates pixel error maps, aggregates image scores
+       via Top-K spatial pooling, and calibrates decision thresholds strictly on
+       normal validation data.
+    5. Evaluation & Persistence: Computes canonical image AUROC, strict AUPIMO,
+       confusion matrices, and heatmaps, with deterministic caching and soft-delete
+       trash management.
 """
 
 import hashlib
@@ -95,11 +45,7 @@ from app.pipelines.modelling.keras_cae.cae_keras import _require_tf, build_cae, 
 from app.pipelines.modelling.keras_cae.crops import extract_crops, stitch_crops
 from app.pipelines.modelling.keras_cae.registry import (
     _normalize_preprocessing_steps,
-    delete_cached_model,
     find_cached_model,
-    list_trashed_models,
-    purge_trash,
-    restore_cached_model,
 )
 from app.pipelines.preprocessing import PreprocessingPipeline, build_pipeline_from_configs
 from app.pipelines.preprocessing.augmentation import augment_batch, get_augmenter
@@ -527,18 +473,3 @@ def run_keras_cae_pipeline(
         results["heatmap_overlays"] = heatmap_overlays
 
     return results
-
-
-__all__ = [
-    "_load_images_as_numpy",
-    "_load_masks_as_numpy",
-    "_normalize_preprocessing_steps",
-    "delete_cached_model",
-    "extract_crops",
-    "find_cached_model",
-    "list_trashed_models",
-    "purge_trash",
-    "restore_cached_model",
-    "run_keras_cae_pipeline",
-    "stitch_crops",
-]

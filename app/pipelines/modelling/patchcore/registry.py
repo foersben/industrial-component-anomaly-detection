@@ -258,7 +258,6 @@ def purge_patchcore_trash(
 
 
 __all__ = [
-    "_normalize_preprocessing_steps",
     "delete_cached_patchcore_model",
     "find_cached_patchcore_model",
     "list_trashed_patchcore_models",

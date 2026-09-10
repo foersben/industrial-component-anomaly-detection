@@ -553,12 +553,6 @@ def format_results(
 
 
 __all__ = [
-    "_collect_batch_tensors",
-    "_load_heatmap_overlays",
-    "_process_and_save_level",
-    "_save_heatmap_overlays",
-    "_tensor_to_numpy",
-    "_to_float",
     "extract_and_save_pr_metrics",
     "format_results",
 ]

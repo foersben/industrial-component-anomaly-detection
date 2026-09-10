@@ -28,14 +28,18 @@ from app.pipelines.modelling.patchcore import (
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     PATCHCORE_SCORE_SPACE,
     BaselineResult,
-    _configure_patchcore_partitions,
-    _normalize_preprocessing_steps,
-    _print_patchcore_results_table,
-    _RawScoreImageVisualizer,
-    _save_heatmap_overlays,
-    _seed_patchcore_run,
     extract_and_save_pr_metrics,
     format_results,
+)
+from app.pipelines.modelling.patchcore.dataset import (
+    _configure_patchcore_partitions,
+    _seed_patchcore_run,
+)
+from app.pipelines.modelling.patchcore.evaluation import _save_heatmap_overlays
+from app.pipelines.modelling.patchcore.registry import _normalize_preprocessing_steps
+from app.pipelines.modelling.patchcore.visualization import (
+    _print_patchcore_results_table,
+    _RawScoreImageVisualizer,
 )
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.base import PreprocessingPipeline
