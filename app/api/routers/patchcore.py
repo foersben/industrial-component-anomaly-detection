@@ -39,14 +39,8 @@ class PatchcoreEvaluationRequest(BaseModel):
     model_hash: str | None = None
 
 
-# Backward-compatible alias
-BaselineEvaluationRequest = PatchcoreEvaluationRequest
-
-
 @router.post("/patchcore")
 @router.post("/pipelines/patchcore")
-@router.post("/baseline")
-@router.post("/pipelines/baseline")
 def run_patchcore_endpoint(req: PatchcoreEvaluationRequest) -> dict[str, Any]:
     """Run PatchCore pipeline evaluation endpoint.
 
@@ -76,4 +70,8 @@ def run_patchcore_endpoint(req: PatchcoreEvaluationRequest) -> dict[str, Any]:
     }
 
 
-run_baseline_pipeline = run_patchcore_endpoint
+__all__ = [
+    "PatchcoreEvaluationRequest",
+    "router",
+    "run_patchcore_endpoint",
+]

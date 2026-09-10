@@ -16,7 +16,7 @@ flowchart TD
     Preproc --> Models["app/pipelines/modelling/"]
 
     subgraph Models ["Model Implementations"]
-        PatchCore["PatchCore (Canonical)<br/>app/pipelines/modelling/patchcore.py"]
+        PatchCore["PatchCore (Canonical)<br/>app/pipelines/modelling/patchcore/"]
         KerasCAE["Keras CAE (MIM + SSIM+MSE)<br/>app/pipelines/modelling/keras_cae/"]
         DINO["DINOv2 / DINOv3 Baselines<br/>app/pipelines/modelling/dinov*_baseline.py"]
         Autoencoder["PyTorch Autoencoder<br/>app/pipelines/modelling/autoencoder.py"]
@@ -46,12 +46,14 @@ flowchart TD
 The codebase is organized into clear domain layers under `app/`:
 
 ### 2.1 Domain (`app/domain/`)
+
 - **`data.py`**:
   - `build_mvtec_manifest(root)`: Traverses the dataset to construct a typed, immutable pandas manifest cataloging all image paths, products, defect types, labels, and ground-truth mask paths.
   - `build_fair_evaluation_split(manifest, category, seed=42)`: Enforces the deterministic `fair-eval-v1` split.
   - Partitions training normal images into strictly **85% fit** and **15% validation** subsets. Guarantees zero test-set leakage.
 
 ### 2.2 Preprocessing (`app/pipelines/preprocessing/`)
+
 - **`base.py`**: Abstract `PreprocessingStep` interface and `PreprocessingPipeline` container.
 - **`factory.py`**: Dynamic serialization and instantiation of preprocessing pipelines from JSON configurations.
 - **`adapter.py`**: Bridges NumPy/OpenCV image arrays into PyTorch and Torchvision transform pipelines.
@@ -62,13 +64,12 @@ The codebase is organized into clear domain layers under `app/`:
 - **`augmentation.py`**: Domain-specific data augmentations applied strictly during training.
 
 ### 2.3 Modelling (`app/pipelines/modelling/`)
-- **`patchcore.py`**:
+
+- **`patchcore/`**:
   - Primary implementation of the PatchCore algorithm using frozen ImageNet backbones (e.g. ResNet-18, WideResNet-50-2).
   - Feature extraction across intermediate layers (`layer2`, `layer3`).
   - Coreset subsampling via greedy k-Center selection.
   - Raw score space scaling with deterministic disk caching and soft-delete `.trash/` recovery.
-- **`baseline.py`**:
-  - Backward-compatibility re-export shim preserving existing script, test, and notebook import paths.
 - **`keras_cae/`**:
   - Convolutional Autoencoder with Masked Image Modeling (MIM), combined SSIM+MSE loss, and AdamW optimization.
   - Top-K spatial pooling for image-level classification.
@@ -81,6 +82,7 @@ The codebase is organized into clear domain layers under `app/`:
   - Empirical and theoretical demonstrations of the accuracy paradox on imbalanced anomaly data.
 
 ### 2.4 Evaluation (`app/pipelines/evaluation/`)
+
 - **`metrics.py`**:
   - Canonical implementation of `compute_image_auroc` and `compute_aupimo`.
   - Canonical $256 \times 256$ resolution enforcement for anomaly score maps and ground-truth binary masks.
@@ -94,17 +96,19 @@ The codebase is organized into clear domain layers under `app/`:
   - Matplotlib trade-off curves, Precision-Recall curves, and interactive figure rendering.
 
 ### 2.5 API Backend (`app/api/`)
+
 - **`main.py`**:
   - Application factory (`create_app()`) mounting CORS middleware and registering domain routers.
   - Backward-compatible route handlers and test hooks.
 - **`routers/`**:
   - `dummy.py`: `/api/dummy`, `/api/pipelines/dummy`.
-  - `patchcore.py`: `/api/patchcore`, `/api/pipelines/patchcore`, `/api/pipelines/baseline`.
+  - `patchcore.py`: `/api/patchcore`, `/api/pipelines/patchcore`.
   - `keras_cae.py`: `/api/keras_cae`, `/api/pipelines/keras_cae`, `/api/pipelines/cae`.
   - `autoencoder.py`: `/api/autoencoder`, `/api/pipelines/autoencoder`.
   - `dino.py`: `/api/dinov2`, `/api/pipelines/dinov2`, `/api/dinov3`, `/api/pipelines/dinov3`.
 
 ### 2.6 User Interface (`app/ui/`)
+
 - **`main.py`**:
   - Modular Streamlit dashboard exposing the complete evaluation guide, model training, cached registries, and visualization tabs.
 - **`components/`**:
