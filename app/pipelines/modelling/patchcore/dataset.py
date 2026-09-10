@@ -84,9 +84,6 @@ def _configure_patchcore_partitions(
 
 
 __all__ = [
-    "_configure_patchcore_partitions",
-    "_dataset_with_ordered_paths",
-    "_seed_patchcore_run",
     "build_fair_evaluation_split",
     "build_mvtec_manifest",
 ]

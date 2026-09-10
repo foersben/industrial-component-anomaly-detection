@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from app.pipelines.modelling.keras_cae.cae_pipeline import (
+from app.pipelines.modelling.keras_cae import (
     delete_cached_model,
     list_trashed_models,
     purge_trash,
