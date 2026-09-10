@@ -105,8 +105,9 @@ def sweep_patchcore() -> None:
     for cat in remaining_categories:
         logger.info(f"=== Starting Patchcore Optuna Sweep for category: {cat} ===")
         # Run 30 trials for this category, one by one in isolated subprocesses
-        for trial_idx in range(30):
-            logger.info(f"--- {cat} - Trial {trial_idx + 1}/30 ---")
+        target_trials = 30
+        for trial_target in range(1, target_trials + 1):
+            logger.info(f"--- {cat} - Target Trial {trial_target}/{target_trials} ---")
 
             cmd = [
                 sys.executable,
@@ -115,13 +116,15 @@ def sweep_patchcore() -> None:
                 "--category",
                 cat,
                 "--n-trials",
-                "1",
+                str(trial_target),
             ]
 
             try:
                 subprocess.run(cmd, env=env, check=True)
             except subprocess.CalledProcessError as e:
-                logger.error(f"Error: Trial {trial_idx + 1} for category {cat} failed with return code {e.returncode}.")
+                logger.error(
+                    f"Error: Target trial {trial_target} for category {cat} failed with return code {e.returncode}."
+                )
                 sys.exit(1)
 
     logger.info("Finished Patchcore Optuna sweep for all categories!")
@@ -133,15 +136,15 @@ def main() -> None:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["keras", "patchcore"],
+        choices=["keras", "patchcore", "all"],
         required=True,
-        help="Model to sweep (keras or patchcore)",
+        help="Model to sweep (keras, patchcore, or all)",
     )
     args = parser.parse_args()
 
-    if args.model == "keras":
+    if args.model in ("keras", "all"):
         sweep_keras()
-    elif args.model == "patchcore":
+    if args.model in ("patchcore", "all"):
         sweep_patchcore()
 
 
