@@ -1,3 +1,10 @@
+---
+type: Data Science
+title: "DINO Experiment Results"
+description: "Repository-only experimental benchmark results comparing DINOv2, DINOv3, PatchCore, and Keras CAE under the fair-eval-v1 protocol."
+tags: [dinov2, dinov3, patchcore, keras-cae, evaluation, benchmarking]
+---
+
 # DINO experiment results
 
 This page records repository-only experimental results for the DINOv2 and DINOv3 pipelines. It does not alter the
