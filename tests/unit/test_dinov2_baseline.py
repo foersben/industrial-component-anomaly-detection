@@ -9,34 +9,12 @@ import pandas as pd
 import pytest
 import torch
 
-from app.pipelines.modelling.dinov2_baseline import (
-    ANOMALY_DINO_MASKED_CATEGORIES,
-    MVTEC_CATEGORIES,
+from app.domain.categories import ANOMALY_DINO_MASKED_CATEGORIES, MVTEC_CATEGORIES
+from app.pipelines.modelling.dino import (
+    EnhancedAnomalyDINOModel,
     resolve_masking,
     run_dinov2_baseline,
 )
-from app.pipelines.modelling.enhanced_dinov2 import EnhancedAnomalyDINOModel
-
-
-def test_dinov2_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The API forwards the masking experiment without altering its policy."""
-    from app.api.main import DINOv2EvaluationRequest, run_dinov2_pipeline
-
-    captured: dict[str, Any] = {}
-
-    def fake_run(**kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
-        return {"image_level": {"f1_score": 0.8}}
-
-    monkeypatch.setattr("app.api.main.run_dinov2_baseline", fake_run)
-    response = run_dinov2_pipeline(
-        DINOv2EvaluationRequest(category="capsule", masking="on", num_neighbors=3),
-    )
-
-    assert response["status"] == "success"
-    assert captured["masking"] == "on"
-    assert captured["num_neighbors"] == 3
-    assert captured["variant"] == "baseline"
 
 
 def test_enhanced_knn_restricts_matches_to_patch_position() -> None:
@@ -121,7 +99,7 @@ def test_all_category_dispatch_reports_macro_averages(monkeypatch: pytest.Monkey
             "heatmap_overlays": {0: {"heatmap": [[[1]]]}},
         }
 
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline._run_dinov2_category", fake_category)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.run_dino_category", fake_category)
 
     result = run_dinov2_baseline(category="all", masking="published")
 
@@ -220,18 +198,17 @@ def test_dinov2_runner_uses_shared_partitions_and_raw_evaluator(
             0.85,
         )
 
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline.build_mvtec_manifest", lambda _root: object())
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.build_mvtec_manifest", lambda _root: object())
     monkeypatch.setattr(
-        "app.pipelines.modelling.dinov2_baseline.build_fair_evaluation_split",
+        "app.pipelines.modelling.dino.engine.build_fair_evaluation_split",
         lambda _manifest, _category: fake_split,
     )
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline.build_pipeline_from_configs", lambda _steps: [])
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline.MVTecAD", lambda **_kwargs: FakeDataModule())
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline._configure_patchcore_partitions", lambda *_args: None)
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline._seed_patchcore_run", lambda _seed: None)
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline.AnomalyDINO", fake_model)
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline.Engine", FakeEngine)
-    monkeypatch.setattr("app.pipelines.modelling.dinov2_baseline.extract_and_save_pr_metrics", fake_evaluate)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.build_pipeline_from_configs", lambda _steps: [])
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.MVTecAD", lambda **_kwargs: FakeDataModule())
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine._configure_patchcore_partitions", lambda *_args: None)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.AnomalyDINO", fake_model)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.Engine", FakeEngine)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.extract_and_save_pr_metrics", fake_evaluate)
 
     result = run_dinov2_baseline(
         data_root=tmp_path,

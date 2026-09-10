@@ -1,8 +1,5 @@
 """UI components package."""
 
-from app.ui.components.api_client import BACKEND_URL, make_api_request
+from app.ui.components.selectors import render_dataset_and_category_selector
 
-__all__ = [
-    "BACKEND_URL",
-    "make_api_request",
-]
+__all__ = ["render_dataset_and_category_selector"]

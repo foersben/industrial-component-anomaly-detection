@@ -39,13 +39,13 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
         apply_foreground_mask = trial.suggest_categorical("apply_foreground_mask", [True, False])
 
     # Build preprocessing steps
-    preprocessing_steps = []
+    pipeline = []
     if apply_foreground_mask:
-        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+        pipeline.append({"name": "foreground_mask", "params": {}})
     if apply_clahe:
-        preprocessing_steps.append({"name": "clahe", "params": {}})
+        pipeline.append({"name": "clahe", "params": {}})
     if apply_blur:
-        preprocessing_steps.append({"name": "gaussian_blur", "params": {"kernel_size": blur_ksize}})
+        pipeline.append({"name": "gaussian_blur", "params": {"kernel_size": blur_ksize}})
 
     # We use fewer epochs and a smaller batch size to quickly prune bad trials
     epochs = 20
@@ -56,7 +56,7 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
             data_root=data_root,
             category=category_name,
             latent_channels=latent_channels,
-            preprocessing_steps=preprocessing_steps,
+            pipeline=pipeline,
             epochs=epochs,
             batch_size=batch_size,
             force_retrain=True,  # Force retrain so it explores the space

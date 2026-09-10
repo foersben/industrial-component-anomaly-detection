@@ -139,9 +139,6 @@ class EnhancedAnomalyDINOModel(AnomalyDINOModel):
             candidate_density = candidate_density[candidate_valid]
             candidate_positions = candidate_positions[candidate_valid]
             if candidates.shape[0] < k:
-                # Foreground masking can remove every training token in a local
-                # window. Fall back to the global valid bank while retaining
-                # the spatial penalty, rather than failing or inventing zeros.
                 candidates = self.memory_bank.reshape(-1, self.memory_bank.shape[-1])
                 candidate_valid = self.memory_valid.reshape(-1)
                 candidate_density = self.memory_density.reshape(-1)
@@ -160,8 +157,6 @@ class EnhancedAnomalyDINOModel(AnomalyDINOModel):
             spatial_distance = (candidate_rows - row).square() + (candidate_cols - column).square()
             distances = distances + self.spatial_weight * spatial_distance.to(distances.dtype)
             values, indices = distances.topk(k=k, largest=False, dim=1)
-            # A bounded quarter-power correction retains raw cosine-distance
-            # ordering far better than an unstable direct density ratio.
             density_scale = (self.density_reference / candidate_density[indices].clamp_min(1e-3)).pow(0.25)
             neighbour_scores[:, patch_index] = values * density_scale.clamp(0.5, 2.0)
 

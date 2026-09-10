@@ -75,11 +75,11 @@ just fetch-data
 
 ---
 
-## 🖥️ Interactive Application (Streamlit + FastAPI)
+## 🖥️ Interactive Application (Streamlit)
 
 Once the environment is setup and data is fetched, you can launch the interactive web application to evaluate models and analyze anomaly heatmaps.
 
-This launches a **FastAPI backend** on port 8000 and a **Streamlit frontend** on port 8501.
+This launches a **Monolithic Streamlit** application on port 8501.
 
 ```bash
 just run
@@ -118,7 +118,7 @@ Run `just default` to see the full matrix. Core tasks include:
 
 | Command | Action Performed |
 | :--- | :--- |
-| `just run` | Starts FastAPI backend (port 8000) and Streamlit frontend (port 8501) concurrently. |
+| `just run` | Starts the monolithic Streamlit frontend (port 8501). |
 | `just setup` | Installs virtual environments, pre-commit hooks, and IDE extensions. |
 | `just fetch-data` | Downloads the MVTec AD dataset from Hugging Face and AUPIMO benchmark metrics. |
 | `just lab` | Starts a JupyterLab server strictly bound to the dev environment (`localhost:8888`). |

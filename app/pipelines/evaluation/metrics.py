@@ -126,13 +126,104 @@ def fair_metric_evidence() -> dict[str, Any]:
     }
 
 
+def _canonicalize_single_map(
+    raw_map: Any,
+    target_width: int,
+    target_height: int,
+    index: int,
+) -> np.ndarray:
+    """Validate and resize a single continuous anomaly map to canonical dimensions.
+
+    Args:
+        raw_map: Array-like object representing a 2D anomaly heatmap.
+        target_width: Canonical output grid width (typically 256).
+        target_height: Canonical output grid height (typically 256).
+        index: Sample index within the evaluation batch for error reporting.
+
+    Returns:
+        A 2D float32 NumPy array resized with bilinear interpolation.
+
+    Raises:
+        ValueError: If the map is not a 2D array or contains non-finite values (NaN, Inf).
+    """
+    anomaly_map = np.asarray(raw_map)
+    if anomaly_map.ndim != 2 or not np.isfinite(anomaly_map).all():
+        raise ValueError(f"Anomaly map {index} must be a finite two-dimensional array")
+    resized_map = cv2.resize(
+        anomaly_map.astype(np.float32),
+        (target_width, target_height),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    return resized_map.astype(np.float32, copy=False)
+
+
+def _canonicalize_single_mask(
+    raw_mask: Any,
+    label: int,
+    target_width: int,
+    target_height: int,
+    index: int,
+) -> np.ndarray:
+    """Validate, resize, and binarize a ground-truth segmentation mask.
+
+    Args:
+        raw_mask: Optional 2D ground-truth mask array or None for normal samples.
+        label: Binary ground-truth image label (0 for normal, 1 for defective).
+        target_width: Canonical output mask width (typically 256).
+        target_height: Canonical output mask height (typically 256).
+        index: Sample index within the evaluation batch for error reporting.
+
+    Returns:
+        A 2D uint8 NumPy array containing only binary values {0, 1}.
+
+    Raises:
+        ValueError: If a defective image lacks a mask, has an empty mask, if a normal image
+            has a non-empty mask, or if the mask is not 2D.
+    """
+    if raw_mask is None:
+        if label == 1:
+            raise ValueError(f"Anomalous image {index} is missing its ground-truth mask")
+        return np.zeros((target_height, target_width), dtype=np.uint8)
+
+    mask = np.asarray(raw_mask)
+    if mask.ndim != 2:
+        raise ValueError(f"Ground-truth mask {index} must be two-dimensional")
+
+    resized_mask = cv2.resize(
+        mask.astype(np.uint8),
+        (target_width, target_height),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    binarized = (resized_mask > 0).astype(np.uint8)
+
+    if label == 1 and not binarized.any():
+        raise ValueError(f"Anomalous image {index} has an empty ground-truth mask")
+    if label == 0 and binarized.any():
+        raise ValueError(f"Normal image {index} has a non-empty ground-truth mask")
+
+    return binarized
+
+
 def canonicalize_pixel_inputs(
     anomaly_maps: list[np.ndarray] | np.ndarray,
     masks: list[np.ndarray | None] | np.ndarray,
     image_labels: np.ndarray | list[int],
     size: tuple[int, int] = CANONICAL_MAP_SIZE,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Validate and resize full pixel maps and masks to the shared resolution."""
+    """Validate and resize full pixel maps and masks to the shared canonical resolution.
+
+    Args:
+        anomaly_maps: Sequence of continuous 2D anomaly heatmaps.
+        masks: Sequence of ground-truth binary masks (or None for normal images).
+        image_labels: Binary image-level defect labels (0 or 1).
+        size: Target canonical resolution tuple (height, width). Defaults to 256x256.
+
+    Returns:
+        A tuple of stacked (canonical_maps, canonical_masks) NumPy arrays.
+
+    Raises:
+        ValueError: If inputs are empty, have mismatched lengths, or contain invalid labels.
+    """
     maps_list = list(anomaly_maps)
     masks_list = list(masks)
     labels = np.asarray(image_labels, dtype=np.uint8).reshape(-1)
@@ -144,40 +235,13 @@ def canonicalize_pixel_inputs(
         raise ValueError("Image labels must be binary")
 
     target_height, target_width = size
-    canonical_maps: list[np.ndarray] = []
-    canonical_masks: list[np.ndarray] = []
-    for index, (raw_map, raw_mask, label) in enumerate(zip(maps_list, masks_list, labels, strict=True)):
-        anomaly_map = np.asarray(raw_map)
-        if anomaly_map.ndim != 2 or not np.isfinite(anomaly_map).all():
-            raise ValueError(f"Anomaly map {index} must be a finite two-dimensional array")
-        resized_map = cv2.resize(
-            anomaly_map.astype(np.float32),
-            (target_width, target_height),
-            interpolation=cv2.INTER_LINEAR,
-        )
-
-        resized_mask: np.ndarray
-        if raw_mask is None:
-            if label == 1:
-                raise ValueError(f"Anomalous image {index} is missing its ground-truth mask")
-            resized_mask = np.zeros((target_height, target_width), dtype=np.uint8)
-        else:
-            mask = np.asarray(raw_mask)
-            if mask.ndim != 2:
-                raise ValueError(f"Ground-truth mask {index} must be two-dimensional")
-            resized_mask = cv2.resize(
-                mask.astype(np.uint8),
-                (target_width, target_height),
-                interpolation=cv2.INTER_NEAREST,
-            )
-            resized_mask = (resized_mask > 0).astype(np.uint8)
-            if label == 1 and not resized_mask.any():
-                raise ValueError(f"Anomalous image {index} has an empty ground-truth mask")
-            if label == 0 and resized_mask.any():
-                raise ValueError(f"Normal image {index} has a non-empty ground-truth mask")
-
-        canonical_maps.append(resized_map.astype(np.float32, copy=False))
-        canonical_masks.append(resized_mask)
+    canonical_maps = [
+        _canonicalize_single_map(raw_map, target_width, target_height, idx) for idx, raw_map in enumerate(maps_list)
+    ]
+    canonical_masks = [
+        _canonicalize_single_mask(raw_mask, int(label), target_width, target_height, idx)
+        for idx, (raw_mask, label) in enumerate(zip(masks_list, labels, strict=True))
+    ]
 
     return np.stack(canonical_maps), np.stack(canonical_masks)
 

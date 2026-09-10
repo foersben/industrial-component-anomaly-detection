@@ -44,6 +44,142 @@ def _display_level_metrics(title: str, metrics: dict[str, Any], level_type: str 
     st.caption(f"Saved: `{metrics.get('metrics_path', '')}`")
 
 
+def _render_step_badge(name: str) -> None:
+    """Render an individual preprocessing step markdown badge.
+
+    Args:
+        name: Name of the preprocessing filter.
+    """
+    badges = {
+        "foreground_mask": "🟢 **Foreground Mask** *(Otsu + Canny)*",
+        "clahe": "🟢 **CLAHE** *(Contrast Equalization)*",
+        "gaussian_blur": "🟢 **Gaussian Blur** *(Denoising)*",
+    }
+    st.markdown(badges.get(name, f"🟢 **`{name}`**"))
+
+
+def _render_overview_preprocessing_column(results: dict[str, Any]) -> None:
+    """Render active preprocessing configuration badge list.
+
+    Args:
+        results: Pipeline results dictionary.
+    """
+    st.markdown("#### 🔧 Preprocessing")
+    prep_steps = results.get("preprocessing_steps")
+    if prep_steps is None and isinstance(results.get("metadata"), dict):
+        prep_steps = results["metadata"].get("preprocessing_steps")
+
+    if prep_steps is None or not isinstance(prep_steps, list):
+        st.info("⚠️ *Preprocessing configuration was not recorded with this legacy model run.*")
+        return
+
+    if not prep_steps:
+        st.markdown("⚪ **None** *(Raw unmodified images)*")
+        return
+
+    for s in prep_steps:
+        name = str(s.get("name", "Unknown Step"))
+        _render_step_badge(name)
+
+
+def _render_overview_cae_hyperparams(hp: dict[str, Any], results: dict[str, Any]) -> None:
+    """Render Keras CAE hyperparameter details.
+
+    Args:
+        hp: Hyperparameters dictionary.
+        results: Top-level results dictionary for fallbacks.
+    """
+    st.markdown(f"- **Category:** `{hp.get('category', results.get('category', 'N/A'))}`")
+    st.markdown(f"- **Epochs:** `{hp.get('epochs', results.get('epochs', 'N/A'))}`")
+    st.markdown(f"- **Batch Size:** `{hp.get('batch_size', 'N/A')}`")
+    img_sz = hp.get("img_size", 128)
+    st.markdown(f"- **Image Size:** `{img_sz}x{img_sz}`")
+    crop_sz = hp.get("crop_size", 64)
+    crop_str = hp.get("crop_stride", 32)
+    st.markdown(f"- **Crop Size / Stride:** `{crop_sz}x{crop_sz}` *(stride: {crop_str})*")
+    latent = hp.get("latent_channels", hp.get("latent_dim", "N/A"))
+    st.markdown(f"- **Latent Channels:** `{latent}`")
+    mask_r = hp.get("mask_ratio", 0.25)
+    try:
+        mask_pct = float(mask_r) * 100
+    except (ValueError, TypeError):
+        mask_pct = 25.0
+    st.markdown(f"- **Masking (MIM):** `{mask_pct:.0f}%` *(patch: {hp.get('mask_patch_size', 8)})*")
+    st.markdown(f"- **Thresholding:** `{hp.get('threshold_method', 'quantile_95')}`")
+
+
+def _render_overview_patchcore_hyperparams(hp: dict[str, Any], results: dict[str, Any]) -> None:
+    """Render PatchCore or DINO hyperparameter details.
+
+    Args:
+        hp: Hyperparameters dictionary.
+        results: Top-level results dictionary for fallbacks.
+    """
+    st.markdown(f"- **Category:** `{results.get('category', 'N/A')}`")
+    encoder = hp.get("encoder_name", hp.get("backbone", "resnet18"))
+    st.markdown(f"- **Backbone / Encoder:** `{encoder}`")
+    if "coreset_sampling_ratio" in hp:
+        st.markdown(f"- **Coreset Ratio:** `{hp.get('coreset_sampling_ratio', 0.1)}`")
+    if "num_neighbors" in hp:
+        st.markdown(f"- **Nearest Neighbors:** `{hp.get('num_neighbors', 1)}`")
+    st.markdown(f"- **FPR Limit:** `{hp.get('fpr_limit', 1e-4)}`")
+    batch_sz = hp.get("train_batch_size", hp.get("batch_size", 16))
+    st.markdown(f"- **Batch Size:** `{batch_sz}`")
+
+
+def _render_overview_hyperparameters_column(results: dict[str, Any], model_type: str) -> None:
+    """Render the hyperparameters overview column.
+
+    Args:
+        results: Pipeline results dictionary.
+        model_type: Model type ('cae' or 'patchcore').
+    """
+    st.markdown("#### ⚙️ Hyperparameters")
+    if model_type == "cae":
+        hp = results.get("hyperparameters") or (
+            results.get("metadata") if isinstance(results.get("metadata"), dict) else None
+        )
+        if hp and isinstance(hp, dict):
+            _render_overview_cae_hyperparams(hp, results)
+        else:
+            st.info("⚠️ *Hyperparameter details were not recorded with this legacy model run.*")
+    else:
+        hp = results.get("hyperparameters", {})
+        if hp and isinstance(hp, dict) and len(hp) > 0:
+            _render_overview_patchcore_hyperparams(hp, results)
+        else:
+            st.info("⚠️ *Hyperparameters were not recorded with this legacy model run.*")
+
+
+def _render_overview_dataset_split_column(results: dict[str, Any], model_type: str) -> None:
+    """Render the dataset partition split overview column.
+
+    Args:
+        results: Pipeline results dictionary.
+        model_type: Model type ('cae' or 'patchcore').
+    """
+    st.markdown("#### 📊 Dataset Partition Split")
+    split = results.get("dataset_split") or (
+        results.get("metadata", {}).get("dataset_split") if isinstance(results.get("metadata"), dict) else None
+    )
+    if not (split and isinstance(split, dict) and len(split) > 0):
+        st.info("⚠️ *Dataset partition sample counts were not recorded with this legacy model run.*")
+        return
+
+    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
+    if model_type == "cae":
+        st.markdown(f"- **Validation (Normal, 15%):** `{split.get('val_normal', 'N/A')}`")
+        test_tot = split.get("test_total", "N/A")
+        test_norm = split.get("test_normal")
+        test_anom = split.get("test_anomalous")
+        if test_norm is not None and test_anom is not None:
+            st.markdown(f"- **Test Total:** `{test_tot}` *({test_norm} normal, {test_anom} anomalous)*")
+        else:
+            st.markdown(f"- **Test Total:** `{test_tot}`")
+    else:
+        st.markdown(f"- **Test Total:** `{split.get('test_total', 'N/A')}`")
+
+
 def _render_model_run_overview(results: dict[str, Any], model_type: str = "cae") -> None:
     """Render a comprehensive overview of active preprocessing, hyperparameters, and dataset split.
 
@@ -53,91 +189,12 @@ def _render_model_run_overview(results: dict[str, Any], model_type: str = "cae")
     """
     with st.expander("📋 Model Run Overview (Preprocessing, Hyperparameters & Dataset Split)", expanded=True):
         col_prep, col_hp, col_split = st.columns(3)
-
-        # ── 1. Preprocessing Configuration ──
         with col_prep:
-            st.markdown("#### 🔧 Preprocessing")
-            prep_steps = results.get("preprocessing_steps")
-            if prep_steps is None and "metadata" in results and isinstance(results["metadata"], dict):
-                prep_steps = results["metadata"].get("preprocessing_steps")
-
-            if prep_steps is not None and isinstance(prep_steps, list):
-                if len(prep_steps) == 0:
-                    st.markdown("⚪ **None** *(Raw unmodified images)*")
-                else:
-                    for s in prep_steps:
-                        name = str(s.get("name", "Unknown Step"))
-                        if name == "foreground_mask":
-                            st.markdown("🟢 **Foreground Mask** *(Otsu + Canny)*")
-                        elif name == "clahe":
-                            st.markdown("🟢 **CLAHE** *(Contrast Equalization)*")
-                        elif name == "gaussian_blur":
-                            st.markdown("🟢 **Gaussian Blur** *(Denoising)*")
-                        else:
-                            st.markdown(f"🟢 **`{name}`**")
-            else:
-                st.info("⚠️ *Preprocessing configuration was not recorded with this legacy model run.*")
-
-        # ── 2. Hyperparameters ──
+            _render_overview_preprocessing_column(results)
         with col_hp:
-            st.markdown("#### ⚙️ Hyperparameters")
-            if model_type == "cae":
-                hp = results.get("hyperparameters") or (
-                    results.get("metadata") if isinstance(results.get("metadata"), dict) else None
-                )
-                if hp and isinstance(hp, dict):
-                    st.markdown(f"- **Category:** `{hp.get('category', results.get('category', 'N/A'))}`")
-                    st.markdown(f"- **Epochs:** `{hp.get('epochs', results.get('epochs', 'N/A'))}`")
-                    st.markdown(f"- **Batch Size:** `{hp.get('batch_size', 'N/A')}`")
-                    img_sz = hp.get("img_size", 128)
-                    st.markdown(f"- **Image Size:** `{img_sz}x{img_sz}`")
-                    crop_sz = hp.get("crop_size", 64)
-                    crop_str = hp.get("crop_stride", 32)
-                    st.markdown(f"- **Crop Size / Stride:** `{crop_sz}x{crop_sz}` *(stride: {crop_str})*")
-                    latent = hp.get("latent_channels", hp.get("latent_dim", "N/A"))
-                    st.markdown(f"- **Latent Channels:** `{latent}`")
-                    mask_r = hp.get("mask_ratio", 0.25)
-                    try:
-                        mask_pct = float(mask_r) * 100
-                    except (ValueError, TypeError):
-                        mask_pct = 25.0
-                    st.markdown(f"- **Masking (MIM):** `{mask_pct:.0f}%` *(patch: {hp.get('mask_patch_size', 8)})*")
-                    st.markdown(f"- **Thresholding:** `{hp.get('threshold_method', 'quantile_95')}`")
-                else:
-                    st.info("⚠️ *Hyperparameter details were not recorded with this legacy model run.*")
-            else:
-                hp = results.get("hyperparameters", {})
-                if hp and isinstance(hp, dict) and len(hp) > 0:
-                    st.markdown(f"- **Category:** `{results.get('category', 'N/A')}`")
-                    st.markdown(f"- **Backbone:** `{hp.get('backbone', 'resnet18')}`")
-                    st.markdown(f"- **Coreset Ratio:** `{hp.get('coreset_sampling_ratio', 0.1)}`")
-                    st.markdown(f"- **FPR Limit:** `{hp.get('fpr_limit', 1e-4)}`")
-                    st.markdown(f"- **Batch Size:** `{hp.get('train_batch_size', 16)}`")
-                else:
-                    st.info("⚠️ *Hyperparameters were not recorded with this legacy model run.*")
-
-        # ── 3. Dataset Split ──
+            _render_overview_hyperparameters_column(results, model_type)
         with col_split:
-            st.markdown("#### 📊 Dataset Partition Split")
-            split = results.get("dataset_split") or (
-                results.get("metadata", {}).get("dataset_split") if isinstance(results.get("metadata"), dict) else None
-            )
-            if split and isinstance(split, dict) and len(split) > 0:
-                if model_type == "cae":
-                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
-                    st.markdown(f"- **Validation (Normal, 15%):** `{split.get('val_normal', 'N/A')}`")
-                    test_tot = split.get("test_total", "N/A")
-                    test_norm = split.get("test_normal")
-                    test_anom = split.get("test_anomalous")
-                    if test_norm is not None and test_anom is not None:
-                        st.markdown(f"- **Test Total:** `{test_tot}` *({test_norm} normal, {test_anom} anomalous)*")
-                    else:
-                        st.markdown(f"- **Test Total:** `{test_tot}`")
-                else:
-                    st.markdown(f"- **Train (Normal):** `{split.get('train_normal', 'N/A')}`")
-                    st.markdown(f"- **Test Total:** `{split.get('test_total', 'N/A')}`")
-            else:
-                st.info("⚠️ *Dataset partition sample counts were not recorded with this legacy model run.*")
+            _render_overview_dataset_split_column(results, model_type)
     st.divider()
 
 

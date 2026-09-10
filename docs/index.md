@@ -49,6 +49,7 @@ Detailed conceptual guides on software engineering foundations, environment cont
 * [Open Knowledge Format (OKF)](concepts/open_knowledge_format.md) - Node-based markdown specification guidelines for AI-human pair programming.
 * [Linting & Type Safety](concepts/linting_and_types.md) - Enforcement of strict coding standards using Ruff and Mypy.
 * [Data Validation (Pydantic)](concepts/data_validation.md) - Runtime data validation and configuration schemas.
+* [Architecture Transition](concepts/architecture_transition.md) - Rationale and design details of transitioning from a split FastAPI/Streamlit architecture to a monolithic Streamlit application.
 
 ### 2. [Data Science & Metrics](data_science/index.md)
 

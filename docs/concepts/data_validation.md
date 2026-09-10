@@ -19,29 +19,29 @@ When data enters your application (from an API request, a database, or environme
 
 If an API endpoint expects a user's age as an integer, but a client sends `"25"` (a string), Pydantic will automatically coerce the string into an integer. If the client sends `"twenty-five"`, Pydantic will instantly raise a clear, standardized validation error, preventing the bad data from crashing your core business logic.
 
-### 2. Deep Integration with FastAPI
+### 2. Pipeline Configuration Validation
 
-FastAPI, our web framework, is built entirely around Pydantic. When you define a Pydantic model for an API request, FastAPI automatically generates the OpenAPI (Swagger) documentation, validates incoming requests, and serializes outgoing responses.
+Our anomaly detection pipelines and preprocessing transformations accept rich configuration objects (such as CLAHE clip limits, Gaussian blur kernels, crop strides, and coreset sampling ratios). Pydantic ensures that invalid hyperparameter values (e.g. negative crop sizes or ratios exceeding 1.0) are caught at initialization before costly training runs or evaluation sweeps begin.
 
 ### 3. Immutable Environment Settings
 
-We use `pydantic-settings` to manage all environment variables (database URIs, API keys, feature flags) inside the `app/core/` directory. Pydantic validates these variables at application startup. If a critical environment variable is missing or incorrectly formatted (e.g., a port number is provided as a word), the application will fail to start immediately ("fail-fast"), rather than crashing unpredictably hours later in production.
+We use `pydantic-settings` to manage all environment variables (paths, logging levels, hardware overrides) inside `app/core/`. Pydantic validates these variables at application startup. If a critical environment variable is missing or incorrectly formatted, the application fails fast immediately rather than crashing mid-pipeline.
 
 ## How to use it
 
-In Vertical Slice Architecture, Pydantic models (schemas) should be placed as close to the feature as possible.
+In our architecture, Pydantic schemas and dataclasses are co-located with their respective modules:
 
-1. **Define a Model:** Inside your feature slice (e.g., `app/pipelines/create_user/models.py`), define your data structures.
+1. **Feature Schemas:** Inside your pipeline slice (e.g. `app/pipelines/modelling/patchcore/types.py`), define your data contracts:
 
    ```python
-   from pydantic import BaseModel, EmailStr
+   from pydantic import BaseModel, Field
 
 
-   class UserCreateRequest(BaseModel):
-       username: str
-       email: EmailStr
-       age: int
+   class PatchCoreConfig(BaseModel):
+       backbone: str = "resnet18"
+       coreset_sampling_ratio: float = Field(default=0.1, gt=0.0, le=1.0)
+       num_neighbors: int = Field(default=9, ge=1)
    ```
 
-2. **Use in Routing:** Import this model into your `router.py` to type-hint the FastAPI endpoint.
-3. **Core Configurations:** Look at `app/core/` to see how global settings are defined and validated at startup.
+2. **Pipeline Integration:** Use these models to validate inputs in CLI entrypoints (`app/cli.py`) and Streamlit tabs.
+3. **Core Configurations:** Check `app/core/config.py` to see how application-wide settings are defined and validated at startup.

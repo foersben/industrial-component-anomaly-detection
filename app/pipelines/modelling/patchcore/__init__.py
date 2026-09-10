@@ -1,7 +1,8 @@
 """Canonical PatchCore modelling pipeline subpackage."""
 
-from app.domain.data import FAIR_EVALUATION_PROTOCOL, FairEvaluationSplit
-from app.pipelines.modelling.patchcore.dataset import (
+from app.domain.data import (
+    FAIR_EVALUATION_PROTOCOL,
+    FairEvaluationSplit,
     build_fair_evaluation_split,
     build_mvtec_manifest,
 )
@@ -14,7 +15,6 @@ from app.pipelines.modelling.patchcore.registry import (
     delete_cached_patchcore_model,
     find_cached_patchcore_model,
     list_trashed_patchcore_models,
-    normalize_preprocessing_steps,
     purge_patchcore_trash,
     restore_cached_patchcore_model,
 )
@@ -24,7 +24,12 @@ from app.pipelines.modelling.patchcore.types import (
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     PATCHCORE_SCORE_SPACE,
     BaselineResult,
+    ConfusionMatrix,
+    EvaluationArtifacts,
+    ImageEvaluationMetrics,
     MetricLevelResult,
+    PixelEvaluationMetrics,
+    Thresholds,
 )
 
 __all__ = [
@@ -34,8 +39,13 @@ __all__ = [
     "PATCHCORE_PIXEL_THRESHOLD_QUANTILE",
     "PATCHCORE_SCORE_SPACE",
     "BaselineResult",
+    "ConfusionMatrix",
+    "EvaluationArtifacts",
     "FairEvaluationSplit",
+    "ImageEvaluationMetrics",
     "MetricLevelResult",
+    "PixelEvaluationMetrics",
+    "Thresholds",
     "build_fair_evaluation_split",
     "build_mvtec_manifest",
     "delete_cached_patchcore_model",
@@ -43,7 +53,6 @@ __all__ = [
     "find_cached_patchcore_model",
     "format_results",
     "list_trashed_patchcore_models",
-    "normalize_preprocessing_steps",
     "purge_patchcore_trash",
     "restore_cached_patchcore_model",
     "run_patchcore_pipeline",

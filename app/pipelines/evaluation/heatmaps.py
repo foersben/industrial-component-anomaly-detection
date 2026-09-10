@@ -54,8 +54,8 @@ def compute_error_heatmap(
 
     Returns:
         Dictionary containing:
-        - ``"heatmap"``: Normalised error heatmap, shape (H, W), float32 in [0, 1].
-          Higher values = regions with greater reconstruction error.
+            - ``"heatmap"``: Normalised error heatmap, shape (H, W), float32 in [0, 1].
+                Higher values = regions with greater reconstruction error.
     """
     from app.pipelines.evaluation.scoring import compute_pixel_error_map
 

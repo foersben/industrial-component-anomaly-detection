@@ -48,6 +48,7 @@ from app.pipelines.modelling.patchcore.types import (
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     PATCHCORE_SCORE_SPACE,
     BaselineResult,
+    EvaluationArtifacts,
 )
 from app.pipelines.modelling.patchcore.visualization import (
     _print_patchcore_results_table,
@@ -56,6 +57,125 @@ from app.pipelines.modelling.patchcore.visualization import (
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.base import PreprocessingPipeline
 from app.pipelines.preprocessing.factory import build_pipeline_from_configs
+
+
+def _load_cached_patchcore_result(
+    cached_dir: Path,
+    meta: dict[str, Any],
+    category: str,
+    backbone: str,
+    feature_layers: tuple[str, ...],
+    coreset_sampling_ratio: float,
+    num_neighbors: int,
+    fpr_limit: float,
+    raw_prep_list: list[dict[str, Any]],
+) -> BaselineResult:
+    """Load, validate, and construct standard BaselineResult from a verified cache directory.
+
+    Args:
+        cached_dir: Path to directory containing cached model and metric arrays.
+        meta: Loaded metadata dictionary from metadata.json.
+        category: Component category name.
+        backbone: Feature extractor backbone identifier.
+        feature_layers: Extracted feature layer names.
+        coreset_sampling_ratio: Coreset subsampling ratio.
+        num_neighbors: Nearest neighbor count.
+        fpr_limit: Bound for AUPIMO integration.
+        raw_prep_list: Normalized preprocessing configurations.
+
+    Returns:
+        Structured BaselineResult matching fair-eval-v1 protocol.
+
+    Raises:
+        FileNotFoundError: If metric npz files are absent.
+        ValueError: If genuine AUPIMO or required metrics are missing.
+    """
+    logger.info("Found cached Patchcore model in %s. Loading evaluation metrics...", cached_dir)
+    pixel_file = cached_dir / "pixel_metrics.npz"
+    image_file = cached_dir / "image_metrics.npz"
+
+    if not pixel_file.exists() or not image_file.exists():
+        raise FileNotFoundError("Fair PatchCore cache is missing required metric artifacts")
+    with np.load(pixel_file, allow_pickle=False) as pixel_data:
+        if "aupimo" not in pixel_data:
+            raise ValueError("Fair PatchCore pixel metrics are missing genuine AUPIMO")
+        aupimo = float(pixel_data["aupimo"])
+
+    required_metric_keys = {
+        "image_auroc",
+        "pixel_auroc",
+        "manual_image_f1",
+        "manual_pixel_f1",
+        "manual_image_prec",
+        "manual_image_rec",
+        "img_threshold",
+        "true_positives",
+        "false_positives",
+        "false_negatives",
+        "true_negatives",
+    }
+    if missing_keys := required_metric_keys.difference(meta):
+        raise ValueError(f"Fair PatchCore metadata is missing metrics: {sorted(missing_keys)}")
+
+    heatmap_overlays_path = meta.get("heatmap_overlays_path")
+    if heatmap_overlays_path:
+        try:
+            heatmap_overlays = _load_heatmap_overlays(cached_dir / Path(heatmap_overlays_path).name)
+        except (OSError, ValueError) as e:
+            logger.warning("Could not load cached PatchCore heatmaps: %s", e)
+            heatmap_overlays = {}
+    else:
+        heatmap_overlays = meta.get("heatmap_overlays", {})
+
+    hyperparams = meta.get(
+        "hyperparameters",
+        {
+            "backbone": meta.get("backbone", backbone),
+            "feature_layers": meta.get("feature_layers", feature_layers),
+            "coreset_sampling_ratio": meta.get("coreset_sampling_ratio", coreset_sampling_ratio),
+            "num_neighbors": meta.get("num_neighbors", num_neighbors),
+            "fpr_limit": meta.get("fpr_limit", fpr_limit),
+            "train_batch_size": 16,
+            "eval_batch_size": 16,
+        },
+    )
+
+    return {
+        "category": category,
+        "image_level": {
+            "auroc": float(meta["image_auroc"]),
+            "f1_score": float(meta["manual_image_f1"]),
+            "precision": float(meta["manual_image_prec"]),
+            "recall": float(meta["manual_image_rec"]),
+            "threshold": float(meta["img_threshold"]),
+            "true_positives": int(meta["true_positives"]),
+            "false_positives": int(meta["false_positives"]),
+            "false_negatives": int(meta["false_negatives"]),
+            "true_negatives": int(meta["true_negatives"]),
+            "metrics_path": str(image_file),
+        },
+        "pixel_level": {
+            "auroc": float(meta["pixel_auroc"]),
+            "f1_score": float(meta["manual_pixel_f1"]),
+            **({"threshold": float(meta["pixel_threshold"])} if "pixel_threshold" in meta else {}),
+            "aupimo_score": aupimo,
+            "fpr_lower_bound": 1e-5,
+            "fpr_upper_bound": fpr_limit,
+            "aupimo": aupimo,
+            "anomaly_map_min": float(meta.get("anomaly_map_min", 0.0)),
+            "anomaly_map_max": float(meta.get("anomaly_map_max", 0.0)),
+            "anomaly_map_range": float(meta.get("anomaly_map_range", 0.0)),
+            "metrics_path": str(pixel_file),
+        },
+        "raw_results": {k: _to_float(v) for k, v in meta.get("raw_results", {}).items()},
+        "heatmap_overlays": heatmap_overlays,
+        "anomalous_indices": meta.get("anomalous_indices", []),
+        "preprocessing_steps": meta.get("preprocessing_steps", raw_prep_list),
+        "hyperparameters": hyperparams,
+        "dataset_split": meta.get("dataset_split", {}),
+        "model_hash": meta.get("hash", cached_dir.name),
+        "metadata": meta,
+    }
 
 
 def run_patchcore_pipeline(
@@ -68,7 +188,6 @@ def run_patchcore_pipeline(
     coreset_sampling_ratio: float = 0.1,
     num_neighbors: int = 9,
     run_heatmap: bool = False,
-    preprocessing_steps: list[dict[str, Any]] | None = None,
     force_retrain: bool = False,
     model_hash: str | None = None,
     registry_base: Path | str = "data/models/patchcore",
@@ -86,7 +205,6 @@ def run_patchcore_pipeline(
         coreset_sampling_ratio: Ratio for coreset subsampling.
         num_neighbors: Number of nearest neighbors for scoring.
         run_heatmap: Whether to compute heatmap overlays.
-        preprocessing_steps: Deprecated alias for pipeline configuration list.
         force_retrain: If True, ignores cache and forces a full re-fit.
         model_hash: Optional target model hash to search for.
         registry_base: Base directory path for Patchcore model registry.
@@ -98,13 +216,12 @@ def run_patchcore_pipeline(
     if not np.isclose(fpr_limit, AUPIMO_FPR_BOUNDS[1]):
         raise ValueError(f"fair-eval-v1 requires fpr_limit={AUPIMO_FPR_BOUNDS[1]}")
 
-    steps_config = pipeline if pipeline is not None else preprocessing_steps
-    if isinstance(steps_config, PreprocessingPipeline):
-        proc_pipeline = steps_config
+    if isinstance(pipeline, PreprocessingPipeline):
+        proc_pipeline = pipeline
         raw_prep_list: list[dict[str, Any]] = []
     else:
-        proc_pipeline = build_pipeline_from_configs(steps_config)
-        raw_prep_list = _normalize_preprocessing_steps(steps_config)
+        proc_pipeline = build_pipeline_from_configs(pipeline)
+        raw_prep_list = _normalize_preprocessing_steps(pipeline)
 
     manifest = build_mvtec_manifest(data_root)
     fair_split = build_fair_evaluation_split(manifest, category)
@@ -133,7 +250,7 @@ def run_patchcore_pipeline(
         coreset_sampling_ratio=coreset_sampling_ratio,
         num_neighbors=num_neighbors,
         fpr_limit=fpr_limit,
-        preprocessing_steps=raw_prep_list,
+        pipeline=raw_prep_list,
         target_hash=model_hash,
         registry_base=registry_base,
         expected_split_evidence=cache_evidence,
@@ -141,99 +258,17 @@ def run_patchcore_pipeline(
 
     if cached is not None and not force_retrain:
         cached_dir, meta = cached
-        logger.info("Found cached Patchcore model in %s. Loading evaluation metrics...", cached_dir)
-        pixel_file = cached_dir / "pixel_metrics.npz"
-        image_file = cached_dir / "image_metrics.npz"
-
-        if not pixel_file.exists() or not image_file.exists():
-            raise FileNotFoundError("Fair PatchCore cache is missing required metric artifacts")
-        with np.load(pixel_file, allow_pickle=False) as pixel_data:
-            if "aupimo" not in pixel_data:
-                raise ValueError("Fair PatchCore pixel metrics are missing genuine AUPIMO")
-            aupimo = float(pixel_data["aupimo"])
-
-        required_metric_keys = {
-            "image_auroc",
-            "pixel_auroc",
-            "manual_image_f1",
-            "manual_pixel_f1",
-            "manual_image_prec",
-            "manual_image_rec",
-            "img_threshold",
-            "true_positives",
-            "false_positives",
-            "false_negatives",
-            "true_negatives",
-        }
-        if missing_keys := required_metric_keys.difference(meta):
-            raise ValueError(f"Fair PatchCore metadata is missing metrics: {sorted(missing_keys)}")
-        res_dict = meta.get("raw_results", {})
-        manual_image_f1 = float(meta["manual_image_f1"])
-        manual_pixel_f1 = float(meta["manual_pixel_f1"])
-        manual_image_prec = float(meta["manual_image_prec"])
-        manual_image_rec = float(meta["manual_image_rec"])
-        img_threshold = float(meta["img_threshold"])
-        heatmap_overlays_path = meta.get("heatmap_overlays_path")
-        if heatmap_overlays_path:
-            try:
-                heatmap_overlays = _load_heatmap_overlays(cached_dir / Path(heatmap_overlays_path).name)
-            except (OSError, ValueError) as e:
-                logger.warning("Could not load cached PatchCore heatmaps: %s", e)
-                heatmap_overlays = {}
-        else:
-            heatmap_overlays = meta.get("heatmap_overlays", {})
-        anomalous_indices = meta.get("anomalous_indices", [])
-        split_info = meta.get("dataset_split", {})
-        cached_prep = meta.get("preprocessing_steps", raw_prep_list)
-        hyperparams = meta.get(
-            "hyperparameters",
-            {
-                "backbone": meta.get("backbone", backbone),
-                "feature_layers": meta.get("feature_layers", feature_layers),
-                "coreset_sampling_ratio": meta.get("coreset_sampling_ratio", coreset_sampling_ratio),
-                "num_neighbors": meta.get("num_neighbors", num_neighbors),
-                "fpr_limit": meta.get("fpr_limit", fpr_limit),
-                "train_batch_size": 16,
-                "eval_batch_size": 16,
-            },
+        return _load_cached_patchcore_result(
+            cached_dir=cached_dir,
+            meta=meta,
+            category=category,
+            backbone=backbone,
+            feature_layers=feature_layers,
+            coreset_sampling_ratio=coreset_sampling_ratio,
+            num_neighbors=num_neighbors,
+            fpr_limit=fpr_limit,
+            raw_prep_list=raw_prep_list,
         )
-
-        return {
-            "category": category,
-            "image_level": {
-                "auroc": float(meta["image_auroc"]),
-                "f1_score": manual_image_f1,
-                "precision": manual_image_prec,
-                "recall": manual_image_rec,
-                "threshold": img_threshold,
-                "true_positives": int(meta["true_positives"]),
-                "false_positives": int(meta["false_positives"]),
-                "false_negatives": int(meta["false_negatives"]),
-                "true_negatives": int(meta["true_negatives"]),
-                "metrics_path": str(image_file),
-            },
-            "pixel_level": {
-                "auroc": float(meta["pixel_auroc"]),
-                "f1_score": manual_pixel_f1,
-                **({"threshold": float(meta["pixel_threshold"])} if "pixel_threshold" in meta else {}),
-                "aupimo_score": aupimo,
-                "fpr_lower_bound": 1e-5,
-                "fpr_upper_bound": fpr_limit,
-                "aupimo": aupimo,
-                "anomaly_map_min": float(meta.get("anomaly_map_min", 0.0)),
-                "anomaly_map_max": float(meta.get("anomaly_map_max", 0.0)),
-                "anomaly_map_range": float(meta.get("anomaly_map_range", 0.0)),
-                "metrics_path": str(pixel_file),
-            },
-            "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
-            "heatmap_overlays": heatmap_overlays,
-            "anomalous_indices": anomalous_indices,
-            "preprocessing_steps": cached_prep,
-            "hyperparameters": hyperparams,
-            "dataset_split": split_info,
-            "model_hash": meta.get("hash", cached_dir.name),
-            "metadata": meta,
-        }
 
     # A rejected or explicitly bypassed cache must never be overwritten.
     effective_hash = computed_hash
@@ -277,32 +312,15 @@ def run_patchcore_pipeline(
     engine.fit(model, train_dataloaders=train_dataloader)
 
     # 3. Extract PR metrics and build summary
-    (
-        manual_image_f1,
-        manual_pixel_f1,
-        manual_image_prec,
-        manual_image_rec,
-        img_threshold,
-        pixel_auroc,
-        pixel_aupimo,
-        anomaly_map_min,
-        anomaly_map_max,
-        anomaly_map_range,
-        heatmap_overlays,
-        anomalous_indices,
-        true_positives,
-        false_positives,
-        false_negatives,
-        true_negatives,
-        pix_threshold,
-        image_auroc,
-    ) = extract_and_save_pr_metrics(
-        engine,
-        model,
-        validation_dataloader,
-        test_dataloader,
-        base_dir,
-        run_heatmap,
+    artifacts = EvaluationArtifacts.from_tuple(
+        extract_and_save_pr_metrics(
+            engine,
+            model,
+            validation_dataloader,
+            test_dataloader,
+            base_dir,
+            run_heatmap,
+        )
     )
 
     # Extract dataset split counts
@@ -325,40 +343,40 @@ def run_patchcore_pipeline(
     }
 
     raw_results_dict = {
-        "image_AUROC": image_auroc,
-        "image_F1Score": manual_image_f1,
-        "image_Precision": manual_image_prec,
-        "image_Recall": manual_image_rec,
-        "pixel_AUROC": pixel_auroc,
-        "pixel_F1Score": manual_pixel_f1,
-        "pixel_AUPIMO": pixel_aupimo,
+        "image_AUROC": artifacts.image_metrics.auroc,
+        "image_F1Score": artifacts.image_metrics.f1_score,
+        "image_Precision": artifacts.image_metrics.precision,
+        "image_Recall": artifacts.image_metrics.recall,
+        "pixel_AUROC": artifacts.pixel_metrics.auroc,
+        "pixel_F1Score": artifacts.pixel_metrics.f1_score,
+        "pixel_AUPIMO": artifacts.pixel_metrics.aupimo,
     }
     test_results: list[Mapping[str, float]] = [raw_results_dict]
     _print_patchcore_results_table(raw_results_dict)
 
     logger.info(
         "PatchCore evaluation summary | image: AUROC=%.6f F1=%.6f precision=%.6f recall=%.6f threshold=%.6f",
-        image_auroc,
-        manual_image_f1,
-        manual_image_prec,
-        manual_image_rec,
-        img_threshold,
+        artifacts.image_metrics.auroc,
+        artifacts.image_metrics.f1_score,
+        artifacts.image_metrics.precision,
+        artifacts.image_metrics.recall,
+        artifacts.thresholds.image,
     )
     logger.info(
         "PatchCore evaluation summary | confusion: TP=%d FP=%d FN=%d TN=%d",
-        true_positives,
-        false_positives,
-        false_negatives,
-        true_negatives,
+        artifacts.image_metrics.confusion.true_positives,
+        artifacts.image_metrics.confusion.false_positives,
+        artifacts.image_metrics.confusion.false_negatives,
+        artifacts.image_metrics.confusion.true_negatives,
     )
     logger.info(
         "PatchCore evaluation summary | pixel: AUROC=%.6f F1=%.6f AUPIMO=%.6f",
-        pixel_auroc,
-        manual_pixel_f1,
-        pixel_aupimo,
+        artifacts.pixel_metrics.auroc,
+        artifacts.pixel_metrics.f1_score,
+        artifacts.pixel_metrics.aupimo,
     )
 
-    heatmap_archive = _save_heatmap_overlays(heatmap_overlays, base_dir / "heatmap_overlays.npz")
+    heatmap_archive = _save_heatmap_overlays(artifacts.heatmap_overlays, base_dir / "heatmap_overlays.npz")
     if heatmap_archive is not None:
         logger.info("Saved compressed PatchCore heatmaps to %s", heatmap_archive)
 
@@ -366,14 +384,6 @@ def run_patchcore_pipeline(
         "hash": effective_hash,
         "model_type": "patchcore",
         "category": category,
-        "backbone": backbone,
-        "feature_layers": feature_layers,
-        "coreset_sampling_ratio": coreset_sampling_ratio,
-        "num_neighbors": num_neighbors,
-        "fpr_limit": fpr_limit,
-        "preprocessing_steps": raw_prep_list,
-        "hyperparameters": hyperparams,
-        "dataset_split": split_info,
         "protocol": FAIR_EVALUATION_PROTOCOL,
         "threshold_source": "normal_validation",
         "image_threshold_quantile": PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
@@ -382,27 +392,27 @@ def run_patchcore_pipeline(
         "score_space": PATCHCORE_SCORE_SPACE,
         "pixel_metrics_version": PIXEL_METRICS_VERSION,
         "image_auroc": raw_results_dict["image_AUROC"],
-        "pixel_auroc": pixel_auroc,
-        "manual_image_f1": manual_image_f1,
-        "manual_pixel_f1": manual_pixel_f1,
-        "manual_image_prec": manual_image_prec,
-        "manual_image_rec": manual_image_rec,
-        "true_positives": true_positives,
-        "false_positives": false_positives,
-        "false_negatives": false_negatives,
-        "true_negatives": true_negatives,
-        "img_threshold": img_threshold,
-        "pixel_threshold": pix_threshold,
-        "pixel_aupimo": pixel_aupimo,
+        "pixel_auroc": artifacts.pixel_metrics.auroc,
+        "manual_image_f1": artifacts.image_metrics.f1_score,
+        "manual_pixel_f1": artifacts.pixel_metrics.f1_score,
+        "manual_image_prec": artifacts.image_metrics.precision,
+        "manual_image_rec": artifacts.image_metrics.recall,
+        "true_positives": artifacts.image_metrics.confusion.true_positives,
+        "false_positives": artifacts.image_metrics.confusion.false_positives,
+        "false_negatives": artifacts.image_metrics.confusion.false_negatives,
+        "true_negatives": artifacts.image_metrics.confusion.true_negatives,
+        "img_threshold": artifacts.thresholds.image,
+        "pixel_threshold": artifacts.thresholds.pixel,
+        "pixel_aupimo": artifacts.pixel_metrics.aupimo,
         "aupimo_fpr_bounds": [1e-5, fpr_limit],
         "aupimo_num_thresholds": AUPIMO_NUM_THRESHOLDS,
         "canonical_height": CANONICAL_MAP_SIZE[0],
         "canonical_width": CANONICAL_MAP_SIZE[1],
-        "anomaly_map_min": anomaly_map_min,
-        "anomaly_map_max": anomaly_map_max,
-        "anomaly_map_range": anomaly_map_range,
+        "anomaly_map_min": artifacts.pixel_metrics.anomaly_map_min,
+        "anomaly_map_max": artifacts.pixel_metrics.anomaly_map_max,
+        "anomaly_map_range": artifacts.pixel_metrics.anomaly_map_range,
         "heatmap_overlays_path": heatmap_archive.name if heatmap_archive is not None else None,
-        "anomalous_indices": anomalous_indices,
+        "anomalous_indices": artifacts.anomalous_indices,
         "raw_results": raw_results_dict,
         "timestamp": datetime.now(UTC).isoformat(),
     }
@@ -418,32 +428,11 @@ def run_patchcore_pipeline(
         test_results=test_results,
         category=category,
         base_dir=base_dir,
-        manual_image_f1=manual_image_f1,
-        manual_pixel_f1=manual_pixel_f1,
-        manual_image_prec=manual_image_prec,
-        manual_image_rec=manual_image_rec,
-        img_threshold=img_threshold,
-        pixel_threshold=pix_threshold,
-        pixel_auroc=pixel_auroc,
-        pixel_aupimo=pixel_aupimo,
-        anomaly_map_min=anomaly_map_min,
-        anomaly_map_max=anomaly_map_max,
-        anomaly_map_range=anomaly_map_range,
-        heatmap_overlays=heatmap_overlays,
-        anomalous_indices=anomalous_indices,
+        artifacts=artifacts,
         fpr_limit=fpr_limit,
         preprocessing_steps=raw_prep_list,
         hyperparameters=hyperparams,
         dataset_split=split_info,
         model_hash=effective_hash,
         metadata=metadata,
-        true_positives=true_positives,
-        false_positives=false_positives,
-        false_negatives=false_negatives,
-        true_negatives=true_negatives,
     )
-
-
-__all__ = [
-    "run_patchcore_pipeline",
-]

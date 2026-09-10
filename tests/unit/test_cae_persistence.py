@@ -81,7 +81,7 @@ def test_find_cached_model_resolution(tmp_path: Path) -> None:
         batch_size=4,
         mask_ratio=0.25,
         mask_patch_size=8,
-        preprocessing_steps=[{"name": "foreground_mask", "params": {}}],
+        pipeline=[{"name": "foreground_mask", "params": {}}],
         registry_base=tmp_path,
     )
     assert hit is not None
@@ -115,7 +115,7 @@ def test_keras_cae_pipeline_cached_evaluation(
         epochs=1,
         batch_size=2,
         mask_ratio=0.0,
-        preprocessing_steps=[],
+        pipeline=[],
         run_heatmap=False,
         force_retrain=True,
     )
@@ -133,7 +133,7 @@ def test_keras_cae_pipeline_cached_evaluation(
         epochs=1,
         batch_size=2,
         mask_ratio=0.0,
-        preprocessing_steps=[],
+        pipeline=[],
         run_heatmap=False,
         force_retrain=False,
         model_hash=model_hash,

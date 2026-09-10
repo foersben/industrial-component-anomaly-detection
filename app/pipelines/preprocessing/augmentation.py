@@ -44,44 +44,18 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageEnhance
 
+from app.domain.categories import OBJECT_CATEGORIES, TEXTURE_CATEGORIES
+
 logger = logging.getLogger(__name__)
 
-# MVTec AD has 15 categories split into textures and objects.
-# Source: https://www.mvtec.com/company/research/datasets/mvtec-ad
-TEXTURE_CATEGORIES: frozenset[str] = frozenset(
-    {
-        "carpet",
-        "grid",
-        "leather",
-        "tile",
-        "wood",
-    }
-)
-"""Set of MVTec AD texture category names.
-
-For these categories, spatial augmentations (rotations, flips) are safe and beneficial
-because the texture patterns are statistically invariant under spatial transformations.
-"""
-
-OBJECT_CATEGORIES: frozenset[str] = frozenset(
-    {
-        "bottle",
-        "cable",
-        "capsule",
-        "hazelnut",
-        "metal_nut",
-        "pill",
-        "screw",
-        "toothbrush",
-        "transistor",
-        "zipper",
-    }
-)
-"""Set of MVTec AD rigid object category names.
-
-For these categories, spatial transformations would destroy the learned object orientation,
-so only light photometric (colour/brightness/noise) augmentations are applied.
-"""
+__all__ = [
+    "OBJECT_CATEGORIES",
+    "TEXTURE_CATEGORIES",
+    "ObjectAugmenter",
+    "TextureAugmenter",
+    "augment_batch",
+    "get_augmenter",
+]
 
 
 class TextureAugmenter:

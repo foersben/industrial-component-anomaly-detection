@@ -2,8 +2,9 @@
 
 import streamlit as st
 
-from app.ui.components.api_client import make_api_request
+from app.pipelines.modelling.autoencoder import run_autoencoder_pipeline
 from app.ui.components.metrics import _display_metrics_row
+from app.ui.components.selectors import render_dataset_and_category_selector
 
 
 def render_autoencoder_tab() -> None:
@@ -14,29 +15,7 @@ def render_autoencoder_tab() -> None:
         "evaluate reconstruction error on test anomalies."
     )
 
-    col1, col2 = st.columns(2)
-    st.session_state.setdefault("ae_root", "data/raw/mvtec_ad")
-    data_root = col1.text_input("Dataset Root Directory", key="ae_root")
-
-    mvtec_categories = [
-        "bottle",
-        "cable",
-        "capsule",
-        "hazelnut",
-        "metal_nut",
-        "pill",
-        "screw",
-        "toothbrush",
-        "transistor",
-        "zipper",
-        "carpet",
-        "grid",
-        "leather",
-        "tile",
-        "wood",
-    ]
-    st.session_state.setdefault("ae_cat", "bottle")
-    category = col2.selectbox("Category Name", options=mvtec_categories, key="ae_cat")
+    data_root, category = render_dataset_and_category_selector(key_prefix="ae")
 
     col_e, col_b, col_l, col_s = st.columns(4)
     st.session_state.setdefault("ae_epochs", 5)
@@ -52,21 +31,19 @@ def render_autoencoder_tab() -> None:
         return
 
     with st.spinner("Training Autoencoder and evaluating on multi-class anomalies..."):
-        payload = {
-            "data_root": data_root,
-            "category": category,
-            "epochs": epochs,
-            "batch_size": batch_size,
-            "latent_dim": latent_dim,
-            "img_size": img_size,
-        }
-        data = make_api_request("/api/pipelines/autoencoder", payload, timeout=180)
-
-        if not data:
+        try:
+            results = run_autoencoder_pipeline(
+                data_root=data_root,
+                category=category,
+                epochs=epochs,
+                batch_size=batch_size,
+                latent_dim=latent_dim,
+                img_size=img_size,
+            )
+            st.success("Autoencoder execution finished.")
+        except Exception as e:
+            st.error(f"Pipeline error: {e}")
             return
-
-        st.success(data.get("message", "Success"))
-        results = data.get("results", {})
 
         if "classification_report" in results:
             st.text_area("Classification Report", value=results["classification_report"], height=200)

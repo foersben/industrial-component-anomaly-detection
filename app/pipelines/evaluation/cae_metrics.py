@@ -64,16 +64,10 @@ from typing import Any
 import numpy as np
 
 # Canonical cross-model evaluation metrics are maintained in metrics.py
-from app.pipelines.evaluation.metrics import compute_aupimo, compute_image_auroc
+from app.pipelines.evaluation.metrics import compute_aupimo as compute_aupimo
+from app.pipelines.evaluation.metrics import compute_image_auroc
 
 logger = logging.getLogger(__name__)
-
-__all__ = [
-    "compute_aupimo",
-    "compute_image_auroc",
-    "evaluate_cae",
-    "generate_heatmap_overlay",
-]
 
 
 def generate_heatmap_overlay(
