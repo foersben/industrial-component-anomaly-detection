@@ -11,9 +11,19 @@ tags: [api, reference, structural]
 
 ::: app.api.main
 
+## Command Line Interface
+
+::: app.cli
+
 ## Modelling Pipelines
 
+::: app.pipelines.modelling.patchcore
+
 ::: app.pipelines.modelling.keras_cae.cae_pipeline
+
+::: app.pipelines.modelling.dinov2_baseline
+
+::: app.pipelines.modelling.dinov3_baseline
 
 ::: app.pipelines.modelling.baseline
 
@@ -26,6 +36,8 @@ tags: [api, reference, structural]
 ::: app.pipelines.preprocessing.segmentation
 
 ## Evaluation Subpackage
+
+::: app.pipelines.evaluation.metrics
 
 ::: app.pipelines.evaluation.cae_metrics
 
