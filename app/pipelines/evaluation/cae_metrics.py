@@ -63,106 +63,17 @@ from typing import Any
 
 import numpy as np
 
+# Canonical cross-model evaluation metrics are maintained in metrics.py
+from app.pipelines.evaluation.metrics import compute_aupimo, compute_image_auroc
+
 logger = logging.getLogger(__name__)
 
-
-def compute_image_auroc(scores: np.ndarray, binary_labels: np.ndarray) -> float:
-    """Compute image-level Area Under the ROC Curve (AUROC).
-
-    Args:
-        scores: 1D array of image-level anomaly scores, shape (N,). Higher = more anomalous.
-        binary_labels: 1D binary array, shape (N,). 0 = normal, 1 = anomalous.
-
-    Returns:
-        AUROC value in [0, 1]. 1.0 = perfect; 0.5 = random; 0.0 = perfectly inverted.
-    """
-    from sklearn.metrics import roc_auc_score
-
-    if len(np.unique(binary_labels)) < 2:
-        raise ValueError("Image AUROC requires both normal and anomalous labels")
-
-    auroc: float = float(roc_auc_score(binary_labels, scores))
-    logger.info("Image-Level AUROC: %.4f", auroc)
-    return auroc
-
-
-def compute_aupimo(
-    anomaly_maps: list[np.ndarray],
-    gt_masks: list[np.ndarray | None],
-    fpr_bounds: tuple[float, float] = (1e-5, 1e-4),
-) -> float:
-    """Compute pixel-level AUPIMO using anomalib's implementation.
-
-    AUPIMO (Area Under Per-Image Overlap) integrates per-image pixel overlap between
-    predicted anomaly maps and ground truth defect masks. It does so only over an
-    extremely narrow and industrially realistic FPR range (default: 10⁻⁵ to 10⁻⁴).
-
-    This function requires the ``anomalib`` package, which is already a dependency
-    of this project.
-
-    Args:
-        anomaly_maps: List of 2D pixel anomaly score maps, one per test image.
-            Each map has shape (H, W) with float values ≥ 0 (higher = more anomalous).
-        gt_masks: List of 2D ground truth binary masks, one per test image.
-            Each mask has shape (H, W) with values 0 (normal) or 1 (defect).
-            Use ``None`` for images with no ground truth mask (normal images).
-        fpr_bounds: Tuple (lower_fpr, upper_fpr) defining the integration interval.
-            Default (1e-5, 1e-4) matches the MVTec AD benchmark standard.
-
-    Returns:
-        AUPIMO score in [0, 1]. Higher is better.
-
-    Raises:
-        ImportError: If anomalib or torch is unavailable.
-        ValueError: If the maps or masks cannot define AUPIMO at the requested bounds.
-        RuntimeError: If anomalib cannot compute the metric at the requested bounds.
-    """
-    try:
-        import torch
-        from anomalib.data import ImageBatch
-        from anomalib.metrics import AUPIMO
-    except ImportError as exc:
-        raise ImportError("anomalib and torch are required to compute AUPIMO") from exc
-
-    # Format masks: normal images have zeros mask, defective have binary mask
-    h, w = anomaly_maps[0].shape
-    all_masks: list[np.ndarray] = []
-    has_anomaly = False
-    for mask in gt_masks:
-        if mask is not None and np.any(mask > 0):
-            all_masks.append(mask.astype(np.uint8))
-            has_anomaly = True
-        else:
-            all_masks.append(np.zeros((h, w), dtype=np.uint8))
-
-    if not has_anomaly:
-        raise ValueError("AUPIMO requires at least one anomalous image with a ground-truth mask")
-
-    pred_tensor = torch.tensor(np.stack(anomaly_maps), dtype=torch.float32)
-    gt_tensor = torch.tensor(np.stack(all_masks), dtype=torch.bool)
-    dummy_img = torch.zeros(len(anomaly_maps), 3, h, w, dtype=torch.float32)
-
-    batch = ImageBatch(image=dummy_img, anomaly_map=pred_tensor, gt_mask=gt_tensor)
-
-    # Increased from 10_000 to 50_000 so the narrow low-FPR interval contains
-    # enough sampled operating points for stable integration without the much
-    # larger memory and runtime cost of an unnecessarily dense threshold grid.
-    aupimo_metric = AUPIMO(num_thresholds=50_000, fpr_bounds=fpr_bounds)
-    aupimo_metric.update(batch)
-    result = aupimo_metric.compute()
-    if hasattr(result, "aupimo_scores"):
-        score = float(result.aupimo_scores.nanmean().item())
-    elif isinstance(result, tuple) and len(result) > 1:
-        score = float(result[1].nanmean().item())
-    elif isinstance(result, dict):
-        score = float(next(iter(result.values())))
-    else:
-        score = float(result)
-
-    if np.isnan(score):
-        raise ValueError("AUPIMO computation returned NaN")
-    logger.info("Pixel-Level AUPIMO: %.4f (bounds: %s)", score, fpr_bounds)
-    return score
+__all__ = [
+    "compute_aupimo",
+    "compute_image_auroc",
+    "evaluate_cae",
+    "generate_heatmap_overlay",
+]
 
 
 def generate_heatmap_overlay(
