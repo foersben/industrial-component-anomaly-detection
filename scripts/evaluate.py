@@ -188,7 +188,7 @@ def evaluate_patchcore(category: str, tuned: bool) -> None:
     """Evaluate the PatchCore model."""
     import torch
 
-    from app.pipelines.modelling.baseline import run_baseline
+    from app.pipelines.modelling.patchcore import run_patchcore_pipeline
 
     print(
         f"\n{'=' * 50}\nEvaluating Patchcore ({'Tuned' if tuned else 'Baseline'}) for category: {category}\n{'=' * 50}"
@@ -235,7 +235,7 @@ def evaluate_patchcore(category: str, tuned: bool) -> None:
             coreset_ratio = hp.get("coreset_sampling_ratio", 0.1)
             num_neighbors = hp.get("num_neighbors", 9)
 
-    results = run_baseline(
+    results = run_patchcore_pipeline(
         data_root=Path("data/raw/mvtec_ad"),
         category=category,
         pipeline=preprocessing_steps,
@@ -313,18 +313,26 @@ def orchestrator(model: str, tuned: bool) -> None:
 def main() -> None:
     """Run the evaluation script."""
     parser = argparse.ArgumentParser(description="Evaluate anomaly detection models.")
-    parser.add_argument("--model", type=str, choices=["keras", "patchcore"], required=True, help="Model to evaluate")
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["keras", "patchcore", "baseline"],
+        required=True,
+        help="Model to evaluate (baseline is an alias for patchcore)",
+    )
     parser.add_argument("--tuned", action="store_true", help="Evaluate the tuned hyperparameters")
     parser.add_argument("--category", type=str, help="Specific category to evaluate (used internally for isolation)")
     args = parser.parse_args()
 
+    model = "patchcore" if args.model == "baseline" else args.model
+
     if args.category:
-        if args.model == "keras":
+        if model == "keras":
             evaluate_keras(args.category, args.tuned)
-        elif args.model == "patchcore":
+        elif model == "patchcore":
             evaluate_patchcore(args.category, args.tuned)
     else:
-        orchestrator(args.model, args.tuned)
+        orchestrator(model, args.tuned)
 
 
 if __name__ == "__main__":
