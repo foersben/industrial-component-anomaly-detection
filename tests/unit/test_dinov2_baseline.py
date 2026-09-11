@@ -80,7 +80,10 @@ def test_invalid_masking_policy_is_rejected() -> None:
         resolve_masking("automatic", "bottle")  # type: ignore[arg-type]
 
 
-def test_all_category_dispatch_reports_macro_averages(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_all_category_dispatch_reports_macro_averages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The all dispatcher runs the fixed category list without changing configuration."""
     calls: list[dict[str, Any]] = []
 
@@ -100,14 +103,17 @@ def test_all_category_dispatch_reports_macro_averages(monkeypatch: pytest.Monkey
         }
 
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.run_dino_category", fake_category)
+    fake_manifest = object()
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.build_mvtec_manifest", lambda _root: fake_manifest)
 
-    result = run_dinov2_baseline(category="all", masking="published")
+    result = run_dinov2_baseline(category="all", masking="published", registry_base=tmp_path)
 
     assert result["category"] == "all"
     assert list(result["categories"]) == list(MVTEC_CATEGORIES)
     assert [call["category"] for call in calls] == list(MVTEC_CATEGORIES)
     assert all(call["masking"] == "published" for call in calls)
     assert all(call["reuse_complete"] is True for call in calls)
+    assert all(call["manifest"] is fake_manifest for call in calls)
     assert all(not category_result["heatmap_overlays"] for category_result in result["categories"].values())
     assert result["macro_average"]["image_f1"] == pytest.approx(8 / 15)
 
