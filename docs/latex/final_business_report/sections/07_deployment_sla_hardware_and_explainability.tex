@@ -18,13 +18,13 @@ The platform incorporates a hardware-tiered execution runtime that dynamically m
 \midrule
 Edge GPU (NVIDIA T2000, FP32) & 1  & 18 -- 28\,ms  & 35 -- 55  \\
 Edge GPU (batched streaming)   & 8  & 8 -- 12\,ms   & 80 -- 125 \\
-Industrial IPC (Core i7, AVX2 + oneDNN) & 1 & 65 -- 95\,ms & 10 -- 15 \\
-Standard CPU Fallback (scalar) & 1 & 320 -- 450\,ms & 2 -- 3 \\
+Industrial PC (Intel Core i7, standard CPU) & 1 & 65 -- 95\,ms & 10 -- 15 \\
+Standard CPU Fallback (unoptimised) & 1 & 320 -- 450\,ms & 2 -- 3 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The CPU execution profile constitutes the most commercially significant result in this benchmarking suite. By leveraging Intel oneDNN operator fusion and eight-wide AVX2 SIMD vectorisation, the ResNet-18 feature extraction and nearest-neighbour distance query execute in 65--95\,ms on a standard, fanless industrial IPC equipped with an Intel Core i7 processor. This achieves deterministic throughput of 10--15 parts per second on commodity edge hardware already deployed across existing plant electrical cabinets. For brownfield retrofit installations on established manufacturing lines, this completely eliminates the substantial capital expenditure, enclosure redesign, and maintenance overhead associated with dedicated industrial GPU accelerators.
+The CPU execution profile is the most commercially significant result in this benchmarking suite. By taking advantage of standard processor optimisation libraries, the ResNet-18 feature extraction and nearest-neighbour search inspect a part in 65--95\,ms on a standard, fanless Industrial Personal Computer (IPC) equipped with an Intel Core i7 processor. This achieves a reliable throughput of 10--15 parts per second on standard edge computers already installed in existing factory electrical cabinets. For retrofit installations on established manufacturing lines, this completely removes the need to purchase dedicated graphics cards (GPUs), avoiding substantial hardware expenditure, enclosure redesigns, and thermal maintenance overheads.
 
 Where edge GPU acceleration is present -- as in greenfield installations or vision stations already equipped with industrial NVIDIA edge modules -- latency drops to 18--28\,ms per single image (35--55 parts per second), or under 12\,ms in streaming batch configurations (up to 125 parts per second), comfortably matching the highest-cadence automated assembly lines.
 
