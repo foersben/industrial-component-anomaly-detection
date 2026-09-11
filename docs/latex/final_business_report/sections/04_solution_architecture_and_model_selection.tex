@@ -1,7 +1,7 @@
 \section{Solution Architecture and Model Selection}
 \label{sec:model_selection}
 
-Two architectural paradigms were developed and empirically evaluated under identical experimental conditions across all 15 MVTec AD categories: the non-parametric PatchCore feature-matching framework and a deep generative convolutional autoencoder (the Keras CAE). Both pipelines were trained and calibrated under the deterministic 85\% fitting / 15\% normal validation split with seed 42, evaluated at the canonical $256 \times 256$ spatial resolution, and scored against unseen evaluation splits under the \texttt{fair-eval-v1} protocol described in Section~\ref{sec:threshold_calibration}.
+Two architectural paradigms were developed and empirically evaluated under identical experimental conditions across all 15 MVTec AD categories: the non-parametric PatchCore feature-matching framework and a deep generative convolutional autoencoder (the Keras CAE). Both pipelines were trained and calibrated under the deterministic 85\% fitting / 15\% normal validation split with seed 42, evaluated at the canonical $256 \times 256$ spatial resolution, and scored against unseen evaluation splits under our strict zero-test-leakage protocol described in Section~\ref{sec:threshold_calibration}.
 
 \subsection{PatchCore: Deep Feature Transfer and Coreset Memory Banks}
 
@@ -21,7 +21,7 @@ Whilst generative reconstruction models offer conceptual appeal -- learning a co
 
 \begin{table}[bp]
 \centering
-\caption{Macro-averaged performance across all 15 MVTec AD categories under the \texttt{fair-eval-v1} protocol. PatchCore ResNet-18 constitutes the production-grade reference configuration.}
+\caption{Macro-averaged performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. PatchCore ResNet-18 constitutes the production-grade reference configuration.}
 \label{tab:paradigm_comparison}
 \footnotesize
 \resizebox{\linewidth}{!}{%

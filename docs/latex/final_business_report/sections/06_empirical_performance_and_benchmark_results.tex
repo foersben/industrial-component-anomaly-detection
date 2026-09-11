@@ -1,7 +1,7 @@
 \section{Empirical Performance and Benchmark Results}
 \label{sec:empirical_results}
 
-Under the formal \texttt{fair-eval-v1} protocol, exhaustive empirical evaluations were executed across all 15 MVTec AD categories, with operational decision thresholds calibrated exclusively on held-out normal validation partitions. The results documented below characterise the production-grade reference architecture: PatchCore utilising a frozen ResNet-18 backbone, representing the optimal convergence of defect discriminability, deterministic edge latency, and hardware efficiency.
+Under our strict zero-test-leakage protocol, exhaustive empirical evaluations were executed across all 15 MVTec AD categories, with operational decision thresholds calibrated exclusively on held-out normal validation partitions. The results documented below characterise the production-grade reference architecture: PatchCore utilising a frozen ResNet-18 backbone, representing the optimal convergence of defect discriminability, deterministic edge latency, and hardware efficiency.
 
 \subsection{Category-Level Performance Breakdown}
 
@@ -9,7 +9,7 @@ Table~\ref{tab:category_results} provides the disaggregated performance across a
 
 \begin{table}[bp]
 \centering
-\caption{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under the \texttt{fair-eval-v1} protocol. Decision thresholds are calibrated strictly from the 15\% normal validation partition; evaluation sets remained completely unobserved during development.}
+\caption{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. Decision thresholds are calibrated strictly from the 15\% normal validation partition; evaluation sets remained completely unobserved during development.}
 \label{tab:category_results}
 \footnotesize
 \begin{tabular}{@{}lccccc@{}}

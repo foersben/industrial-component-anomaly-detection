@@ -11,7 +11,7 @@ The AUPIMO metric warrants explicit clarification, as its role is frequently mis
 
 By the same principle, pixel-level AUROC is categorically discarded as an operational metric. Given that conforming pixels comprise roughly $98.5\%$ of total inspection surface area, AUROC accumulates an overwhelming true-negative mass that inflates the metric score regardless of true defect sensitivity. While reported in Table~\ref{tab:paradigm_comparison} to ensure benchmark reproducibility, it exerts zero influence on operational threshold calibration.
 
-\subsection{The \texttt{fair-eval-v1} Protocol: Leakage-Free Calibration}
+\subsection{Strict Zero-Test-Leakage Calibration Protocol}
 
 The platform mandates an immutable, audit-compliant calibration protocol that enforces strict isolation between model development, threshold derivation, and final acceptance testing.
 
@@ -41,6 +41,6 @@ Figure~\ref{fig:threshold_calibration} depicts the empirical anomaly score distr
 \begin{figure}[tp]
     \centering
     \placeholder{2.2cm}{Two-panel or multi-panel figure showing empirical anomaly score distributions. Left panel (or top row): kernel density estimates (KDE) or histograms of image-level anomaly scores for normal validation images (shaded in blue/grey) and anomalous test images (shaded in red/orange) for a low-difficulty category (e.g., Leather or Bottle). Right panel (or bottom row): same for a high-difficulty category (e.g., Screw or Cable), where the distributions substantially overlap. Vertical dashed lines mark the three operational threshold tiers ($\tau_{0.002}$, $\tau_{0.01}$, $\tau_{0.05}$). The figure should make visually clear that threshold choice directly controls the precision-recall trade-off and that the achievable recall depends on the degree of score distribution separation.}
-    \caption{Empirical anomaly score distributions on the normal validation partition (blue) and the anomalous evaluation split (red) for representative categories. Vertical dashed lines mark the three operational threshold tiers calibrated under the \texttt{fair-eval-v1} protocol. Categories exhibiting sharp distribution separation (e.g., Leather) permit aggressive thresholds that attain zero escape with negligible false alarms; categories with overlapping distributions (e.g., Screw) necessitate explicit economic optimisation to establish the operational operating point.}
+    \caption{Empirical anomaly score distributions on the normal validation partition (blue) and the anomalous evaluation split (red) for representative categories. Vertical dashed lines mark the three operational threshold tiers calibrated under our strict zero-test-leakage protocol. Categories exhibiting sharp distribution separation (e.g., Leather) permit aggressive thresholds that attain zero escape with negligible false alarms; categories with overlapping distributions (e.g., Screw) necessitate explicit economic optimisation to establish the operational operating point.}
     \label{fig:threshold_calibration}
 \end{figure}
