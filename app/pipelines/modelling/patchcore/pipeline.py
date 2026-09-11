@@ -21,6 +21,14 @@ from app.domain.data import (
     build_fair_evaluation_split,
     build_mvtec_manifest,
 )
+from app.domain.evaluation import (
+    PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
+    PATCHCORE_MODEL_SEED,
+    PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
+    PATCHCORE_SCORE_SPACE,
+    BaselineResult,
+    EvaluationArtifacts,
+)
 from app.pipelines.evaluation.metrics import (
     AUPIMO_FPR_BOUNDS,
     AUPIMO_NUM_THRESHOLDS,
@@ -42,14 +50,6 @@ from app.pipelines.modelling.patchcore.evaluation import (
 from app.pipelines.modelling.patchcore.registry import (
     _normalize_preprocessing_steps,
     find_cached_patchcore_model,
-)
-from app.pipelines.modelling.patchcore.types import (
-    PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
-    PATCHCORE_MODEL_SEED,
-    PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
-    PATCHCORE_SCORE_SPACE,
-    BaselineResult,
-    EvaluationArtifacts,
 )
 from app.pipelines.modelling.patchcore.visualization import (
     _print_patchcore_results_table,

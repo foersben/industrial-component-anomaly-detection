@@ -19,7 +19,7 @@ The alternative paradigm we evaluated is a fully convolutional autoencoder imple
 
 Whilst generative reconstruction models offer conceptual appeal, we discovered they suffer from a fatal structural flaw in industrial practice. Pixel-level reconstruction objectives inherently minimise global image variance rather than local defect contrast. On high-frequency stochastic textures -- such as \emph{Wood} grain, \emph{Carpet} pile, or \emph{Leather} surfaces -- the generative decoder yields slightly smoothed reconstructions of high-frequency spatial patterns. This slight blur generates elevated residual errors across conforming surfaces, inducing severe pseudo-scrap and artificially deflating the operational $F_1$-score. Table~\ref{tab:paradigm_comparison} quantifies this performance disparity across all 15 benchmark categories.
 
-\begin{table}[bp]
+\begin{table}[H]
 \centering
 \caption{Macro-averaged performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol.}
 \label{tab:paradigm_comparison}

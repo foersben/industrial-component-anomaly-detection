@@ -283,14 +283,7 @@ def run_dino_category(
         ValueError: If validation bounds or encoder specifications are invalid.
         RuntimeError: If memory bank fitting produces zero normal patches.
     """
-    if not np.isclose(fpr_limit, AUPIMO_FPR_BOUNDS[1]):
-        raise ValueError(f"fair-eval-v1 requires fpr_limit={AUPIMO_FPR_BOUNDS[1]}")
-    if num_neighbors < 1:
-        raise ValueError("num_neighbors must be at least 1")
-    if model_generation not in {"dinov2", "dinov3"}:
-        raise ValueError("model_generation must be one of: dinov2, dinov3")
-    if model_generation not in encoder_name:
-        raise ValueError(f"encoder_name must identify a pretrained {model_name} encoder")
+    _validate_dino_parameters(fpr_limit, num_neighbors, model_generation, encoder_name, model_name)
     use_masking = resolve_masking(masking, category)
 
     steps_config = pipeline if pipeline is not None else preprocessing_steps
@@ -338,16 +331,7 @@ def run_dino_category(
             logger.info("Reusing complete %s result for %s (Hash: %s)", model_name, category, active_hash)
             return completed_result
 
-    if base_dir.exists():
-        archived_hash = hashlib.sha256(f"{configuration_hash}:{time.time_ns()}".encode()).hexdigest()[:12]
-        archived_dir = Path(registry_base) / archived_hash
-        base_dir.rename(archived_dir)
-        archived_metadata_path = archived_dir / "metadata.json"
-        if archived_metadata_path.is_file():
-            archived_metadata = json.loads(archived_metadata_path.read_text(encoding="utf-8"))
-            archived_metadata["hash"] = archived_hash
-            archived_metadata["configuration_hash"] = configuration_hash
-            archived_metadata_path.write_text(json.dumps(archived_metadata, indent=4), encoding="utf-8")
+        _rotate_dino_cache(base_dir, Path(registry_base), configuration_hash)
     base_dir.mkdir(parents=True)
 
     datamodule = MVTecAD(
@@ -573,6 +557,32 @@ def run_dino_all_categories(
         "categories": category_results,
         "macro_average": macro_average,
     }
+
+
+def _validate_dino_parameters(
+    fpr_limit: float, num_neighbors: int, model_generation: str, encoder_name: str, model_name: str
+) -> None:
+    if not np.isclose(fpr_limit, AUPIMO_FPR_BOUNDS[1]):
+        raise ValueError(f"fair-eval-v1 requires fpr_limit={AUPIMO_FPR_BOUNDS[1]}")
+    if num_neighbors < 1:
+        raise ValueError("num_neighbors must be at least 1")
+    if model_generation not in {"dinov2", "dinov3"}:
+        raise ValueError("model_generation must be one of: dinov2, dinov3")
+    if model_generation not in encoder_name:
+        raise ValueError(f"encoder_name must identify a pretrained {model_name} encoder")
+
+
+def _rotate_dino_cache(base_dir: Path, registry_base: Path, configuration_hash: str) -> None:
+    if base_dir.exists():
+        archived_hash = hashlib.sha256(f"{configuration_hash}:{time.time_ns()}".encode()).hexdigest()[:12]
+        archived_dir = registry_base / archived_hash
+        base_dir.rename(archived_dir)
+        archived_metadata_path = archived_dir / "metadata.json"
+        if archived_metadata_path.is_file():
+            archived_metadata = json.loads(archived_metadata_path.read_text(encoding="utf-8"))
+            archived_metadata["hash"] = archived_hash
+            archived_metadata["configuration_hash"] = configuration_hash
+            archived_metadata_path.write_text(json.dumps(archived_metadata, indent=4), encoding="utf-8")
 
 
 __all__ = [

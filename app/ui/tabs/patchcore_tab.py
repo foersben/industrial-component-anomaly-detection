@@ -493,10 +493,9 @@ def render_baseline_patchcore_tab() -> None:
     cfg, run_clicked = _render_patchcore_config_controls()
     if run_clicked or load_clicked:
         _execute_and_display_patchcore(cfg, selected_hash, selected_meta, load_clicked)
-    elif (
-        isinstance(cached_results := st.session_state.get("_patchcore_displayed_results"), dict)
-        and st.session_state.get("_patchcore_displayed_signature") == _patchcore_display_signature(cfg)
-    ):
+    elif isinstance(
+        cached_results := st.session_state.get("_patchcore_displayed_results"), dict
+    ) and st.session_state.get("_patchcore_displayed_signature") == _patchcore_display_signature(cfg):
         _render_evaluation_summary(cached_results, model_type="patchcore")
         if metrics_path := cached_results.get("pixel_level", {}).get("metrics_path"):
             render_evaluation_curves(metrics_path)

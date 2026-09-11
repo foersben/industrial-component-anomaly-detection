@@ -4,6 +4,18 @@ Provides standard and enhanced multi-layer patch nearest-neighbor anomaly detect
 using self-supervised vision transformer representations (DINOv2 and DINOv3).
 """
 
+from app.core.registry import (
+    delete_cached_model as delete_cached_dino_model,
+)
+from app.core.registry import (
+    list_trashed_models as list_trashed_dino_models,
+)
+from app.core.registry import (
+    purge_trash as purge_dino_trash,
+)
+from app.core.registry import (
+    restore_cached_model as restore_cached_dino_model,
+)
 from app.pipelines.modelling.dino.engine import (
     release_accelerator_memory,
     resolve_masking,
@@ -11,12 +23,6 @@ from app.pipelines.modelling.dino.engine import (
     run_dino_category,
 )
 from app.pipelines.modelling.dino.enhanced import EnhancedAnomalyDINOModel
-from app.pipelines.modelling.dino.registry import (
-    delete_cached_dino_model,
-    list_trashed_dino_models,
-    purge_dino_trash,
-    restore_cached_dino_model,
-)
 from app.pipelines.modelling.dino.types import (
     AllCategoriesResult,
     BaselineResult,

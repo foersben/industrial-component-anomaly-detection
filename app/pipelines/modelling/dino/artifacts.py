@@ -10,6 +10,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.logger import logger
 from app.domain.data import FAIR_EVALUATION_PROTOCOL
+from app.domain.evaluation import (
+    PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
+    PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
+    PATCHCORE_SCORE_SPACE,
+)
 from app.pipelines.evaluation.metrics import (
     AUPIMO_FPR_BOUNDS,
     AUPIMO_NUM_THRESHOLDS,
@@ -22,15 +27,10 @@ from app.pipelines.modelling.anomalib.visualization import (
     save_heatmap_overlays,
 )
 from app.pipelines.modelling.patchcore.evaluation import format_results
-from app.pipelines.modelling.patchcore.types import (
-    PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
-    PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
-    PATCHCORE_SCORE_SPACE,
-)
 
 if TYPE_CHECKING:
+    from app.domain.evaluation import BaselineResult, EvaluationArtifacts
     from app.pipelines.modelling.dino.types import DINOVariant, MaskingMode
-    from app.pipelines.modelling.patchcore.types import BaselineResult, EvaluationArtifacts
 
 
 def load_completed_category_result(

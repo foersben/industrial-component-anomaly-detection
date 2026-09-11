@@ -12,6 +12,7 @@ This directory contains the sequential research and modeling notebooks for the M
 | **04** | [`04_modelling_ssim_scoring.ipynb`](04_modelling_ssim_scoring.ipynb) | Structural similarity (SSIM) anomaly map computation and localization | Perceptual Defect Scoring |
 | **05** | [`05_modelling_statistical_baseline_mina.ipynb`](05_modelling_statistical_baseline_mina.ipynb) | Heuristic dummy classifier & pixel-wise z-score statistical baseline | Statistical & Heuristic Baselines |
 | **06** | [`06_evaluation_precision_recall_thresholds.ipynb`](06_evaluation_precision_recall_thresholds.ipynb) | Threshold selection, precision-recall tradeoffs, and breakpoint phenomenon | Industrial Decision Calibration |
+| **07** | [`mina_autoencoder_final.ipynb`](mina_autoencoder_final.ipynb) | Screw-category autoencoder exploration notebook (Mina) | Autoencoder Architecture Exploration |
 
 ## Figures & Artifacts
 

@@ -536,10 +536,9 @@ def render_keras_cae_tab() -> None:
     cfg, run_clicked = _render_cae_config_controls()
     if not (load_selected_clicked or run_clicked):
         cached_results = st.session_state.get("_kcae_displayed_results")
-        if (
-            isinstance(cached_results, dict)
-            and st.session_state.get("_kcae_displayed_signature") == _cae_display_signature(cfg)
-        ):
+        if isinstance(cached_results, dict) and st.session_state.get(
+            "_kcae_displayed_signature"
+        ) == _cae_display_signature(cfg):
             _render_evaluation_summary(cached_results)
             st.caption(
                 f"Adaptive Threshold: `{cached_results.get('threshold', 0.0):.6f}` | "

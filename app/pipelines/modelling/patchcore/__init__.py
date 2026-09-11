@@ -1,24 +1,24 @@
 """Canonical PatchCore modelling pipeline subpackage."""
 
+from app.core.registry import (
+    delete_cached_model as delete_cached_patchcore_model,
+)
+from app.core.registry import (
+    list_trashed_models as list_trashed_patchcore_models,
+)
+from app.core.registry import (
+    purge_trash as purge_patchcore_trash,
+)
+from app.core.registry import (
+    restore_cached_model as restore_cached_patchcore_model,
+)
 from app.domain.data import (
     FAIR_EVALUATION_PROTOCOL,
     FairEvaluationSplit,
     build_fair_evaluation_split,
     build_mvtec_manifest,
 )
-from app.pipelines.modelling.patchcore.evaluation import (
-    extract_and_save_pr_metrics,
-    format_results,
-)
-from app.pipelines.modelling.patchcore.pipeline import run_patchcore_pipeline
-from app.pipelines.modelling.patchcore.registry import (
-    delete_cached_patchcore_model,
-    find_cached_patchcore_model,
-    list_trashed_patchcore_models,
-    purge_patchcore_trash,
-    restore_cached_patchcore_model,
-)
-from app.pipelines.modelling.patchcore.types import (
+from app.domain.evaluation import (
     PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
     PATCHCORE_MODEL_SEED,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
@@ -31,6 +31,12 @@ from app.pipelines.modelling.patchcore.types import (
     PixelEvaluationMetrics,
     Thresholds,
 )
+from app.pipelines.modelling.patchcore.evaluation import (
+    extract_and_save_pr_metrics,
+    format_results,
+)
+from app.pipelines.modelling.patchcore.pipeline import run_patchcore_pipeline
+from app.pipelines.modelling.patchcore.registry import find_cached_patchcore_model
 
 __all__ = [
     "FAIR_EVALUATION_PROTOCOL",
