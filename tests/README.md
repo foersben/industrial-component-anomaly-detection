@@ -30,9 +30,6 @@ flowchart TD
     Integration["integration/"]
 
     Tests --> Unit
-    Tests --> Integration
-
-    Integration --> API["test_api_cae_pipeline.py\n(FastAPI Contract)"]
 
     Unit --> Hyp["test_cae_hypothesis.py\n(Property-Based Invariants)"]
     Unit --> DataInv["test_cae_data_invariants.py\n(Partitioning & Leakage)"]
@@ -128,11 +125,6 @@ flowchart TD
 ---
 
 ## Detailed Test Suite Specifications
-
-### Integration Tests
-
-- **`tests/integration/test_api_cae_pipeline.py`**
-  Validates the FastAPI `/api/pipelines/keras_cae` execution contract. It tests chained preprocessing pipelines, deterministic model cache-hit & evaluation parity, and properly formats and responds to 500 server errors.
 
 ### Property-Based Testing (Hypothesis)
 
