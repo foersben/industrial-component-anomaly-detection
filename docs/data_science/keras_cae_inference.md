@@ -10,9 +10,7 @@ tags: [keras, autoencoder, documentation]
 > **Part of the Keras CAE documentation series.** Start at the
 > [Architecture Overview](keras_cae_architecture.md) if you are new to this pipeline.
 
-This page covers **Steps 7-9**: how a trained model is turned into a reliable anomaly
-detector through noise-robust scoring (Top-K pooling), calibrated thresholding (Quantile
-vs. Mahalanobis), and honest evaluation (AUROC, F1, AUPIMO).
+This page covers **Steps 7-9**: how a trained model is turned into a reliable anomaly detector through noise-robust scoring (Top-K pooling), calibrated thresholding (Quantile vs. Mahalanobis), and honest evaluation (AUROC, F1, AUPIMO).
 
 **Implementation files**:
 
@@ -25,10 +23,7 @@ vs. Mahalanobis), and honest evaluation (AUROC, F1, AUPIMO).
 
 ### Where in the Pipeline Does Scoring Happen?
 
-After training, the model runs in **inference mode** with no masking - the original,
-clean test images are fed directly to the encoder-decoder. For each test image, the
-reconstruction $\hat{X}$ is compared to the original $X$ to produce a
-**pixel error map**:
+After training, the model runs in **inference mode** with no masking - the original, clean test images are fed directly to the encoder-decoder. For each test image, the reconstruction $\hat{X}$ is compared to the original $X$ to produce a **pixel error map**:
 
 $$E_{pixel} = \alpha \cdot (1 - \text{SSIM}(X, \hat{X})) + (1 - \alpha) \cdot \text{MAE}(X, \hat{X})$$
 
@@ -45,32 +40,25 @@ The primary risk of applying a Gaussian blur is **over-smoothing**. If the $\sig
 
 **Higher value in the smoothed map = the model structurally failed here = likely anomalous.**
 
-To make a binary classification decision ("is the whole image defective?"), the 2D map
-must be collapsed into a single scalar score. The choice of pooling method dramatically
-impacts detection reliability.
+To make a binary classification decision ("is the whole image defective?"), the 2D map must be collapsed into a single scalar score. The choice of pooling method dramatically impacts detection reliability.
 
 ### The Naive Approach: Max-Pooling - Why It Fails
 
 $$S_{\text{max}} = \max_{i,j} E(i,j)$$
 
-The maximum pixel error is a conceptually obvious choice but has a catastrophic flaw:
-a single "hot" pixel from camera sensor noise (a dead pixel randomly firing), a JPEG
-compression artefact, or dust on the optical lens produces one single extremely high
-reconstruction error at that pixel. The maximum is dominated by this noise, giving a high anomaly score to a perfectly good component. **A false positive caused by sensor noise, not a defect.** Industrial cameras running 24/7 in dusty manufacturing environments always have sensor noise. Max-pooling is incompatible with real-world deployment.
+The maximum pixel error is a conceptually obvious choice but has a catastrophic flaw: a single "hot" pixel from camera sensor noise (a dead pixel randomly firing), a JPEG compression artefact, or dust on the optical lens produces one single extremely high reconstruction error at that pixel. The maximum is dominated by this noise, giving a high anomaly score to a perfectly good component. **A false positive caused by sensor noise, not a defect.** Industrial cameras running 24/7 in dusty manufacturing environments always have sensor noise. Max-pooling is incompatible with real-world deployment.
 
 ### Mean Pooling - Why That Also Fails
 
 $$S_{\text{mean}} = \frac{1}{H \cdot W} \sum_{i,j} E(i,j)$$
 
-Mean pooling has the opposite problem: it dilutes small defects. A 5x5 pixel scratch
-(fully visible to a human inspector, a real reject) on a 128x128 image:
+Mean pooling has the opposite problem: it dilutes small defects. A 5x5 pixel scratch (fully visible to a human inspector, a real reject) on a 128x128 image:
 
 - Covers 25 pixels out of 16,384 total (0.15% of the image).
 - Defect error: 0.9, background error: 0.01.
 - Mean score: $(25 \times 0.9 + 16359 \times 0.01) / 16384 = 0.021$.
 
-A score of 0.021 is below any meaningful threshold. The defect is **completely invisible**
-to mean pooling.
+A score of 0.021 is below any meaningful threshold. The defect is **completely invisible** to mean pooling.
 
 ### Top-K Pooling: The Correct Balance
 
@@ -80,9 +68,7 @@ With $K = \lfloor k_\text{fraction} \times H \times W \rfloor$, where `k_fractio
 
 For 128x128 images: $K = 0.002 \times 16384 = 33$ pixels.
 
-**What happens to the other 16,351 pixels?** They are discarded entirely. The image score
-is computed exclusively from the 33 highest-error pixels. Every other pixel contributes
-exactly zero to the decision.
+**What happens to the other 16,351 pixels?** They are discarded entirely. The image score is computed exclusively from the 33 highest-error pixels. Every other pixel contributes exactly zero to the decision.
 
 **Why this is correct**:
 

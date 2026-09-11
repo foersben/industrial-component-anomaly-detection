@@ -75,11 +75,11 @@ just fetch-data
 
 ---
 
-## 🖥️ Interactive Application (Streamlit + FastAPI)
+## 🖥️ Interactive Application (Streamlit)
 
 Once the environment is setup and data is fetched, you can launch the interactive web application to evaluate models and analyze anomaly heatmaps.
 
-This launches a **FastAPI backend** on port 8000 and a **Streamlit frontend** on port 8501.
+This launches a **Monolithic Streamlit** application on port 8501.
 
 ```bash
 just run
@@ -87,12 +87,22 @@ just run
 
 ### Supported Pipelines & Unified Caching
 
-The application supports multiple state-of-the-art anomaly detection pipelines, sharing a unified model registry and caching architecture under `data/models/`:
+The project supports multiple anomaly detection pipelines with artifacts under `data/models/`:
 
-1. **PatchCore Baseline**: An industry-standard feature-matching model (Roth et al., 2021) utilizing Wide-ResNet50-2 and coreset subsampling for near-perfect AUROC with zero training time.
-2. **Keras Convolutional Autoencoder (CAE)**: A custom end-to-end trained deep learning model designed for precise pixel-level anomaly localization and inference speed.
+1. **PatchCore Baseline**: An industry-standard feature-matching model (Roth et al., 2021) using pretrained ResNet features and coreset subsampling.
+2. **DINOv2 Nearest-Neighbour Baseline**: A frozen, self-supervised Vision Transformer whose patch tokens are compared with a normal-only feature bank for image scoring and dense localization.
+3. **DINOv3 Nearest-Neighbour Baseline**: The same fair scorer and evaluation protocol with a frozen DINOv3 ViT-S/16 encoder.
+4. **Keras Convolutional Autoencoder (CAE)**: A custom end-to-end trained deep learning model designed for precise pixel-level anomaly localization and inference speed.
 
-Both pipelines support:
+PatchCore and the Keras CAE are available in the Streamlit application. The DINO baselines are intentionally exposed
+through the CLI and API first, keeping the research integrations small and auditable.
+
+For the repository-only comparison—including the deployment-primary **Image F1** metric—see
+[DINO experiment results](docs/data_science/dinov2_experiment_results.md).
+The matching DINOv3 run and summary workflow is documented in
+[DINOv3 baseline and results](docs/data_science/dinov3_baseline.md).
+
+The existing interactive pipelines support:
 
 * **Instant Cached Evaluation**: Evaluations are hashed and cached (under 100ms load time).
 * **Soft-Deletion Lifecycle**: Models are safely moved to a `.trash/` directory for reversible recovery.
@@ -108,7 +118,7 @@ Run `just default` to see the full matrix. Core tasks include:
 
 | Command | Action Performed |
 | :--- | :--- |
-| `just run` | Starts FastAPI backend (port 8000) and Streamlit frontend (port 8501) concurrently. |
+| `just run` | Starts the monolithic Streamlit frontend (port 8501). |
 | `just setup` | Installs virtual environments, pre-commit hooks, and IDE extensions. |
 | `just fetch-data` | Downloads the MVTec AD dataset from Hugging Face and AUPIMO benchmark metrics. |
 | `just lab` | Starts a JupyterLab server strictly bound to the dev environment (`localhost:8888`). |

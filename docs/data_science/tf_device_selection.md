@@ -54,9 +54,7 @@ This tier determines **which binary build** of TensorFlow lands on disk.
 
 This tier determines **how to configure** whichever TF binary is installed.
 
-The key insight: these are orthogonal concerns. You could have the GPU build installed
-but be forced to use CPU because the GPU is busy. You could have the CPU build installed
-and still benefit from proper thread configuration. The two tiers handle each independently.
+The key insight: these are orthogonal concerns. You could have the GPU build installed but be forced to use CPU because the GPU is busy. You could have the CPU build installed and still benefit from proper thread configuration. The two tiers handle each independently.
 
 ---
 
@@ -64,8 +62,7 @@ and still benefit from proper thread configuration. The two tiers handle each in
 
 ### How Pixi Features Work
 
-Pixi uses a **feature system** analogous to Cargo's feature flags in Rust. Each
-feature defines a set of additional dependencies. Features are activated per-environment:
+Pixi uses a **feature system** analogous to Cargo's feature flags in Rust. Each feature defines a set of additional dependencies. Features are activated per-environment:
 
 ```toml
 [tool.pixi.environments]
@@ -75,9 +72,7 @@ ci       = { features = ["cpu"],        solve-group = "ci"      }
 ci-dev   = { features = ["dev", "cpu"], solve-group = "ci"      }
 ```
 
-The `solve-group` ensures that GPU and CPU environments are solved independently -
-their dependency trees are allowed to diverge (different CUDA-linked wheels vs pure
-CPU wheels).
+The `solve-group` ensures that GPU and CPU environments are solved independently - their dependency trees are allowed to diverge (different CUDA-linked wheels vs pure CPU wheels).
 
 ### The GPU Feature: `tensorflow[and-cuda]`
 
@@ -110,16 +105,14 @@ tensorflow-cpu = ">=2.16,<3"
 ```
 
 `tensorflow-cpu` is a separate PyPI package (not just the same binary with GPU disabled).
-It is compiled with different compiler flags that activate AVX2 and enable the
-Intel oneDNN (MKL-DNN) backend, which provides hand-tuned kernels for:
+It is compiled with different compiler flags that activate AVX2 and enable the Intel oneDNN (MKL-DNN) backend, which provides hand-tuned kernels for:
 
 - Convolution layers (the most compute-intensive part of a CAE)
 - Dense (matrix multiplication) layers
 - Batch normalisation
 - Element-wise operations
 
-The result is a binary that processes 8 float32 values per CPU clock cycle via AVX2,
-vs the theoretical 1 value/cycle of a scalar fallback build.
+The result is a binary that processes 8 float32 values per CPU clock cycle via AVX2, vs the theoretical 1 value/cycle of a scalar fallback build.
 
 ---
 
@@ -222,8 +215,7 @@ Why 2 GB, not some other value?
 | **Total (both models)** | **~1.3-1.7 GB** |
 
 The 2 GB threshold gives a comfortable 300+ MB safety margin above realistic usage.
-It also ensures the GPU stays responsive - an allocation that nearly fills VRAM
-will cause CUDA out-of-memory errors on batch size spikes.
+It also ensures the GPU stays responsive - an allocation that nearly fills VRAM will cause CUDA out-of-memory errors on batch size spikes.
 
 **Users can override the threshold:**
 
@@ -246,8 +238,7 @@ for gpu in tf.config.list_physical_devices("GPU"):
 
 ### Why Memory Growth?
 
-By default, TensorFlow allocates **all available VRAM at process startup** - even if
-the model only needs 200 MB of the 4 GB available. This is called *eager allocation*.
+By default, TensorFlow allocates **all available VRAM at process startup** - even if the model only needs 200 MB of the 4 GB available. This is called *eager allocation*.
 
 ```mermaid
 graph LR
@@ -267,14 +258,10 @@ graph LR
 ```
 
 **Why does TF default to eager allocation?**
-It was designed for batch training workloads where a single TF process owns the GPU
-for hours. In our case, PyTorch (PatchCore baseline) and TF (Keras CAE) coexist in the
-same Python process - memory growth is essential.
+It was designed for batch training workloads where a single TF process owns the GPU for hours. In our case, PyTorch (PatchCore baseline) and TF (Keras CAE) coexist in the same Python process - memory growth is essential.
 
 **Does memory growth hurt performance?**
-Slightly - incremental allocations cause occasional small pauses. For training workloads
-(seconds per batch), this is negligible. For 10ms real-time inference, it could matter,
-but is avoidable by pre-warming the model with a dummy batch.
+Slightly - incremental allocations cause occasional small pauses. For training workloads (seconds per batch), this is negligible. For 10ms real-time inference, it could matter, but is avoidable by pre-warming the model with a dummy batch.
 
 ---
 
@@ -284,9 +271,7 @@ This is where the most engineering detail lives.
 
 ### What is SIMD?
 
-SIMD stands for **Single Instruction, Multiple Data**. A normal (scalar) CPU instruction
-operates on one value at a time. A SIMD instruction operates on an entire vector of
-values in the same number of clock cycles.
+SIMD stands for **Single Instruction, Multiple Data**. A normal (scalar) CPU instruction operates on one value at a time. A SIMD instruction operates on an entire vector of values in the same number of clock cycles.
 
 ```text
 Scalar (no SIMD):
@@ -303,9 +288,7 @@ AVX2 (256-bit SIMD):
   Cycle N/8: a[(N-8)..(N-1)] * b[(N-8)..(N-1)]
 ```
 
-For convolution in a CAE, the inner loop multiplies millions of filter-weight/input-pixel
-pairs per forward pass. With AVX2, 8 of these multiplications happen per cycle instead of 1,
-giving up to **8x theoretical throughput improvement**.
+For convolution in a CAE, the inner loop multiplies millions of filter-weight/input-pixel pairs per forward pass. With AVX2, 8 of these multiplications happen per cycle instead of 1, giving up to **8x theoretical throughput improvement**.
 
 ### AVX2 Register Layout
 
@@ -343,18 +326,13 @@ def _check_avx2_support() -> bool:
 
 ### Intel oneDNN (formerly MKL-DNN)
 
-Even with AVX2 instructions available, a naive implementation won't reach peak
-throughput - convolutions have complex memory access patterns that must be carefully
-arranged to avoid CPU cache misses.
+Even with AVX2 instructions available, a naive implementation won't reach peak throughput - convolutions have complex memory access patterns that must be carefully arranged to avoid CPU cache misses.
 
 Intel oneDNN (open-source Deep Neural Network Library) provides:
 
-- **Blocked memory layouts**: Rearranges tensor data in cache-friendly 8-wide strips
-  aligned for AVX2 loads.
-- **Fused kernels**: Fuses Conv2D + BatchNorm + ELU into a single kernel pass,
-  eliminating intermediate writes to RAM.
-- **JIT compilation**: Generates machine code specialised for your exact convolution
-  shape at the first call, then reuses it - no branching overhead.
+- **Blocked memory layouts**: Rearranges tensor data in cache-friendly 8-wide strips aligned for AVX2 loads.
+- **Fused kernels**: Fuses Conv2D + BatchNorm + ELU into a single kernel pass, eliminating intermediate writes to RAM.
+- **JIT compilation**: Generates machine code specialised for your exact convolution shape at the first call, then reuses it - no branching overhead.
 
 ```mermaid
 graph LR
@@ -376,18 +354,10 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppress oneDNN startup banner
 ```
 
 **Why `INTEROP_THREADS=1`?**
-Inter-op parallelism runs *different* TF operations in parallel (e.g., the encoder and
-decoder forward passes of two different images simultaneously). In a pipeline that
-processes images sequentially, this only causes cache thrash between threads competing
-for the same data. Setting it to 1 keeps the execution serial but maximises intra-op
-parallelism (all cores focus on one conv layer at a time).
+Inter-op parallelism runs *different* TF operations in parallel (e.g., the encoder and decoder forward passes of two different images simultaneously). In a pipeline that processes images sequentially, this only causes cache thrash between threads competing for the same data. Setting it to 1 keeps the execution serial but maximises intra-op parallelism (all cores focus on one conv layer at a time).
 
 **Why set env vars *before* importing TF?**
-oneDNN reads `OMP_NUM_THREADS` and `TF_ENABLE_ONEDNN_OPTS` at the moment the shared
-library (`libtensorflow.so`) is loaded into the process. If TF is already imported when
-you set the env var, the setting is silently ignored. The module uses `os.environ.setdefault`
-(not `os.environ[key] = value`) to avoid overriding environment variables that the
-user has already set intentionally.
+oneDNN reads `OMP_NUM_THREADS` and `TF_ENABLE_ONEDNN_OPTS` at the moment the shared library (`libtensorflow.so`) is loaded into the process. If TF is already imported when you set the env var, the setting is silently ignored. The module uses `os.environ.setdefault` (not `os.environ[key] = value`) to avoid overriding environment variables that the user has already set intentionally.
 
 ---
 
@@ -419,10 +389,7 @@ The cache persists for the lifetime of the Python process and is reset only on p
 
 ### Why Cache at All?
 
-`nvidia-smi` takes 30-80ms to start a subprocess. Calling `configure_tensorflow()` 100
-times during training (e.g., inside a loop that calls `_require_tf()`) would waste
-3-8 seconds just on GPU detection. The cache reduces all subsequent calls to
-a dictionary lookup (< 1 microsecond).
+`nvidia-smi` takes 30-80ms to start a subprocess. Calling `configure_tensorflow()` 100 times during training (e.g., inside a loop that calls `_require_tf()`) would waste 3-8 seconds just on GPU detection. The cache reduces all subsequent calls to a dictionary lookup (< 1 microsecond).
 
 ---
 
@@ -448,8 +415,7 @@ graph TD
     style F fill:#a00,color:#fff
 ```
 
-The GPU feature being installed is a necessary but not sufficient condition for GPU
-*execution* to be safe. Runtime validation is essential for a resilient system.
+The GPU feature being installed is a necessary but not sufficient condition for GPU *execution* to be safe. Runtime validation is essential for a resilient system.
 
 ---
 
@@ -462,10 +428,8 @@ Document that users must set `CUDA_VISIBLE_DEVICES=""` to force CPU mode.
 
 - Requires manual user action - easy to forget.
 - Does not handle the partial-VRAM scenario (GPU visible but too little free memory).
-- `CUDA_VISIBLE_DEVICES` only hides GPUs from CUDA; it does not configure oneDNN
-  threading on the CPU path.
-- In Jupyter notebooks, users rarely think about environment variables before starting
-  the kernel.
+- `CUDA_VISIBLE_DEVICES` only hides GPUs from CUDA; it does not configure oneDNN threading on the CPU path.
+- In Jupyter notebooks, users rarely think about environment variables before starting the kernel.
 
 ---
 
@@ -481,8 +445,7 @@ if tf.test.is_gpu_available():
 
 - Deprecated in TF 2.x, removed in TF 2.10+. Triggers a deprecation warning.
 - Only returns a boolean - does not report VRAM availability.
-- Triggers GPU initialisation as a side effect, preventing memory growth from being set
-  (memory growth must be configured *before* TF initialises any GPU device).
+- Triggers GPU initialisation as a side effect, preventing memory growth from being set (memory growth must be configured *before* TF initialises any GPU device).
 - Does not configure the CPU path if GPU is rejected.
 
 ---
@@ -490,8 +453,7 @@ if tf.test.is_gpu_available():
 ### Alternative 4: Separate Containers (Docker)
 
 **What it would look like:**
-`Dockerfile.gpu` and `Dockerfile.cpu` with TF baked in at build time. Container choice
-determines device. No runtime detection needed.
+`Dockerfile.gpu` and `Dockerfile.cpu` with TF baked in at build time. Container choice determines device. No runtime detection needed.
 
 **Why we rejected it:**
 
@@ -506,8 +468,7 @@ determines device. No runtime detection needed.
 ### Alternative 5: ONNX Runtime with OrtValue Device Dispatch
 
 **What it would look like:**
-Export trained Keras model to ONNX, use ONNX Runtime's `CUDAExecutionProvider` /
-`CPUExecutionProvider` with automatic fallback.
+Export trained Keras model to ONNX, use ONNX Runtime's `CUDAExecutionProvider` / `CPUExecutionProvider` with automatic fallback.
 
 ```python
 import onnxruntime as ort
@@ -527,17 +488,14 @@ session = ort.InferenceSession("model.onnx", providers=providers)
 | AVX2 optimisation | oneDNN via env vars | Built-in ORT OpenMP |
 | Debugging | TF eager mode, `breakpoint()` | Black-box session |
 
-ONNX Runtime is an excellent **inference** runtime and would be appropriate for
-production deployment of a pre-trained model. For the **training + evaluation** use
-case of this research pipeline, it is not applicable.
+ONNX Runtime is an excellent **inference** runtime and would be appropriate for production deployment of a pre-trained model. For the **training + evaluation** use case of this research pipeline, it is not applicable.
 
 ---
 
 ### Alternative 6: JAX with `jax.devices()`
 
 **What it would look like:**
-JAX provides a clean device model (`jax.devices("gpu")`, `jax.devices("cpu")`)
-and automatically compiles to XLA for both GPU and CPU.
+JAX provides a clean device model (`jax.devices("gpu")`, `jax.devices("cpu")`) and automatically compiles to XLA for both GPU and CPU.
 
 ```python
 import jax
@@ -558,24 +516,21 @@ devices = jax.devices("gpu") or jax.devices("cpu")
 ### Alternative 7: Pure PyTorch (Existing Framework)
 
 **What it would look like:**
-Implement the CAE in PyTorch alongside the existing `ConvAutoencoder` baseline,
-using the same `torch.device("cuda" if torch.cuda.is_available() else "cpu")` pattern.
+Implement the CAE in PyTorch alongside the existing `ConvAutoencoder` baseline, using the same `torch.device("cuda" if torch.cuda.is_available() else "cpu")` pattern.
 
 **Why TF/Keras was chosen (as specified in requirements):**
 
 - `tf.image.ssim` is natively built into TF - no custom implementation needed.
 - The `AdamW` optimizer is built into `tf.keras.optimizers` since Keras 2.x.
 - `tf.keras.layers.ELU()` is a first-class layer with BatchNorm integration.
-- The goal was specifically to explore the TF ecosystem alongside the PyTorch baseline,
-  providing a direct comparison of the two frameworks on the same dataset.
+- The goal was specifically to explore the TF ecosystem alongside the PyTorch baseline, providing a direct comparison of the two frameworks on the same dataset.
 - Having both frameworks demonstrates framework-agnostic anomaly detection architecture.
 
 ---
 
 ## Environment Variables Applied by `tf_device.py`
 
-The following table documents every environment variable set by the CPU path,
-with the reasoning for each specific value:
+The following table documents every environment variable set by the CPU path, with the reasoning for each specific value:
 
 | Variable | Value | Purpose | Why This Value |
 |---|---|---|---|
@@ -586,9 +541,7 @@ with the reasoning for each specific value:
 | `TF_CPP_MIN_LOG_LEVEL` | `"2"` | Suppress C++ layer INFO messages | oneDNN prints verbose JIT kernel info at level 0/1; level 2 = WARNING+ only |
 
 **Variable precedence rule**: All variables use `os.environ.setdefault(key, value)`.
-This means user-set environment variables are never overridden. A researcher who
-needs maximum AVX-512 width can set `TF_ENABLE_ONEDNN_OPTS=2` in their shell and the
-module will respect it.
+This means user-set environment variables are never overridden. A researcher who needs maximum AVX-512 width can set `TF_ENABLE_ONEDNN_OPTS=2` in their shell and the module will respect it.
 
 ---
 
@@ -608,8 +561,8 @@ graph TD
     DEC -- CPU --> ENV["setenv:\nTF_ENABLE_ONEDNN_OPTS=1\nOMP_NUM_THREADS=N\nTF_NUM_INTRAOP_THREADS=N\nTF_NUM_INTEROP_THREADS=1"]
     MEMGROW & ENV --> MODEL["build_cae()\ntrain_cae() via MIM\nSSIM+MSE + AdamW"]
     MODEL --> PIPELINE["cae_pipeline.py\nrun_keras_cae_pipeline()"]
-    PIPELINE --> API["FastAPI\nPOST /api/pipelines/keras_cae"]
-    API --> UI["Streamlit Tab\nKeras CAE State-of-the-Art"]
+    PIPELINE --> UI["Streamlit Tab\nKeras CAE State-of-the-Art"]
+    PIPELINE --> CLI["CLI & Scripts\npython -m app.main cae"]
 
     style TFDEV fill:#4a9,color:#fff
     style DEC fill:#a84,color:#fff
@@ -620,9 +573,7 @@ graph TD
 
 ## Live Example Output
 
-On the development machine (NVIDIA Quadro T2000, 4 GB total, 887 MiB free due to
-existing processes), the module correctly selects the CPU-AVX2 path even though
-CUDA hardware is present:
+On the development machine (NVIDIA Quadro T2000, 4 GB total, 887 MiB free due to existing processes), the module correctly selects the CPU-AVX2 path even though CUDA hardware is present:
 
 ```text
 ============================================================
@@ -645,10 +596,7 @@ TensorFlow Device Configuration
 ============================================================
 ```
 
-This demonstrates the value of runtime detection: the GPU feature is installed,
-the GPU hardware is present, CUDA is functional - but the intelligent VRAM check
-prevents a training run that would have crashed with `CUDA_ERROR_OUT_OF_MEMORY`
-partway through the first epoch.
+This demonstrates the value of runtime detection: the GPU feature is installed, the GPU hardware is present, CUDA is functional - but the intelligent VRAM check prevents a training run that would have crashed with `CUDA_ERROR_OUT_OF_MEMORY` partway through the first epoch.
 
 ---
 
