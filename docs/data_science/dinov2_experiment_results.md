@@ -7,9 +7,7 @@ tags: [dinov2, dinov3, patchcore, keras-cae, evaluation, benchmarking]
 
 # DINO experiment results
 
-This page records repository-only experimental results for the DINOv2 and DINOv3 pipelines. It does not alter the
-shared project report. All numbers are unweighted macro means across the 15 MVTec AD categories under `fair-eval-v1`
-(seed 42, normal-only validation thresholds).
+This page records repository-only experimental results for the DINOv2 and DINOv3 pipelines. It does not alter the shared project report. All numbers are unweighted macro means across the 15 MVTec AD categories under `fair-eval-v1` (seed 42, normal-only validation thresholds).
 
 ## Deployment-oriented comparison
 
@@ -23,20 +21,11 @@ Image F1 is the primary selection metric because the deployed system must make a
 | DINOv2, enhanced | 0.920 | 0.983 | 0.545 | Better dense maps, but worse deployed decision metric |
 | Keras CAE | 0.495 | 0.867 | 0.058 | Substantially behind feature-matching methods |
 
-The original DINOv2 baseline remains the preferred deployment configuration. DINOv3 lowers Image F1 by **0.8
-percentage points** and image PR-AUC by **0.3 points** relative to DINOv2. Its mean precision falls from `0.949` to
-`0.933`, while recall rises slightly from `0.938` to `0.941`; the resulting operating-point trade-off is worse for the
-primary image decision metric. DINOv3 still narrowly exceeds PatchCore Image F1 by `0.3` points, but its PR-AUC is
-`0.2` points lower.
+The original DINOv2 baseline remains the preferred deployment configuration. DINOv3 lowers Image F1 by **0.8 percentage points** and image PR-AUC by **0.3 points** relative to DINOv2. Its mean precision falls from `0.949` to `0.933`, while recall rises slightly from `0.938` to `0.941`; the resulting operating-point trade-off is worse for the primary image decision metric. DINOv3 still narrowly exceeds PatchCore Image F1 by `0.3` points, but its PR-AUC is `0.2` points lower.
 
-DINOv3's strength is specifically low-false-positive localization: AUPIMO improves by **7.8 points** over DINOv2 and
-**7.7 points** over PatchCore. This is not a general pixel-level improvement. Compared with DINOv2, DINOv3 lowers
-pixel AUROC by `1.2` points and pixel F1 by `9.4` points; its pixel F1 is lower in all 15 categories. AUPIMO measures
-region overlap across a stringent low-FPR range, whereas pixel AUROC measures global ranking and pixel F1 uses one
-normal-validation-derived threshold. DINOv3 can therefore improve the first while weakening the latter two.
+DINOv3's strength is specifically low-false-positive localization: AUPIMO improves by **7.8 points** over DINOv2 and **7.7 points** over PatchCore. This is not a general pixel-level improvement. Compared with DINOv2, DINOv3 lowers pixel AUROC by `1.2` points and pixel F1 by `9.4` points; its pixel F1 is lower in all 15 categories. AUPIMO measures region overlap across a stringent low-FPR range, whereas pixel AUROC measures global ranking and pixel F1 uses one normal-validation-derived threshold. DINOv3 can therefore improve the first while weakening the latter two.
 
-The enhanced DINOv2 variant should also not replace the original default because its Image F1 falls by **2.1 points**
-versus the original DINOv2 pipeline.
+The enhanced DINOv2 variant should also not replace the original default because its Image F1 falls by **2.1 points** versus the original DINOv2 pipeline.
 
 The apparent contradiction—better patch maps but worse image decisions—is caused by aggregation and calibration. Multi-layer features, position-aware 5-NN, local-density normalization, and PatchCore-style aggregation raise mean pixel F1 from **0.290 to 0.385** and pixel AUROC from **0.969 to 0.979**, but they also change the score distribution. With the same normal-validation thresholding policy, that distribution produces more image-level classification errors in difficult categories.
 
@@ -60,16 +49,9 @@ The apparent contradiction—better patch maps but worse image decisions—is ca
 | wood | 0.916 | -0.044 | 0.580 | -0.107 |
 | zipper | 0.970 | -0.004 | 0.588 | -0.107 |
 
-DINOv3 improves Image F1 in five categories, ties in two, and regresses in eight. Its largest gains are on `cable`
-and `transistor`; its largest regression is on `screw`. AUPIMO improves in eight categories, led by `toothbrush`,
-`capsule`, and `metal_nut`, but the `screw` and `grid` regressions are substantial.
+DINOv3 improves Image F1 in five categories, ties in two, and regresses in eight. Its largest gains are on `cable` and `transistor`; its largest regression is on `screw`. AUPIMO improves in eight categories, led by `toothbrush`, `capsule`, and `metal_nut`, but the `screw` and `grid` regressions are substantial.
 
-The masking configurations require care when attributing these changes. DINOv2 uses its published category masking
-policy, while DINOv3 disables masking because Anomalib's absolute DINOv2 PCA threshold produces an empty DINOv3
-memory bank. On the ten categories where DINOv2 masking also resolves to off, DINOv3 changes mean Image F1 by
-`-0.004`, pixel F1 by `-0.084`, pixel AUROC by `-0.012`, and AUPIMO by `+0.035`. The direction of the overall finding
-therefore remains—slightly weaker image decisions and markedly weaker thresholded pixel masks, with better AUPIMO—but
-the full 15-category AUPIMO gain cannot be attributed to the encoder alone.
+The masking configurations require care when attributing these changes. DINOv2 uses its published category masking policy, while DINOv3 disables masking because Anomalib's absolute DINOv2 PCA threshold produces an empty DINOv3 memory bank. On the ten categories where DINOv2 masking also resolves to off, DINOv3 changes mean Image F1 by `-0.004`, pixel F1 by `-0.084`, pixel AUROC by `-0.012`, and AUPIMO by `+0.035`. The direction of the overall finding therefore remains—slightly weaker image decisions and markedly weaker thresholded pixel masks, with better AUPIMO—but the full 15-category AUPIMO gain cannot be attributed to the encoder alone.
 
 ## Enhanced variant by category
 
@@ -95,14 +77,8 @@ Only four categories improve on AUPIMO, while the largest Image F1 regressions o
 
 ## Configuration and provenance
 
-The DINOv3 experiment uses frozen `vit_small_patch16_dinov3.lvd1689m` tokens at 256×256, one neighbour, no coreset,
-and masking off. The enhanced experiment uses DINOv2 ViT-S/14 layers 8, 10, and 11; five neighbours; a one-patch
-positional radius; local-density normalization; and PatchCore-style image aggregation. All DINO variants use the same
-data split, seed, score space, and validation-derived threshold policy as the comparison baselines.
+The DINOv3 experiment uses frozen `vit_small_patch16_dinov3.lvd1689m` tokens at 256×256, one neighbour, no coreset, and masking off. The enhanced experiment uses DINOv2 ViT-S/14 layers 8, 10, and 11; five neighbours; a one-patch positional radius; local-density normalization; and PatchCore-style image aggregation. All DINO variants use the same data split, seed, score space, and validation-derived threshold policy as the comparison baselines.
 
-The machine-readable comparison is in [`dinov2_comparison.csv`](dinov2_comparison.csv). The generated DINOv3 macro
-and category summaries are in `data/models/dinov3/summary.json` and `data/models/dinov3/category_metrics.csv`.
-Per-category metrics and configuration are retained in each artifact's `metadata.json` under `data/models/`.
+The machine-readable comparison is in [`dinov2_comparison.csv`](dinov2_comparison.csv). The generated DINOv3 macro and category summaries are in `data/models/dinov3/summary.json` and `data/models/dinov3/category_metrics.csv`. Per-category metrics and configuration are retained in each artifact's `metadata.json` under `data/models/`.
 
-PR-AUC values use trapezoidal integration of each stored precision-recall curve, matching the shared report's Table 1
-convention. Rounded display values can differ slightly from average precision stored in DINO metadata.
+PR-AUC values use trapezoidal integration of each stored precision-recall curve, matching the shared report's Table 1 convention. Rounded display values can differ slightly from average precision stored in DINO metadata.

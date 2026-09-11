@@ -1,0 +1,94 @@
+\documentclass[10pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{titlesec}
+\usepackage{eurosym}
+\usepackage{mdframed}
+
+% Draft figure placeholder: \placeholder{height}{intent description}
+\newcommand{\placeholder}[2]{%
+    \begin{mdframed}[backgroundcolor=gray!12, linecolor=gray!50, linewidth=0.6pt,
+                    innertopmargin=6pt, innerbottommargin=6pt,
+                    innerleftmargin=8pt, innerrightmargin=8pt]
+        \centering\vspace{#1}\par
+        {\small\itshape\color{gray!60!black} [Placeholder  --  #2]}\par\vspace{#1}
+    \end{mdframed}%
+}
+
+\geometry{a4paper, margin=1in, top=1.2in, bottom=1.2in}
+\setlength{\headheight}{14pt}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    citecolor=black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textit{Industrial Component Anomaly Detection -- Business \& Strategy Report}}
+\lhead{}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{
+    Industrial Component Anomaly Detection\\
+    {\large\textit{Business \& Strategy Report}}
+}
+
+\author{
+    Benjamin F{\"o}rster \and
+    Ali Abul Hawa \and
+    Mahboubeh Nadaf \and
+    Karim Khalifa
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\noindent
+In modern industrial manufacturing, automated visual quality assurance is governed by a fundamental operational conflict: balancing the economic burden of line stoppages induced by false alarms against the existential liability of uncontained defect escapes. This report establishes the commercial and technical rationale for an enterprise-grade, self-supervised Anomaly Detection Software-as-a-Service (SaaS) platform tailored for discrete component and continuous texture inspection. Within this architecture, the operational decision threshold is treated not as an arbitrary benchmark parameter, but as an actuarial dial calibrated directly against the client's bespoke cost-of-quality loss matrix.
+
+Benchmarked across all 15 categories of the MVTec Anomaly Detection dataset under the rigorous \texttt{fair-eval-v1} protocol (strictly reserving an 85\% fitting partition and a 15\% normal validation partition, with zero test set leakage), our reference PatchCore engine with a frozen ResNet-18 backbone achieves a macro-average Image $F_1$-score of $0.929$, PR-AUC of $0.988$, and AUPIMO of $0.603$. This decisively surpasses generative convolutional autoencoders whilst eliminating client-side gradient backpropagation entirely. New manufacturing SKUs are onboarded in under fifteen seconds via single-pass feature extraction on nominal reference images, whilst operational distribution drift is mitigated in real time by updating a decoupled coreset memory bank without model retraining.
+
+Furthermore, the report formalises an actuarial cost model, $C(t) = \mathrm{FP}(t)\cdot c_{\mathrm{FP}} + \mathrm{FN}(t)\cdot c_{\mathrm{FN}}$, demonstrating that high-speed commodity fasteners and life-critical pharmaceutical tablets demand operational thresholds separated by eight orders of magnitude. A risk-tiered calibration methodology translates this economic asymmetry into deterministic, line-side divert gates. Operating within a latency budget of 65--95\,ms on commodity industrial IPCs via CPU-AVX2 vectorisation, the platform delivers an estimated capital payback period of 4.2 months, establishing an empirical foundation for replacing manual audit workflows.
+\end{abstract}
+
+\input{sections/01_introduction.tex}
+\input{sections/02_market_problem_and_economic_cost_model.tex}
+\input{sections/03_dataset_and_industrial_inspection_landscape.tex}
+\input{sections/04_solution_architecture_and_model_selection.tex}
+\input{sections/05_threshold_calibration_and_operational_decision_making.tex}
+\input{sections/06_empirical_performance_and_benchmark_results.tex}
+\input{sections/07_deployment_sla_hardware_and_explainability.tex}
+\input{sections/08_strategic_recommendations_and_conclusion.tex}
+
+\cleardoublepage
+\input{sections/A1_appendix_dino_vit_baselines.tex}
+
+\end{document}

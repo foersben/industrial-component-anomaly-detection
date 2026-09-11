@@ -1,0 +1,47 @@
+\section{Solution Architecture and Model Selection}
+\label{sec:model_selection}
+
+Two architectural paradigms were developed and empirically evaluated under identical experimental conditions across all 15 MVTec AD categories: the non-parametric PatchCore feature-matching framework and a deep generative convolutional autoencoder (the Keras CAE). Both pipelines were trained and calibrated under the deterministic 85\% fitting / 15\% normal validation split with seed 42, evaluated at the canonical $256 \times 256$ spatial resolution, and scored against unseen evaluation splits under the \texttt{fair-eval-v1} protocol described in Section~\ref{sec:threshold_calibration}.
+
+\subsection{PatchCore: Deep Feature Transfer and Coreset Memory Banks}
+
+The production-grade engine recommended for plant-wide deployment is PatchCore utilising a frozen ResNet-18 backbone pre-trained on ImageNet. Beyond superior empirical detection metrics, this architecture exhibits three decisive structural properties that resolve longstanding operational pain points in manufacturing IT:
+
+First, the architecture completely eliminates client-side gradient backpropagation. The deep convolutional feature extractor (ResNet-18) is treated as a compiled, immutable mathematical transform. Following initial edge deployment, no iterative parameter optimisation or loss convergence monitoring occurs on plant hardware. Onboarding a new manufacturing SKU requires solely an offline, single forward pass over 100--200 nominal reference images, extracting multi-scale feature vectors from intermediate convolutional hierarchies (specifically residual stages 2 and 3).
+
+Second, the coreset memory bank ensures complete client data sovereignty and intellectual property isolation. Extracted patch embeddings are aggregated into a local memory structure decoupled from network weights. Because this representation is non-parametric, proprietary component geometries, CAD-derived tool paths, and confidential alloy formulations remain strictly confined to the local factory edge IPC; raw production imagery is never transmitted to an external cloud environment for model fine-tuning. To guarantee deterministic query latency within strict conveyor cycle times, a greedy minimax facility location coreset algorithm compresses the local patch bank by an order of magnitude whilst preserving the spatial geometry of the nominal feature manifold.
+
+Third, the architecture resolves the critical edge hardware trade-off through deliberate backbone selection. Whilst heavier feature extractors such as Wide-ResNet-50-2 were evaluated during exploratory phases, their 1,536-dimensional patch embeddings expand coreset memory requirements to $\sim$11.8\,GB of RAM, exceeding the physical envelope of standard industrial IPCs and triggering prohibitive memory pressure. Standardising on ResNet-18 (utilising 512-dimensional patch embeddings) compresses the coreset memory footprint to under 3.8\,GB. This represents an intentional, quantifiable systems engineering trade-off: sacrificing less than one percentage point of academic $F_1$ performance to eliminate mandatory edge GPU accelerators (+€5,000 to €8,000 per inspection station) and enable deterministic 65--95\,ms execution on standard fanless IPCs via CPU-AVX2 vectorisation.
+
+\subsection{Comparative Analysis: The Failure Modes of Generative Autoencoders}
+
+The alternative paradigm evaluated is a fully convolutional autoencoder implemented in Keras, trained to reconstruct nominal images via a composite loss function combining the Structural Similarity Index Measure (SSIM) and Mean Squared Error (MSE), augmented by masked image modelling (MIM). During inference, the pixel-wise reconstruction residual serves as the continuous anomaly map, from which image-level classification scores are extracted via spatial aggregation.
+
+Whilst generative reconstruction models offer conceptual appeal -- learning a compact latent distribution of nominal appearance and quantifying defects via reconstruction failure -- they suffer from a fatal structural flaw in industrial practice. Pixel-level reconstruction objectives inherently minimise global image variance rather than local defect contrast. On high-frequency stochastic textures -- such as \emph{Wood} grain, \emph{Carpet} pile, or \emph{Leather} surfaces -- the generative decoder yields slightly smoothed reconstructions of high-frequency spatial patterns. This slight reconstruction blur generates elevated residual errors across conforming surfaces, inducing severe pseudo-scrap and artificially deflating the operational $F_1$-score. Moreover, the resulting spatial heatmaps diffuse across the entire component surface rather than isolating localised defect boundaries. Table~\ref{tab:paradigm_comparison} quantifies this performance disparity across all 15 benchmark categories.
+
+\begin{table}[bp]
+\centering
+\caption{Macro-averaged performance across all 15 MVTec AD categories under the \texttt{fair-eval-v1} protocol. PatchCore ResNet-18 constitutes the production-grade reference configuration.}
+\label{tab:paradigm_comparison}
+\footnotesize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Architecture} & \textbf{Image $F_1$ $\uparrow$} & \textbf{Image PR-AUC $\uparrow$} & \textbf{AUPIMO $\uparrow$} & \textbf{Pixel AUROC $\uparrow$} & \textbf{Client Training} \\
+\midrule
+PatchCore (ResNet-18)       & \textbf{0.929} & \textbf{0.988} & \textbf{0.603} & 0.968 & None ($<$15\,s forward pass) \\
+Keras CAE (MIM + SSIM+MSE)  & 0.495          & 0.867          & 0.058          & 0.875 & Iterative GPU training \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+Empirically, the Keras CAE trails the PatchCore architecture by an order of magnitude on pixel-level AUPIMO ($0.058$ versus $0.603$) and by $0.434$ points in image $F_1$-score ($0.495$ versus $0.929$). This deficit cannot be mitigated through hyperparameter optimisation or alternative loss weighting; it reflects an intrinsic limitation of pixel-space generative modelling for industrial surface inspection.
+
+Furthermore, training of the Keras CAE was executed using the AdamW optimiser with an initial learning rate $\eta_0 = 1 \times 10^{-4}$ and weight decay of $1 \times 10^{-4}$, capped at a maximum budget of 100 epochs with dynamic early stopping (patience 20 epochs) and learning-rate halving on validation plateaus (patience 5 epochs). It necessitated a restricted mini-batch size of 16 to comply with the physical memory bounds of edge hardware. In deep generative networks, small mini-batch regimes introduce high gradient variance and destabilise batch normalisation statistics, impeding smooth convergence onto the nominal manifold. Whilst scaling batch sizes to 32 or 64 could marginally stabilise training dynamics, doing so would require server-grade GPU infrastructure, directly violating the core requirement of localised, low-overhead factory deployment.
+
+\subsection{Continuous Calibration: Mitigating Operational Drift Without Retraining}
+
+A decisive operational advantage of the decoupled coreset architecture is its capability to absorb manufacturing distribution drift without requiring model retraining. When minor physical alterations occur on the line -- such as a new steel batch exhibiting marginal surface roughness variations, a slight dye shade shift from an upstream textile supplier, or illumination drift caused by lamp aging -- conventional deep learning pipelines begin generating elevated anomaly scores for nominal parts. In a standard convolutional network, resolving this issue requires collecting fresh image batches, executing full backpropagation, re-validating convergence, and redeploying weights -- a procedure demanding hours or days of specialised engineering intervention.
+
+Within the PatchCore framework, this drift is resolved deterministically at line side. Quality assurance operators examine the flagged units via the local inspection terminal and confirm them as false positives. The system extracts feature patch embeddings from the confirmed nominal components and appends them directly to the active coreset memory bank. An incremental coreset subsampling step restores optimal memory density within seconds, and the decision threshold is updated against the expanded normal validation pool. The network parameters remain completely untouched. This enables line-side personnel to adapt the inspection system to legitimate process drift within thirty seconds, requiring zero data science expertise.

@@ -7,18 +7,13 @@ tags: [keras, autoencoder, documentation]
 
 # Keras CAE: Architecture Overview
 
-This is the **entry point** for the Keras CAE documentation. Each of the 10 pipeline steps
-is covered in a dedicated sub-page. Start here to understand the big picture, then navigate
-to whichever step you want to understand in depth.
+This is the **entry point** for the Keras CAE documentation. Each of the 10 pipeline steps is covered in a dedicated sub-page. Start here to understand the big picture, then navigate to whichever step you want to understand in depth.
 
 ---
 
 ## What Is a Convolutional Autoencoder?
 
-An **autoencoder** is a neural network with a single unusual training objective: compress
-an image into a small internal representation (the **bottleneck**), then reconstruct the
-original image from it. There is no external label - the training signal is the difference
-between the input and the output.
+An **autoencoder** is a neural network with a single unusual training objective: compress an image into a small internal representation (the **bottleneck**), then reconstruct the original image from it. There is no external label - the training signal is the difference between the input and the output.
 
 ```mermaid
 flowchart LR
@@ -31,11 +26,7 @@ flowchart LR
     style LOSS fill:#f80,color:#fff
 ```
 
-**Why is this useful for quality control?** The network is trained *only on defect-free
-normal images*. It learns to reconstruct normal surfaces well. When a defective image is
-fed to it at test time, the model does not know what the defect looks like - it has never
-seen one. It tries to reconstruct a normal version of the image and fails. That failure
-(the high reconstruction error) is the anomaly signal.
+**Why is this useful for quality control?** The network is trained *only on defect-free normal images*. It learns to reconstruct normal surfaces well. When a defective image is fed to it at test time, the model does not know what the defect looks like - it has never seen one. It tries to reconstruct a normal version of the image and fails. That failure (the high reconstruction error) is the anomaly signal.
 
 ---
 

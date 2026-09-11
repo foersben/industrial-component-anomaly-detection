@@ -266,7 +266,7 @@ scripts/evaluate.py
 tests/unit/test_patchcore_persistence.py
 tests/unit/test_cae_data_invariants.py
 tests/unit/test_cae_evaluation_and_explainability.py
-docs/report_latex/report.tex
+docs/latex/technical_report/report.tex
 ```
 
 Prefer adding focused shared split and metric modules if doing so avoids circular dependencies or model-specific conditionals in generic evaluation code.

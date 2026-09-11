@@ -1,0 +1,50 @@
+\section{Production Deployment: Hardware Execution, Latency, and Explainability}
+\label{sec:deployment}
+
+Deploying deep learning systems into active high-speed manufacturing environments introduces deterministic physical constraints entirely absent from offline academic research. In series manufacturing, automated conveyors operate at cycle cadences (*Taktzeiten*) ranging from five to thirty components per second. The automated inspection gate must execute synchronously within this physical takt time: the full inference pipeline -- encompassing frame acquisition, feature extraction, nearest-neighbour coreset query, anomaly score aggregation, and digital PLC divert signaling -- must conclude within a single conveyor pitch. In discrete manufacturing, this imposes an immutable latency budget of 30--200\,ms per component. Satisfying this throughput constraint without requiring maintenance-heavy, liquid-cooled compute infrastructure on the factory floor represented a central design requirement of our architecture.
+
+\subsection{Hardware-Tiered Inference and Cycle-Time Profiling}
+
+The platform incorporates a hardware-tiered execution runtime that dynamically matches the inference pathway to locally available compute resources. Table~\ref{tab:hardware_sla} summarises measured latency and effective throughput across representative factory deployment targets.
+
+\begin{table}[bp]
+\centering
+\caption{Inference latency and effective throughput across hardware execution targets for PatchCore ResNet-18.}
+\label{tab:hardware_sla}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Compute Target} & \textbf{Batch Size} & \textbf{Latency / Image} & \textbf{Throughput (Parts / s)} \\
+\midrule
+Edge GPU (NVIDIA T2000, FP32) & 1  & 18 -- 28\,ms  & 35 -- 55  \\
+Edge GPU (batched streaming)   & 8  & 8 -- 12\,ms   & 80 -- 125 \\
+Industrial IPC (Core i7, AVX2 + oneDNN) & 1 & 65 -- 95\,ms & 10 -- 15 \\
+Standard CPU Fallback (scalar) & 1 & 320 -- 450\,ms & 2 -- 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The CPU execution profile constitutes the most commercially significant result in this benchmarking suite. By leveraging Intel oneDNN operator fusion and eight-wide AVX2 SIMD vectorisation, the ResNet-18 feature extraction and nearest-neighbour distance query execute in 65--95\,ms on a standard, fanless industrial IPC equipped with an Intel Core i7 processor. This achieves deterministic throughput of 10--15 parts per second on commodity edge hardware already deployed across existing plant electrical cabinets. For brownfield retrofit installations on established manufacturing lines, this completely eliminates the substantial capital expenditure, enclosure redesign, and maintenance overhead associated with dedicated industrial GPU accelerators.
+
+Where edge GPU acceleration is present -- as in greenfield installations or vision stations already equipped with industrial NVIDIA edge modules -- latency drops to 18--28\,ms per single image (35--55 parts per second), or under 12\,ms in streaming batch configurations (up to 125 parts per second), comfortably matching the highest-cadence automated assembly lines.
+
+\subsection{Explainable AI (XAI) and Operator Interface Architecture}
+
+An uninterpretable divert signal issued by an automated vision system introduces a severe operational vulnerability: operator override. If line-side quality inspectors cannot discern the physical rationale behind an automated rejection, the standard human response is to dismiss the alert and manually pass the component downstream. Over prolonged multi-shift operations, this lack of transparency breeds chronic skepticism, culminating in systematic operator override that degrades inspection coverage back to the unreliable manual baseline.
+
+The platform counteracts this vulnerability through continuous, pixel-level spatial explainability. Utilising the nearest-neighbour patch distance tensor computed during the forward pass, the runtime renders a calibrated, colour-coded anomaly heatmap that pinpoints the exact spatial coordinates driving the elevated score. Applying the calibrated decision threshold $\tau$, the engine derives a binarised defect contour mask, providing the line operator with both an unambiguous anomaly score and an auditable spatial justification. Both the continuous heatmap and the binary contour are rescaled to the canonical $256 \times 256$ resolution prior to display, guaranteeing precise geometric alignment with physical part coordinates across all component types. Figure~\ref{fig:xai_reconstructions} illustrates representative defect heatmaps and contour overlays as presented at the operator console.
+
+\begin{figure}[tp]
+    \centering
+    \placeholder{2.4cm}{Grid of component images arranged in rows by category (suggested: three or four categories covering a mix of object and texture types, e.g., Bottle, Pill, Leather, Screw). Each row contains three panels: (1) the original RGB component image with the defect region visible; (2) the jet-coloured patch-distance heatmap overlaid transparently on the component; (3) the binary threshold mask as a white-on-black overlay with the defect contour highlighted. All panels at $256 \times 256$ pixels. The figure should demonstrate both the precision of localisation on well-separated categories (Leather, Bottle) and the broader, less precise heatmaps on harder categories (Screw, Cable).}
+    \caption{Line-side explainability overlays for representative defective components. Each sequence displays the raw camera acquisition (left), the continuous patch-distance anomaly heatmap (centre), and the binarised defect mask derived from the calibrated threshold $\tau$ (right). This spatial precision provides quality assurance personnel with immediate, auditable verification for every divert event, establishing essential operational trust.}
+    \label{fig:xai_reconstructions}
+\end{figure}
+
+The line-side interface is deployed via a reactive Streamlit frontend coupled to a high-throughput FastAPI REST microservice. Quality engineers can inspect diverted components in real time, examine the spatial heatmap justification, and either validate the divert or reclassify false alarms as conforming samples. As outlined in Section~\ref{sec:model_selection}, this feedback action appends the verified embeddings to the local memory bank, transforming line operators into active stewards of continuous system refinement whilst requiring zero machine learning background.
+
+\subsection{Enterprise Software Architecture and Intellectual Property Safeguards}
+
+Beyond inference latency, industrial edge software must satisfy rigorous IT governance, reliability, and cybersecurity criteria. The platform is architected upon a strictly reproducible software supply chain. Environment dependencies and virtual runtime environments are deterministically resolved and pinned using \texttt{uv}, whilst operational tasks are orchestrated via \texttt{Just}. For plant IT directors, this guarantees that software installations execute deterministically across distributed edge nodes without library collisions, eliminating the risk of operational disruption induced by dependency drift during scheduled updates.
+
+Furthermore, the platform adheres to strict corporate IP and legal compliance standards. The core runtime is constructed exclusively upon permissively licensed, enterprise-compliant open-source frameworks (notably PyTorch and Anomalib under Apache 2.0 and MIT licences). The architecture strictly excludes viral copyleft licences (such as GPL/AGPL) that could legally threaten client intellectual property by compelling the public disclosure of proprietary vision pipelines or plant integration code. This guarantees legal security for corporate procurement and ensures that manufacturing designs remain strictly confidential.

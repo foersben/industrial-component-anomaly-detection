@@ -16,13 +16,16 @@ from app.pipelines.evaluation.metrics import (
     CANONICAL_MAP_SIZE,
     PIXEL_METRICS_VERSION,
 )
-from app.pipelines.modelling.patchcore.evaluation import _save_heatmap_overlays, format_results
+from app.pipelines.modelling.anomalib.visualization import (
+    print_anomalib_results_table,
+    save_heatmap_overlays,
+)
+from app.pipelines.modelling.patchcore.evaluation import format_results
 from app.pipelines.modelling.patchcore.types import (
     PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     PATCHCORE_SCORE_SPACE,
 )
-from app.pipelines.modelling.patchcore.visualization import _print_patchcore_results_table
 
 if TYPE_CHECKING:
     from app.pipelines.modelling.dino.types import DINOVariant, MaskingMode
@@ -145,9 +148,9 @@ def persist_dino_artifacts_and_format(
         "pixel_F1Score": artifacts.pixel_metrics.f1_score,
         "pixel_AUPIMO": artifacts.pixel_metrics.aupimo,
     }
-    _print_patchcore_results_table(raw_results)
+    print_anomalib_results_table(raw_results)
 
-    heatmap_archive = _save_heatmap_overlays(artifacts.heatmap_overlays, base_dir / "heatmap_overlays.npz")
+    heatmap_archive = save_heatmap_overlays(artifacts.heatmap_overlays, base_dir / "heatmap_overlays.npz")
     metadata = {
         "hash": model_hash,
         "model_type": f"{model_generation}_enhanced_knn" if variant == "enhanced" else f"{model_generation}_knn",

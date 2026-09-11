@@ -256,3 +256,6 @@ data/models/
 *.nav
 *.vrb
 scratch/
+
+# Docs related - ignore notes e.g. like markdown
+docs/latex/**/*.md
