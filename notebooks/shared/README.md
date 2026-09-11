@@ -10,7 +10,7 @@ This directory contains the sequential research and modeling notebooks for the M
 | **02** | [`02_eda_class_imbalance_mina.ipynb`](02_eda_class_imbalance_mina.ipynb) | Industrial class imbalance, anomaly size distribution, pixel ratio analysis | Statistical Imbalance Analysis |
 | **03** | [`03_modelling_autoencoder_baseline.ipynb`](03_modelling_autoencoder_baseline.ipynb) | Convolutional autoencoder baseline architecture and training | Unsupervised Reconstruction |
 | **04** | [`04_modelling_ssim_scoring.ipynb`](04_modelling_ssim_scoring.ipynb) | Structural similarity (SSIM) anomaly map computation and localization | Perceptual Defect Scoring |
-| **05** | [`05_modelling_patchcore_baseline_mina.ipynb`](05_modelling_patchcore_baseline_mina.ipynb) | PatchCore feature-memory bank baseline and threshold calibration | Memory-Bank Anomaly Detection |
+| **05** | [`05_modelling_statistical_baseline_mina.ipynb`](05_modelling_statistical_baseline_mina.ipynb) | Heuristic dummy classifier & pixel-wise z-score statistical baseline | Statistical & Heuristic Baselines |
 | **06** | [`06_evaluation_precision_recall_thresholds.ipynb`](06_evaluation_precision_recall_thresholds.ipynb) | Threshold selection, precision-recall tradeoffs, and breakpoint phenomenon | Industrial Decision Calibration |
 
 ## Figures & Artifacts

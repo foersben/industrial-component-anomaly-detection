@@ -23,7 +23,14 @@ from app.ui.components.metrics import _render_evaluation_summary
 
 
 def _load_cached_dino_runs(registry_path: Path) -> list[dict[str, Any]]:
-    """Load display and selection metadata for completed DINO runs."""
+    """Load display and selection metadata for completed DINO runs.
+
+    Args:
+        registry_path: Path to the DINO registry.
+
+    Returns:
+        list[dict[str, Any]]: List of dictionaries containing the selected run's metadata.
+    """
     runs: list[dict[str, Any]] = []
 
     if not registry_path.exists():
@@ -55,7 +62,14 @@ def _load_cached_dino_runs(registry_path: Path) -> list[dict[str, Any]]:
 
 
 def _extract_selected_rows(selection: Any) -> list[int]:
-    """Extract selected row indices from Streamlit's dataframe event value."""
+    """Extract selected row indices from Streamlit's dataframe event value.
+
+    Args:
+        selection: Streamlit dataframe selection event value.
+
+    Returns:
+        list[int]: List of selected row indices.
+    """
     if selection is None:
         return []
     if isinstance(selection, dict):
@@ -69,7 +83,11 @@ def _extract_selected_rows(selection: Any) -> list[int]:
 
 
 def _sync_dino_session_state(selected_run: dict[str, Any]) -> None:
-    """Populate DINO controls from a selected cached run."""
+    """Populate DINO controls from a selected cached run.
+
+    Args:
+        selected_run: Dictionary containing the selected run's metadata.
+    """
     selected_hash = str(selected_run["Hash"])
     if st.session_state.get("_last_dino_selected_hash") == selected_hash:
         return
@@ -80,17 +98,97 @@ def _sync_dino_session_state(selected_run: dict[str, Any]) -> None:
     st.session_state["dino_masking"] = str(selected_run["Masking"])
 
 
+def _handle_multi_delete(registry_path: Path, architecture: str, selected_hashes: list[str]) -> None:
+    """Render popover UI for deleting multiple selected models.
+
+    Args:
+        registry_path: Path to the DINO registry.
+        architecture: Name of the DINO architecture.
+        selected_hashes: List of selected model hashes.
+    """
+    st.warning(f"Selected **{len(selected_hashes)} models**: `{', '.join(selected_hashes)}`")
+    with st.popover(
+        f"🗑️ Delete {len(selected_hashes)} Models",
+        help=f"Move {len(selected_hashes)} selected {architecture} models to Trash",
+    ):
+        st.warning(f"Move **{len(selected_hashes)}** selected {architecture} models to Trash?")
+        if st.button(
+            f"Move to Trash ({len(selected_hashes)} models)",
+            type="primary",
+            key="btn_confirm_delete_dino_multi",
+        ):
+            deleted = sum(
+                delete_cached_dino_model(model_hash, registry_base=registry_path) for model_hash in selected_hashes
+            )
+            st.session_state.pop("_last_dino_selected_hash", None)
+            st.success(f"Moved {deleted} {architecture} model(s) to Trash (reversible).")
+            st.rerun()
+
+
+def _handle_single_action(
+    registry_path: Path, architecture: str, selected_run: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Render UI actions (Load and Delete) for a single selected model.
+
+    Args:
+        registry_path: Path to the DINO registry.
+        architecture: Name of the DINO architecture.
+        selected_run: Dictionary containing the selected run's metadata.
+
+    Returns:
+        Dictionary containing the selected run's metadata and action or None if no action is taken.
+    """
+    _sync_dino_session_state(selected_run)
+    selected_hash = str(selected_run["Hash"])
+    st.success(
+        f"Selected cached {architecture} run: **`{selected_hash}`** ("
+        f"Category: `{selected_run['Category']}`, k: `{selected_run['k']}`, "
+        f"Masking: `{selected_run['Masking']}`, Variant: `{selected_run['Variant']}`, "
+        f"Created: `{selected_run['Created']}`)"
+    )
+    col_load, col_delete, _ = st.columns([2, 1, 3])
+
+    if col_load.button(
+        f"⚡ Load Saved Results `{selected_hash}`",
+        type="primary",
+        key="btn_load_dino_selected",
+    ):
+        selected_run["_action"] = "results"
+        return selected_run
+
+    with col_delete.popover("🗑️ Delete Model", help=f"Move {architecture} model {selected_hash} to Trash"):
+        st.warning(f"Move {architecture} model `{selected_hash}` to Trash (can be restored)?")
+        if st.button("Move to Trash", type="primary", key="btn_confirm_delete_dino_single"):
+            if delete_cached_dino_model(selected_hash, registry_base=registry_path):
+                st.session_state.pop("_last_dino_selected_hash", None)
+                st.success(f"{architecture} model `{selected_hash}` moved to Trash (reversible).")
+                st.rerun()
+            else:
+                st.error(f"Failed to delete {architecture} model `{selected_hash}`.")
+    return None
+
+
 def _render_dino_registry_section(registry_path: Path, architecture: str) -> dict[str, Any] | None:
-    """Render the cached-model registry and return a run chosen for loading."""
+    """Render the cached-model registry and return a run chosen for loading.
+
+    Args:
+        registry_path: Path to the DINO registry.
+        architecture: Name of the DINO architecture.
+
+    Returns:
+        dict[str, Any]: Dictionary containing the selected run's metadata, or None if no run was selected.
+    """
     st.subheader("Model Registry (Cached Models)")
     cached_runs = _load_cached_dino_runs(registry_path)
     if not cached_runs:
         st.caption("No cached models found in registry.")
         return None
 
-    display_runs = [{key: value for key, value in run.items() if not key.startswith("_")} for run in cached_runs]
+    display_runs = pd.DataFrame(
+        [{key: value for key, value in run.items() if not key.startswith("_")} for run in cached_runs]
+    )
     selection = st.dataframe(
-        pd.DataFrame(display_runs),
+        display_runs,
         width="stretch",
         hide_index=True,
         on_select="rerun",
@@ -108,52 +206,38 @@ def _render_dino_registry_section(registry_path: Path, architecture: str) -> dic
     selected_runs = [cached_runs[row] for row in selected_rows if 0 <= row < len(cached_runs)]
     if len(selected_runs) > 1:
         selected_hashes = [str(run["Hash"]) for run in selected_runs]
-        st.warning(f"Selected **{len(selected_hashes)} models**: `{', '.join(selected_hashes)}`")
-        with st.popover(
-            f"🗑️ Delete {len(selected_hashes)} Models",
-            help=f"Move {len(selected_hashes)} selected {architecture} models to Trash",
-        ):
-            st.warning(f"Move **{len(selected_hashes)}** selected {architecture} models to Trash?")
-            if st.button(
-                f"Move to Trash ({len(selected_hashes)} models)",
-                type="primary",
-                key="btn_confirm_delete_dino_multi",
-            ):
-                deleted = sum(
-                    delete_cached_dino_model(model_hash, registry_base=registry_path) for model_hash in selected_hashes
-                )
-                st.session_state.pop("_last_dino_selected_hash", None)
-                st.success(f"Moved {deleted} {architecture} model(s) to Trash (reversible).")
-                st.rerun()
+        _handle_multi_delete(registry_path, architecture, selected_hashes)
         return None
 
-    selected_run = selected_runs[0]
-    _sync_dino_session_state(selected_run)
-    selected_hash = str(selected_run["Hash"])
-    st.success(
-        f"Selected cached {architecture} run: **`{selected_hash}`** ("
-        f"Category: `{selected_run['Category']}`, k: `{selected_run['k']}`, "
-        f"Masking: `{selected_run['Masking']}`, Variant: `{selected_run['Variant']}`, "
-        f"Created: `{selected_run['Created']}`)"
-    )
-    col_load, col_delete, _ = st.columns([2, 1, 3])
-    if col_load.button(
-        f"⚡ Load Saved Results `{selected_hash}`",
-        type="primary",
-        key="btn_load_dino_selected",
-    ):
-        selected_run["_action"] = "results"
-        return selected_run
-    with col_delete.popover("🗑️ Delete Model", help=f"Move {architecture} model {selected_hash} to Trash"):
-        st.warning(f"Move {architecture} model `{selected_hash}` to Trash (can be restored)?")
-        if st.button("Move to Trash", type="primary", key="btn_confirm_delete_dino_single"):
-            if delete_cached_dino_model(selected_hash, registry_base=registry_path):
-                st.session_state.pop("_last_dino_selected_hash", None)
-                st.success(f"{architecture} model `{selected_hash}` moved to Trash (reversible).")
-                st.rerun()
-            else:
-                st.error(f"Failed to delete {architecture} model `{selected_hash}`.")
-    return None
+    return _handle_single_action(registry_path, architecture, selected_runs[0])
+
+    # selected_run = selected_runs[0]
+    # _sync_dino_session_state(selected_run)
+    # selected_hash = str(selected_run["Hash"])
+    # st.success(
+    #     f"Selected cached {architecture} run: **`{selected_hash}`** ("
+    #     f"Category: `{selected_run['Category']}`, k: `{selected_run['k']}`, "
+    #     f"Masking: `{selected_run['Masking']}`, Variant: `{selected_run['Variant']}`, "
+    #     f"Created: `{selected_run['Created']}`)"
+    # )
+    # col_load, col_delete, _ = st.columns([2, 1, 3])
+    # if col_load.button(
+    #     f"⚡ Load Saved Results `{selected_hash}`",
+    #     type="primary",
+    #     key="btn_load_dino_selected",
+    # ):
+    #     selected_run["_action"] = "results"
+    #     return selected_run
+    # with col_delete.popover("🗑️ Delete Model", help=f"Move {architecture} model {selected_hash} to Trash"):
+    #     st.warning(f"Move {architecture} model `{selected_hash}` to Trash (can be restored)?")
+    #     if st.button("Move to Trash", type="primary", key="btn_confirm_delete_dino_single"):
+    #         if delete_cached_dino_model(selected_hash, registry_base=registry_path):
+    #             st.session_state.pop("_last_dino_selected_hash", None)
+    #             st.success(f"{architecture} model `{selected_hash}` moved to Trash (reversible).")
+    #             st.rerun()
+    #         else:
+    #             st.error(f"Failed to delete {architecture} model `{selected_hash}`.")
+    # return None
 
 
 def _render_dino_trash_section(registry_path: Path, architecture: str) -> None:
@@ -367,21 +451,47 @@ def _dino_display_signature(
     variant: str,
     run_heatmap: bool,
 ) -> str:
-    """Build the identity of the controls associated with displayed results."""
+    """Build the identity of the controls associated with displayed results.
+
+    Args:
+        architecture: Architecture name.
+        data_root: Root directory of the dataset.
+        category: Selected category name or 'all'.
+        num_neighbors: Number of neighbors to use.
+        masking: Masking mode.
+        variant: Variant of the architecture.
+        run_heatmap: Whether to run the heatmap.
+
+    Returns:
+        str: Signature of the results.
+    """
     return json.dumps(
         [architecture, data_root, category, num_neighbors, masking, variant, run_heatmap], separators=(",", ":")
     )
 
 
 def _remember_dino_results(results: dict[str, Any], category: str, signature: str) -> None:
-    """Persist displayed results across Streamlit widget reruns."""
+    """Persist displayed results across Streamlit widget reruns.
+
+    Args:
+        results: Results dictionary.
+        category: Selected category name or 'all'.
+        signature: Signature of the results to remember.
+    """
     st.session_state["_dino_displayed_results"] = results
     st.session_state["_dino_displayed_category"] = category
     st.session_state["_dino_displayed_signature"] = signature
 
 
 def _render_remembered_dino_results(signature: str) -> bool:
-    """Render the most recently loaded result for the active architecture."""
+    """Render the most recently loaded result for the active architecture.
+
+    Args:
+        signature: Signature of the results to render.
+
+    Returns:
+        bool: True if the results were rendered, False otherwise.
+    """
     results = st.session_state.get("_dino_displayed_results")
     if not isinstance(results, dict) or st.session_state.get("_dino_displayed_signature") != signature:
         return False
