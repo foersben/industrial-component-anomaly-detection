@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,14 @@ from app.domain.data import (
     FAIR_EVALUATION_PROTOCOL,
     build_fair_evaluation_split,
     build_mvtec_manifest,
+)
+from app.domain.evaluation import (
+    PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
+    PATCHCORE_MODEL_SEED,
+    PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
+    PATCHCORE_SCORE_SPACE,
+    BaselineResult,
+    EvaluationArtifacts,
 )
 from app.pipelines.evaluation.metrics import (
     AUPIMO_FPR_BOUNDS,
@@ -42,14 +51,6 @@ from app.pipelines.modelling.patchcore.registry import (
     _normalize_preprocessing_steps,
     find_cached_patchcore_model,
 )
-from app.pipelines.modelling.patchcore.types import (
-    PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
-    PATCHCORE_MODEL_SEED,
-    PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
-    PATCHCORE_SCORE_SPACE,
-    BaselineResult,
-    EvaluationArtifacts,
-)
 from app.pipelines.modelling.patchcore.visualization import (
     _print_patchcore_results_table,
     _RawScoreImageVisualizer,
@@ -69,6 +70,7 @@ def _load_cached_patchcore_result(
     num_neighbors: int,
     fpr_limit: float,
     raw_prep_list: list[dict[str, Any]],
+    load_heatmaps: bool = False,
 ) -> BaselineResult:
     """Load, validate, and construct standard BaselineResult from a verified cache directory.
 
@@ -82,6 +84,7 @@ def _load_cached_patchcore_result(
         num_neighbors: Nearest neighbor count.
         fpr_limit: Bound for AUPIMO integration.
         raw_prep_list: Normalized preprocessing configurations.
+        load_heatmaps: Whether to deserialize all cached heatmap arrays eagerly.
 
     Returns:
         Structured BaselineResult matching fair-eval-v1 protocol.
@@ -118,7 +121,7 @@ def _load_cached_patchcore_result(
         raise ValueError(f"Fair PatchCore metadata is missing metrics: {sorted(missing_keys)}")
 
     heatmap_overlays_path = meta.get("heatmap_overlays_path")
-    if heatmap_overlays_path:
+    if heatmap_overlays_path and load_heatmaps:
         try:
             heatmap_overlays = _load_heatmap_overlays(cached_dir / Path(heatmap_overlays_path).name)
         except (OSError, ValueError) as e:
@@ -255,6 +258,10 @@ def run_patchcore_pipeline(
         registry_base=registry_base,
         expected_split_evidence=cache_evidence,
     )
+    if model_hash and cached is None:
+        raise FileNotFoundError(
+            f"Cached PatchCore run {model_hash} is missing or does not match the current dataset protocol."
+        )
 
     if cached is not None and not force_retrain:
         cached_dir, meta = cached
@@ -274,7 +281,17 @@ def run_patchcore_pipeline(
     effective_hash = computed_hash
     logger.info("Configured preprocessing pipeline with %d steps.", len(proc_pipeline))
     base_dir = Path(registry_base) / effective_hash
-    base_dir.mkdir(parents=True, exist_ok=True)
+    if base_dir.exists():
+        archived_hash = hashlib.sha256(f"{computed_hash}:{time.time_ns()}".encode()).hexdigest()[:12]
+        archived_dir = Path(registry_base) / archived_hash
+        base_dir.rename(archived_dir)
+        archived_metadata_path = archived_dir / "metadata.json"
+        if archived_metadata_path.is_file():
+            archived_metadata = json.loads(archived_metadata_path.read_text(encoding="utf-8"))
+            archived_metadata["hash"] = archived_hash
+            archived_metadata["configuration_hash"] = computed_hash
+            archived_metadata_path.write_text(json.dumps(archived_metadata, indent=4), encoding="utf-8")
+    base_dir.mkdir(parents=True)
     transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
 
     # 1. Initialize dataset, model, and engine
@@ -300,15 +317,15 @@ def run_patchcore_pipeline(
         num_neighbors=num_neighbors,
         post_processor=False,
         evaluator=False,
-        visualizer=_RawScoreImageVisualizer(),
+        visualizer=_RawScoreImageVisualizer(output_dir=base_dir / "four_panel_images"),
     )
     engine = Engine(accelerator="gpu", devices=1, deterministic=True)
 
     # 2. Fit
-    logger.info("Fitting Patchcore model on %s category (Hash: %s)...", category, effective_hash)
     train_dataloader = datamodule.train_dataloader()
     validation_dataloader = datamodule.val_dataloader()
     test_dataloader = datamodule.test_dataloader()
+    logger.info("Fitting Patchcore model on %s category (Hash: %s)...", category, effective_hash)
     engine.fit(model, train_dataloaders=train_dataloader)
 
     # 3. Extract PR metrics and build summary
@@ -377,13 +394,23 @@ def run_patchcore_pipeline(
     )
 
     heatmap_archive = _save_heatmap_overlays(artifacts.heatmap_overlays, base_dir / "heatmap_overlays.npz")
+    four_panel_dir = base_dir / "four_panel_images"
     if heatmap_archive is not None:
         logger.info("Saved compressed PatchCore heatmaps to %s", heatmap_archive)
 
     metadata = {
         "hash": effective_hash,
+        "configuration_hash": computed_hash,
         "model_type": "patchcore",
         "category": category,
+        "backbone": backbone,
+        "feature_layers": list(feature_layers),
+        "coreset_sampling_ratio": coreset_sampling_ratio,
+        "num_neighbors": num_neighbors,
+        "fpr_limit": fpr_limit,
+        "preprocessing_steps": raw_prep_list,
+        "hyperparameters": hyperparams,
+        "dataset_split": split_info,
         "protocol": FAIR_EVALUATION_PROTOCOL,
         "threshold_source": "normal_validation",
         "image_threshold_quantile": PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
@@ -412,6 +439,7 @@ def run_patchcore_pipeline(
         "anomaly_map_max": artifacts.pixel_metrics.anomaly_map_max,
         "anomaly_map_range": artifacts.pixel_metrics.anomaly_map_range,
         "heatmap_overlays_path": heatmap_archive.name if heatmap_archive is not None else None,
+        "four_panel_images_path": four_panel_dir.name if four_panel_dir.is_dir() else None,
         "anomalous_indices": artifacts.anomalous_indices,
         "raw_results": raw_results_dict,
         "timestamp": datetime.now(UTC).isoformat(),

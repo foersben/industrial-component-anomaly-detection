@@ -19,6 +19,17 @@ warnings.filterwarnings("ignore", category=FutureWarning, module=".*timm.*")
 def main() -> None:
     """Main Streamlit application entry point."""
     st.set_page_config(page_title="Industrial Anomaly Detection", layout="wide")
+    st.markdown(
+        """
+        <style>
+        body:has([data-testid="stPopoverBody"]) [data-testid="stTooltipContent"],
+        body:has([data-testid="stPopoverBody"]) [data-testid="stTooltipErrorContent"] {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.title("Industrial Component Anomaly Detection Dashboard")
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(

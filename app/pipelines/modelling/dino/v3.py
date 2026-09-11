@@ -24,6 +24,7 @@ def _run_dinov3_category(
     run_heatmap: bool = False,
     registry_base: Path | str = "data/models/dinov3",
     model_seed: int = PATCHCORE_MODEL_SEED,
+    reuse_complete: bool = False,
 ) -> BaselineResult:
     """Run one DINOv3 category through the shared fair DINO engine.
 
@@ -38,6 +39,7 @@ def _run_dinov3_category(
         run_heatmap: Whether to render test-image heatmaps.
         registry_base: Target artifact directory.
         model_seed: Deterministic model and data loader seed.
+        reuse_complete: Return saved evaluation artifacts for an exact cache hit.
 
     Returns:
         BaselineResult for the category.
@@ -61,7 +63,7 @@ def _run_dinov3_category(
         run_heatmap=run_heatmap,
         registry_base=registry_base,
         model_seed=model_seed,
-        reuse_complete=False,
+        reuse_complete=reuse_complete,
         model_generation="dinov3",
         model_name="DINOv3",
         input_size=DINO_V3_INPUT_SIZE,
@@ -81,6 +83,7 @@ def run_dinov3_baseline(
     run_heatmap: bool = False,
     registry_base: Path | str = "data/models/dinov3",
     model_seed: int = PATCHCORE_MODEL_SEED,
+    reuse_complete: bool = False,
 ) -> BaselineResult | AllCategoriesResult:
     """Run the fair frozen-DINOv3 baseline for one or all MVTec categories.
 
@@ -95,6 +98,7 @@ def run_dinov3_baseline(
         run_heatmap: Whether to render test-image heatmaps.
         registry_base: Target artifact directory.
         model_seed: Deterministic model and data loader seed.
+        reuse_complete: Return saved evaluation artifacts for an exact cache hit.
 
     Returns:
         BaselineResult for a single category, or AllCategoriesResult for 'all'.
@@ -111,6 +115,7 @@ def run_dinov3_baseline(
             run_heatmap=run_heatmap,
             registry_base=registry_base,
             model_seed=model_seed,
+            reuse_complete=reuse_complete,
         )
 
     if masking != "off":
@@ -139,6 +144,7 @@ def run_dinov3_baseline(
         input_size=DINO_V3_INPUT_SIZE,
         patch_size=DINO_V3_PATCH_SIZE,
         batch_size=4,
+        reuse_complete=reuse_complete,
         save_summary_files=True,
     )
 

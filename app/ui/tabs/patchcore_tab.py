@@ -50,10 +50,13 @@ def _load_cached_patchcore_models_list(registry_path: Path) -> list[dict[str, An
                     "Hash": meta.get("hash", meta_file.parent.name),
                     "Backbone": meta.get("backbone", "resnet18"),
                     "Coreset Ratio": meta.get("coreset_sampling_ratio", 0.1),
+                    "Feature Layers": ", ".join(meta.get("feature_layers", ["layer2", "layer3"])),
+                    "Neighbors": meta.get("num_neighbors", 9),
                     "Preprocessing": prep_display,
                     "Created": created_display,
                     "_raw_timestamp": ts_str,
                     "_raw_preprocessing_steps": prep_list,
+                    "_raw_feature_layers": meta.get("feature_layers", ["layer2", "layer3"]),
                 }
             )
         except Exception:
@@ -98,6 +101,9 @@ def _sync_patchcore_session_state(selected_meta: dict[str, Any]) -> None:
     st.session_state["b_cat"] = str(selected_meta.get("Category", "bottle"))
     st.session_state["b_backbone"] = str(selected_meta.get("Backbone", "resnet18"))
     st.session_state["b_coreset_ratio"] = float(selected_meta.get("Coreset Ratio", 0.1))
+    raw_layers = tuple(selected_meta.get("_raw_feature_layers", ["layer2", "layer3"]))
+    st.session_state["b_feature_layers"] = "l2_l3_l4" if "layer4" in raw_layers else "l2_l3"
+    st.session_state["b_num_neighbors"] = int(selected_meta.get("Neighbors", 9))
 
     raw_prep = selected_meta.get("_raw_preprocessing_steps", [])
     if isinstance(raw_prep, list):
@@ -117,7 +123,7 @@ def _handle_patchcore_single_selection(
         registry_path: Registry root directory path.
 
     Returns:
-        True if the user clicked the Load & Evaluate button, False otherwise.
+        True if the user clicked the Load Saved Results button, False otherwise.
     """
     _sync_patchcore_session_state(selected_meta)
     selected_model_hash = str(selected_meta.get("Hash"))
@@ -131,7 +137,7 @@ def _handle_patchcore_single_selection(
     )
     col_load, col_del, _ = st.columns([2, 1, 3])
     load_selected_clicked = col_load.button(
-        f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+        f"⚡ Load Saved Results `{selected_model_hash}`",
         type="primary",
         key="btn_load_patchcore_selected",
     )
@@ -294,7 +300,10 @@ def _render_patchcore_trash_section(registry_path: Path) -> None:
             st.success(f"Restored all {restored_cnt} Patchcore model(s) back to registry!")
             st.rerun()
 
-        with col_purge.popover("⚠️ Empty Trash (Permanent)", help="Permanently delete all Patchcore models in Trash"):
+        with col_purge.popover(
+            "⚠️ Empty Trash (Permanent)",
+            help="Permanently delete all Patchcore models in Trash",
+        ):
             st.error("Are you sure you want to permanently delete these models? This cannot be undone.")
             if st.button("Yes, Empty Trash", type="primary", key="btn_purge_patchcore_trash"):
                 cnt = purge_patchcore_trash(registry_base=registry_path)
@@ -430,7 +439,7 @@ def _execute_and_display_patchcore(
     )
 
     spinner_msg = (
-        f"Loading cached Patchcore model `{active_hash}` and evaluating..."
+        f"Loading saved Patchcore results `{active_hash}`..."
         if load_selected_clicked
         else "Fitting Patchcore model and evaluating Image & Pixel level metrics..."
     )
@@ -456,6 +465,8 @@ def _execute_and_display_patchcore(
 
     results_dict = cast("dict[str, Any]", results)
     if isinstance(results_dict, dict):
+        st.session_state["_patchcore_displayed_results"] = results_dict
+        st.session_state["_patchcore_displayed_signature"] = _patchcore_display_signature(cfg)
         _render_evaluation_summary(results_dict, model_type="patchcore")
         pixel_metrics = results_dict.get("pixel_level", {})
         metrics_path = pixel_metrics.get("metrics_path")
@@ -482,3 +493,16 @@ def render_baseline_patchcore_tab() -> None:
     cfg, run_clicked = _render_patchcore_config_controls()
     if run_clicked or load_clicked:
         _execute_and_display_patchcore(cfg, selected_hash, selected_meta, load_clicked)
+    elif isinstance(
+        cached_results := st.session_state.get("_patchcore_displayed_results"), dict
+    ) and st.session_state.get("_patchcore_displayed_signature") == _patchcore_display_signature(cfg):
+        _render_evaluation_summary(cached_results, model_type="patchcore")
+        if metrics_path := cached_results.get("pixel_level", {}).get("metrics_path"):
+            render_evaluation_curves(metrics_path)
+        _render_heatmap_explorer(cached_results)
+
+
+def _patchcore_display_signature(cfg: dict[str, Any]) -> str:
+    """Return a stable identity for the currently visible PatchCore controls."""
+    visible_cfg = {key: value for key, value in cfg.items() if key != "force_retrain"}
+    return json.dumps(visible_cfg, sort_keys=True, default=list, separators=(",", ":"))
