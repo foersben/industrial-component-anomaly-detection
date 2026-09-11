@@ -1,11 +1,11 @@
-\section{The Business Case: Error Asymmetry and Cost-Sensitive Decision Making}
+\section{Error Asymmetry and Cost-Sensitive Decision Making}
 \label{sec:cost_model}
 
-Quality assurance decisions in industrial series manufacturing cannot be evaluated using symmetric loss functions. Conventional evaluation paradigms in computer vision treat a missed non-conforming part (Type II error, defect escape) and a spurious rejection of a conforming part (Type I error, pseudo-scrap) as equivalent errors, optimising a single global threshold to maximise overall accuracy. In production engineering, this abstraction is fundamentally flawed: Type I and Type II errors induce radically disparate commercial, legal, and operational consequences, frequently separated by several orders of magnitude. Disregarding this asymmetry results in a miscalibrated deployment that either induces severe productivity losses through excessive false alarms or exposes the enterprise to catastrophic downstream liability through uncontained defect escapes.
+Quality assurance decisions in industrial series manufacturing cannot be evaluated using symmetric loss functions. Conventional evaluation paradigms in computer vision treat a missed non-conforming part (Type II error, defect escape) and a spurious rejection of a conforming part (Type I error, pseudo-scrap) as equivalent errors. In production engineering, this abstraction is fundamentally flawed. We assert that Type I and Type II errors induce radically disparate commercial, legal, and operational consequences. Disregarding this asymmetry results in a miscalibrated deployment that either induces severe productivity losses through excessive false alarms or exposes the enterprise to catastrophic downstream liability through uncontained defect escapes.
 
 \subsection{The Economic Cost Model}
 
-In manufacturing quality control, operational decisions follow a straightforward financial trade-off. When setting inspection thresholds, the plant must balance the operational friction of false alarms -- such as line stoppages, manual re-inspection, and unnecessary scrapping of conforming parts -- against the severe liability of letting defective components reach downstream assembly or end customers. The economically rational objective is simple: choose the operating threshold that minimises total overall cost.
+When setting inspection thresholds, we must balance the operational friction of false alarms against the severe liability of letting defective components reach downstream assembly or end customers. The economically rational objective is simple: we must choose the operating threshold that minimises total overall cost. 
 
 Let the expected total cost of quality at a given operational decision threshold $t$ be denoted $C(t)$. Decomposing the loss across both error classes yields
 
@@ -14,26 +14,24 @@ Let the expected total cost of quality at a given operational decision threshold
     \label{eq:cost}
 \end{equation}
 
-where $\mathrm{FP}(t)$ and $\mathrm{FN}(t)$ denote the cumulative frequencies of false positives (pseudo-scrap) and false negatives (defect escapes) at threshold $t$, whilst $c_{\mathrm{FP}}$ and $c_{\mathrm{FN}}$ represent their respective marginal unit costs. Specifically, $c_{\mathrm{FP}}$ incorporates the operational friction of false alarms: the downtime cost of halting a feed line, the secondary labour cost of manual re-inspection by a QA engineer, and the material loss of scrapping an in-spec component. Conversely, $c_{\mathrm{FN}}$ reflects the punitive exposure of an escaped defect: downstream tooling damage, assembly line stoppages, warranty replacements, regulatory penalties imposed by bodies such as the FDA or EMA, and corporate brand damage.
+where $\mathrm{FP}(t)$ and $\mathrm{FN}(t)$ denote the cumulative frequencies of false positives (pseudo-scrap) and false negatives (defect escapes) at threshold $t$, whilst $c_{\mathrm{FP}}$ and $c_{\mathrm{FN}}$ represent their respective marginal unit costs. We emphasise that the complexity of these involved factors is paramount: $c_{\mathrm{FP}}$ incorporates the downtime cost of halting a feed line, secondary labour for manual re-inspection, and the material loss of scrapping an in-spec component. Conversely, $c_{\mathrm{FN}}$ reflects the punitive exposure of an escaped defect: downstream tooling damage, assembly line stoppages, warranty replacements, regulatory penalties, and corporate brand damage.
 
-Under a continuous and differentiable score distribution, the optimal threshold $t^*$ that minimises total financial loss satisfies
+Under a continuous and differentiable score distribution, we define the optimal threshold $t^*$ that minimises total financial loss as:
 
 \begin{equation}
     t^* = \frac{c_{\mathrm{FP}}}{c_{\mathrm{FP}} + c_{\mathrm{FN}}}.
     \label{eq:optimal_threshold}
 \end{equation}
 
-Equation~\ref{eq:optimal_threshold} formalises the mathematical foundation of our threshold calibration engine. When the liability of an escaped defect vastly exceeds the cost of a false alarm ($c_{\mathrm{FN}} \gg c_{\mathrm{FP}}$), the denominator is dominated by $c_{\mathrm{FN}}$, forcing $t^* \to 0$: the system operates in an ultra-sensitive regime, routing any borderline component to secondary manual review irrespective of the resulting false alarm rate. Conversely, when error costs are comparable ($c_{\mathrm{FN}} \approx c_{\mathrm{FP}}$), the balanced 0.5 operating point derived from symmetrical accuracy optimisation becomes economically justifiable.
-
-An essential boundary condition must be stated clearly: the platform does not assume fixed cost numbers for the customer. The financial parameters $c_{\mathrm{FP}}$ and $c_{\mathrm{FN}}$ are provided directly by the plant's controlling and quality management teams. The platform's objective is to transform the inspection threshold from a rigid machine learning setting into a configurable business decision, calculated directly from the manufacturer's real-world cost parameters. In this workflow, academic benchmark metrics such as AUPIMO and PR-AUC serve to select the best model during development, while Equation~\ref{eq:cost} determines the line-side sorting threshold in live production.
+Equation~\ref{eq:optimal_threshold} formalises the mathematical foundation of our threshold calibration engine. We do not assume fixed cost numbers; instead, we rely on financial parameters provided directly by the plant's controlling and quality management teams. We transform the inspection threshold from a rigid machine learning setting into a configurable, complex business decision.
 
 \subsection{The Industrial Liability Spectrum: Screws and Pills as Boundary Cases}
 
-The risk ratio $\rho = c_{\mathrm{FN}} / c_{\mathrm{FP}}$ defines the appropriate operational regime. A systematic survey of industrial manufacturing sectors reveals that this ratio spans several orders of magnitude across active production lines. To illustrate this economic divergence, Table~\ref{tab:cost_asymmetry} contrasts representative categories from the MVTec AD benchmark.
+We define the risk ratio $\rho = c_{\mathrm{FN}} / c_{\mathrm{FP}}$ to dictate the appropriate operational regime. Our systematic survey of industrial manufacturing sectors reveals that this ratio spans several orders of magnitude across active production lines, as illustrated in Table~\ref{tab:cost_asymmetry}.
 
 \begin{table}[bp]
 \centering
-\caption{Economic error asymmetry across representative industrial manufacturing categories. Values are indicative to demonstrate the scale of the liability spectrum.}
+\caption{Economic error asymmetry across representative industrial manufacturing categories.}
 \label{tab:cost_asymmetry}
 \footnotesize
 \begin{tabular}{@{}p{3.2cm}cccc@{}}
@@ -48,8 +46,6 @@ Life Sciences (\emph{Pill})  & Very Low (Discard)  & Catastrophic (Recall) & $\a
 \end{tabular}
 \end{table}
 
-Consider first the high-volume commodity regime, exemplified by the \emph{Screw} category. In continuous bulk packaging, an automated feeder operates at hundreds of units per minute. If a vision system issues a false alarm that pauses the feeder mechanism to summon manual QA verification, the resulting line stoppage costs significantly in lost throughput and operator intervention. Conversely, if an isolated fastener with a minor aesthetic blemish escapes into a bulk shipment where non-critical tolerances apply, the marginal financial loss is merely the low unit value of a single screw. In this operational setting, $c_{\mathrm{FP}} \gg c_{\mathrm{FN}}$, yielding a minuscule risk ratio. Here, the economically rational threshold is pushed towards unity, requiring near certainty before triggering a line-side divert. To prevent excessive pseudo-scrap, the platform calibrates this gate with an $F_{0.5}$ objective, which penalises false alarms twice as heavily as missed defects, maintaining conveyor takt time whilst catching severe structural anomalies.
+In high-volume commodity regimes (e.g., \emph{Screw}), line stoppage costs dominate. If an isolated fastener with a minor blemish escapes into a bulk shipment, the loss is merely the low unit value of a single screw ($c_{\mathrm{FP}} \gg c_{\mathrm{FN}}$). We calibrate this gate with an $F_{0.5}$ objective, pushing the threshold towards unity to prevent excessive pseudo-scrap. 
 
-At the opposite extreme, consider the life sciences sector, represented by the \emph{Pill} category. An undetected tablet exhibiting foreign chemical contamination or dosage-altering structural fractures poses a direct threat to patient health. A single confirmed defect escape into commercial pharmacy circulation triggers mandatory batch recall proceedings, encompassing reverse-distribution logistics, independent laboratory audits, class-action litigation, and severe brand equity destruction. Total liabilities are catastrophic. Against this exposure, the scrap cost of discarding conforming tablets is negligible. With an enormous risk ratio, the optimal threshold collapses towards zero. Here, the platform calibrates the decision gate with an $F_2$ objective, weighting defect recall four times more heavily than precision. The threshold is lowered aggressively until full defect containment is achieved, absorbing a controlled false alarm rate as a calculated, fully acceptable operating expense.
-
-These boundary cases demonstrate that a standardised, symmetric benchmark threshold derived from offline academic datasets is fundamentally unviable across diverse industrial verticals. The platform resolves this dilemma by decoupling feature extraction from threshold calibration, exposing the operational decision gate as a dynamic financial parameter.
+Conversely, in the life sciences sector (e.g., \emph{Pill}), an undetected contaminated tablet triggers mandatory batch recalls and severe liability. Against this catastrophic exposure, the scrap cost of discarding conforming tablets is negligible. We calibrate this decision gate with an $F_2$ objective, lowering the threshold aggressively until full defect containment is achieved. We absorb a controlled false alarm rate as a calculated operating expense. By decoupling feature extraction from threshold calibration, we expose the operational decision gate as a dynamic, tunable financial parameter.
