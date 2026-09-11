@@ -1,101 +1,116 @@
 """TF/Keras Convolutional Autoencoder (CAE) for industrial anomaly detection.
 
-This module implements a from-scratch Convolutional Autoencoder using TensorFlow/Keras
-incorporating the following state-of-the-art design decisions:
+This module implements a from-scratch Convolutional Autoencoder using
+TensorFlow/Keras, incorporating state-of-the-art design decisions for industrial
+visual defect detection.
 
-Why TF/Keras?
-    TF/Keras provides a high-level, declarative API that makes the model architecture
-    easy to read, modify, and debug. The ``tf.keras.losses`` and ``tf.image`` modules
-    include SSIM natively, making combined loss functions straightforward to implement.
-    Note: This module coexists alongside the existing PyTorch baseline autoencoder in
-    ``app/pipelines/modelling/autoencoder.py`` as an independent improvement experiment.
+Why TF/Keras?:
+    TF/Keras provides a high-level, declarative API that makes the model
+    architecture easy to read, modify, and debug. The `tf.keras.losses` and
+    `tf.image` modules include SSIM natively, making combined loss functions
+    straightforward to implement.
 
-Key Design Decisions (and Why)
-================================
+    Note: This module coexists alongside the existing PyTorch baseline
+    autoencoder in `app/pipelines/modelling/autoencoder.py` as an independent
+    improvement experiment.
 
-1. ELU instead of ReLU (and Alternatives)
------------------------------------------
-The standard Rectified Linear Unit (ReLU) has a well-known failure mode: the
-"Dying ReLU" problem. If a neuron receives consistently negative inputs during
-training, its gradient becomes permanently zero, and the neuron stops contributing
-to learning entirely. This is especially problematic in autoencoders where the
-bottleneck constrains information flow.
+Design Decisions:
+    1. ELU instead of ReLU (and Alternatives):
+       The standard Rectified Linear Unit (ReLU) has a well-known failure mode:
+       the "Dying ReLU" problem. If a neuron receives consistently negative
+       inputs during training, its gradient becomes permanently zero, and the
+       neuron stops contributing to learning entirely. This is especially
+       problematic in autoencoders where the bottleneck constrains information
+       flow.
 
-The Exponential Linear Unit (ELU) smoothly saturates for large negative inputs
-instead of zeroing them:
-    - For x > 0: ELU(x) = x (same as ReLU)
-    - For x <= 0: ELU(x) = alpha * (exp(x) - 1) where alpha is typically 1.0
+       The Exponential Linear Unit (ELU) smoothly saturates for large negative
+       inputs instead of zeroing them:
+           - For x > 0: ELU(x) = x (same as ReLU)
+           - For x <= 0: ELU(x) = alpha * (exp(x) - 1) where alpha is typically 1.0
 
-Why not Leaky ReLU?
-While Leaky ReLU also prevents dying neurons by adding a small linear slope for
-x < 0, it has a sharp kink at x = 0 (it is not continuously differentiable).
-This sharp non-linearity can sometimes destabilize the fine-grained reconstruction
-gradients in autoencoders. ELU is smooth everywhere, producing more predictable
-gradients. Furthermore, ELU's saturation curve naturally pushes mean activations
-closer to zero (a "self-normalizing" property), which speeds up learning and acts
-like internal batch normalization-a benefit Leaky ReLU lacks.
+       Why not Leaky ReLU?:
+       While Leaky ReLU also prevents dying neurons by adding a small linear
+       slope for x < 0, it has a sharp kink at x = 0 (it is not continuously
+       differentiable). This sharp non-linearity can sometimes destabilize the
+       fine-grained reconstruction gradients in autoencoders. ELU is smooth
+       everywhere, producing more predictable gradients. Furthermore, ELU's
+       saturation curve naturally pushes mean activations closer to zero (a
+       "self-normalizing" property), which speeds up learning and acts like
+       internal batch normalization—a benefit Leaky ReLU lacks.
 
-Benefits of ELU:
-    - Neurons never completely die -> stable gradient flow throughout training.
-    - Mean activations closer to zero -> network acts like batch normalisation internally.
-    - Smooth gradients everywhere -> better fine-grained structural reconstruction.
+       Benefits of ELU:
+           - Neurons never completely die -> stable gradient flow throughout
+             training.
+           - Mean activations closer to zero -> network acts like batch
+             normalization internally.
+           - Smooth gradients everywhere -> better fine-grained structural
+             reconstruction.
 
-2. Masked Image Modeling (MIM / MAE-style)
-------------------------------------------
-A naive autoencoder trained to reconstruct its input can learn a trivial
-"identity mapping" - just copying the input directly to the output. This defeats
-the entire purpose: such a model would reconstruct anomalies just as well as normal
-images, yielding zero anomaly detection capability.
+    2. Masked Image Modeling (MIM / MAE-style):
+       A naive autoencoder trained to reconstruct its input can learn a trivial
+       "identity mapping"—just copying the input directly to the output. This
+       defeats the entire purpose: such a model would reconstruct anomalies
+       just as well as normal images, yielding zero anomaly detection
+       capability.
 
-Masked Image Modeling (inspired by Masked Autoencoders, MAE) prevents this:
-    - Before training, random square patches of the input image are zeroed (masked).
-    - The model must reconstruct the **original clean image** from the **corrupted input**.
-    - This forces the model to learn context and structure (filling in missing patches
-      from surrounding information) rather than copying pixels.
+       Masked Image Modeling (inspired by Masked Autoencoders, MAE) prevents this:
+           - Before training, random square patches of the input image are
+             zeroed (masked).
+           - The model must reconstruct the original clean image from the
+             corrupted input.
+           - This forces the model to learn context and structure (filling in
+             missing patches from surrounding information) rather than copying
+             pixels.
 
-The result: the model learns deep structural representations of "what normal looks like",
-and fails to reconstruct unusual or anomalous regions at test time.
+       The result: the model learns deep structural representations of "what
+       normal looks like", and fails to reconstruct unusual or anomalous regions
+       at test time.
 
-3. SSIM + MSE Combined Loss
----------------------------
-Mean Squared Error (MSE) is the most common reconstruction loss, but it has a critical
-weakness for anomaly detection: it computes error independently per pixel, ignoring the
-spatial structure of the image. A 2-pixel horizontal shift of a normal texture pattern
-would register as a massive MSE error, even though the image looks completely normal.
+    3. SSIM + MSE Combined Loss:
+       Mean Squared Error (MSE) is the most common reconstruction loss, but it
+       has a critical weakness for anomaly detection: it computes error
+       independently per pixel, ignoring the spatial structure of the image. A
+       2-pixel horizontal shift of a normal texture pattern would register as a
+       massive MSE error, even though the image looks completely normal.
 
-The Structural Similarity Index Measure (SSIM) addresses this by evaluating:
-    - Luminance: Are the local mean intensities similar?
-    - Contrast: Are the local standard deviations similar?
-    - Structure: Are the local spatial correlations similar?
+       The Structural Similarity Index Measure (SSIM) addresses this by
+       evaluating:
+           - Luminance: Are the local mean intensities similar?
+           - Contrast: Are the local standard deviations similar?
+           - Structure: Are the local spatial correlations similar?
 
-SSIM is computed over a sliding window, capturing neighbourhood context. It is bounded
-between -1 and 1 (1 = identical), so we use (1 - SSIM) as the loss term.
+       SSIM is computed over a sliding window, capturing neighborhood context.
+       It is bounded between -1 and 1 (1 = identical), so we use (1 - SSIM) as
+       the loss term.
 
-Combined loss: L = alpha * (1 - SSIM) + (1 - alpha) * MSE
-    - alpha = 0.84 is the recommended value from literature for structural emphasis.
-    - This penalises structural differences more strongly than pixel-wise noise.
+       Combined loss: L = alpha * (1 - SSIM) + (1 - alpha) * MSE
+           - alpha = 0.84 is the recommended value from literature for structural
+             emphasis.
+           - This penalizes structural differences more strongly than pixel-wise
+             noise.
 
-4. AdamW Optimizer
-------------------
-Adam (Adaptive Moment Estimation) is the standard deep learning optimizer, adapting
-the learning rate per parameter based on gradient history. However, standard Adam
-conflates weight decay with the adaptive learning rate step, which can lead to
-insufficient regularisation and overfitting on small datasets (like MVTec training sets).
+    4. AdamW Optimizer:
+       Adam (Adaptive Moment Estimation) is the standard deep learning optimizer,
+       adapting the learning rate per parameter based on gradient history.
+       However, standard Adam conflates weight decay with the adaptive learning
+       rate step, which can lead to insufficient regularization and overfitting
+       on small datasets (like MVTec training sets).
 
-AdamW (Adam with decoupled Weight Decay) separates these two mechanisms:
-    - The adaptive learning rate handles the gradient-based update.
-    - Weight decay is applied directly to the weights AFTER the gradient step.
+       AdamW (Adam with decoupled Weight Decay) separates these two mechanisms:
+           - The adaptive learning rate handles the gradient-based update.
+           - Weight decay is applied directly to the weights AFTER the gradient
+             step.
 
-This produces stronger and more effective regularisation, which is crucial when training
-on a small set of normal images (MVTec training split = 60-400 images per category).
+       This produces stronger and more effective regularization, which is
+       crucial when training on a small set of normal images (MVTec training
+       split = 60-400 images per category).
 
-Module Contents
----------------
-- ``TF_AVAILABLE``: Boolean flag for whether TensorFlow is importable.
-- ``build_cae``: Factory function to build and compile the Keras CAE model.
-- ``ssim_mse_loss``: Factory for the combined SSIM+MSE loss function.
-- ``apply_patch_masking``: Mask random patches for Masked Image Modeling.
-- ``train_cae``: Full training loop with MIM and logging.
+Attributes:
+    TF_AVAILABLE (bool): Flag indicating whether TensorFlow is importable.
+    build_cae: Factory function to build and compile the Keras CAE model.
+    ssim_mse_loss: Factory for the combined SSIM+MSE loss function.
+    apply_patch_masking: Mask random patches for Masked Image Modeling.
+    train_cae: Full training loop with MIM and logging.
 """
 
 from __future__ import annotations
@@ -288,7 +303,7 @@ def build_cae(crop_size: int = 64, latent_channels: int = 32) -> Any:
     # AdamW with decoupled weight decay for regularisation
     optimizer = tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4)
 
-    model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84))
+    model.compile(optimizer=optimizer, loss=ssim_mse_loss(alpha=0.84), jit_compile=False)
 
     logger.info(
         "Built Keras CAE: crop_size=%d, latent_channels=%d, bottleneck_spatial=%d",
@@ -354,6 +369,115 @@ def apply_patch_masking(
     return masked
 
 
+def _extract_batch_loss(result: Any) -> float:
+    """Extract scalar loss from Keras batch API output.
+
+    Args:
+        result: Scalar float, 1D array, or dictionary returned by train_on_batch/test_on_batch.
+
+    Returns:
+        Scalar loss value as float.
+    """
+    if isinstance(result, dict):
+        return float(result["loss"])
+    return float(np.asarray(result).reshape(-1)[0])
+
+
+def _evaluate_cae_reconstruction_loss(model: Any, images: np.ndarray, batch_size: int) -> float:
+    """Evaluate reconstruction loss over a set of images without creating a dataset adapter.
+
+    Args:
+        model: Compiled Keras CAE model.
+        images: Array of images with shape (N, H, W, 3).
+        batch_size: Batch size for slice evaluation.
+
+    Returns:
+        Weighted average reconstruction loss across all samples.
+    """
+    weighted_loss = 0.0
+    sample_count = 0
+    for start in range(0, len(images), batch_size):
+        clean_batch = images[start : start + batch_size]
+        model.reset_metrics()
+        loss = _extract_batch_loss(model.test_on_batch(clean_batch, clean_batch))
+        weighted_loss += loss * len(clean_batch)
+        sample_count += len(clean_batch)
+    return weighted_loss / max(1, sample_count)
+
+
+def _train_cae_one_epoch(
+    model: Any,
+    train_images: np.ndarray,
+    batch_size: int,
+    mask_ratio: float,
+    patch_size: int,
+) -> float:
+    """Execute one training epoch over all training image crops using MIM patch masking.
+
+    Args:
+        model: Compiled Keras CAE model.
+        train_images: Normalised training images, shape (N, H, W, 3).
+        batch_size: Batch size for gradient steps.
+        mask_ratio: Fraction of patches masked per image.
+        patch_size: Square dimension of masked patches.
+
+    Returns:
+        Weighted average training loss across all batches in the epoch.
+    """
+    n_samples = len(train_images)
+    indices = np.random.permutation(n_samples)
+    weighted_loss = 0.0
+    sample_count = 0
+    for start in range(0, n_samples, batch_size):
+        batch_indices = indices[start : start + batch_size]
+        clean_batch = train_images[batch_indices]
+        masked_batch = apply_patch_masking(clean_batch, mask_ratio, patch_size)
+        model.reset_metrics()
+        batch_loss = _extract_batch_loss(model.train_on_batch(masked_batch, clean_batch))
+        weighted_loss += batch_loss * len(clean_batch)
+        sample_count += len(clean_batch)
+        del clean_batch, masked_batch
+    return weighted_loss / max(1, sample_count)
+
+
+def _evaluate_epoch_validation(
+    model: Any,
+    val_good_images: np.ndarray | None,
+    val_anomalous_images: np.ndarray | None,
+    avg_loss: float,
+    batch_size: int,
+    history: dict[str, list[float]],
+) -> tuple[float, str]:
+    """Compute validation metrics on clean normal and anomalous validation sets.
+
+    Args:
+        model: Keras CAE model.
+        val_good_images: Optional normal images for validation tracking.
+        val_anomalous_images: Optional anomalous images for tracking.
+        avg_loss: Training loss of the current epoch.
+        batch_size: Batch size for slice evaluation.
+        history: Metrics history dictionary to mutate.
+
+    Returns:
+        Tuple of (monitor_loss, log_message_suffix).
+    """
+    suffix = ""
+    if val_good_images is not None and len(val_good_images) > 0:
+        val_good_loss = _evaluate_cae_reconstruction_loss(model, val_good_images, batch_size)
+        history["val_good"].append(val_good_loss)
+        suffix += f" | Val Good Loss: {val_good_loss:.6f}"
+        monitor_loss = val_good_loss
+    else:
+        monitor_loss = avg_loss
+
+    if val_anomalous_images is not None and len(val_anomalous_images) > 0:
+        val_an_loss = _evaluate_cae_reconstruction_loss(model, val_anomalous_images, batch_size)
+        history["val_anomalous"].append(val_an_loss)
+        suffix += f" | Val Anomaly Loss: {val_an_loss:.6f}"
+
+    return monitor_loss, suffix
+
+
 def train_cae(
     model: Any,
     train_images: np.ndarray,
@@ -407,75 +531,28 @@ def train_cae(
         Dictionary containing lists of epoch-average loss values:
         {'train': [...], 'val_good': [...], 'val_anomalous': [...]}.
     """
-    tf = _require_tf()
+    _require_tf()
 
-    class NumpyBatchGenerator(tf.keras.utils.Sequence):  # type: ignore[name-defined,misc]
-        def __init__(self, x: np.ndarray, y: np.ndarray, batch_size: int) -> None:
-            self.x = x
-            self.y = y
-            self.batch_size = batch_size
-
-        def __len__(self) -> int:
-            return int(np.ceil(len(self.x) / float(self.batch_size)))
-
-        def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
-            batch_x = self.x[idx * self.batch_size : (idx + 1) * self.batch_size]
-            batch_y = self.y[idx * self.batch_size : (idx + 1) * self.batch_size]
-            return batch_x, batch_y
-
-    n_samples = len(train_images)
     history: dict[str, list[float]] = {"train": [], "val_good": [], "val_anomalous": []}
-
     best_loss = float("inf")
     best_weights = None
     patience_counter = 0
     lr_patience_counter = 0
 
     for epoch in range(epochs):
-        # Shuffle training data at the start of each epoch
-        indices = np.random.permutation(n_samples)
-        shuffled_clean = train_images[indices]
-        shuffled_masked = apply_patch_masking(shuffled_clean, mask_ratio, patch_size)
-
-        # Use a Sequence generator to avoid allocating huge CPU tensors and OOMing during copies
-        gen = NumpyBatchGenerator(shuffled_masked, shuffled_clean, batch_size)
-
-        fit_hist = model.fit(
-            gen,
-            epochs=1,
-            verbose=0,
-            shuffle=False,  # We already shuffled manually
-        )
-        avg_loss = fit_hist.history["loss"][0]
+        avg_loss = _train_cae_one_epoch(model, train_images, batch_size, mask_ratio, patch_size)
         history["train"].append(avg_loss)
 
-        log_msg = f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_loss:.6f}"
+        monitor_loss, val_suffix = _evaluate_epoch_validation(
+            model, val_good_images, val_anomalous_images, avg_loss, batch_size, history
+        )
+        logger.info("Epoch %d/%d - Train Loss: %.6f%s", epoch + 1, epochs, avg_loss, val_suffix)
 
-        # Evaluate validation losses without masking (simulating test-time reconstruction)
-        if val_good_images is not None and len(val_good_images) > 0:
-            val_good_loss = float(model.evaluate(val_good_images, val_good_images, batch_size=batch_size, verbose=0))
-            history["val_good"].append(val_good_loss)
-            log_msg += f" | Val Good Loss: {val_good_loss:.6f}"
-            monitor_loss = val_good_loss
-        else:
-            monitor_loss = avg_loss
-
-        if val_anomalous_images is not None and len(val_anomalous_images) > 0:
-            val_an_loss = float(
-                model.evaluate(val_anomalous_images, val_anomalous_images, batch_size=batch_size, verbose=0)
-            )
-            history["val_anomalous"].append(val_an_loss)
-            log_msg += f" | Val Anomaly Loss: {val_an_loss:.6f}"
-
-        logger.info(log_msg)
-
-        # Optuna Pruning Integration
         if trial is not None:
             trial.report(float(monitor_loss), step=epoch)
             if trial.should_prune():
                 raise optuna.exceptions.TrialPruned()
 
-        # Callbacks Logic (Early Stopping, Checkpoint, ReduceLR)
         if monitor_loss < best_loss - min_delta:
             best_loss = monitor_loss
             best_weights = model.get_weights()
@@ -490,13 +567,12 @@ def train_cae(
             new_lr = old_lr * lr_factor
             model.optimizer.learning_rate.assign(new_lr)
             logger.info("ReduceLROnPlateau triggered: reducing learning rate from %.6f to %.6f", old_lr, new_lr)
-            lr_patience_counter = 0  # reset LR counter
+            lr_patience_counter = 0
 
         if patience_counter >= early_stopping_patience:
             logger.info("Early Stopping triggered after %d epochs without improvement.", early_stopping_patience)
             break
 
-    # Restore best weights
     if best_weights is not None:
         logger.info("Restoring best model weights (monitor_loss = %.6f)", best_loss)
         model.set_weights(best_weights)

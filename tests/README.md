@@ -47,7 +47,10 @@ flowchart TD
     Unit --> CoreData["test_domain_data.py\n(domain)"]
     Unit --> CorePre["test_preprocessing.py\n(preprocessing)"]
     Unit --> CoreAE["test_autoencoder.py\n(modelling.autoencoder)"]
-    Unit --> PatchPers["test_patchcore_persistence.py\n(modelling.baseline)"]
+    Unit --> PatchPers["test_patchcore_persistence.py\n(modelling.patchcore)"]
+    Unit --> DINO2["test_dinov2_baseline.py\n(modelling.dinov2_baseline)"]
+    Unit --> DINO3["test_dinov3_baseline.py\n(modelling.dinov3_baseline)"]
+    Unit --> SharedMet["test_shared_evaluation_metrics.py\n(evaluation.metrics)"]
     Unit --> CoreCLI["test_cli.py\n(cli)"]
     Unit --> CoreConfig["test_config.py\n(core)"]
 ```
@@ -171,8 +174,14 @@ flowchart TD
   Evaluates the PyTorch ConvAutoencoder baseline architecture, training, and evaluation hooks.
 - **`tests/unit/test_patchcore_persistence.py`**
   Verifies PatchCore registry model finding, deterministic parameter hashing, fast cached evaluation loading, soft-deletion/restoration via `.trash/`, and permanent trash purging.
+- **`tests/unit/test_dinov2_baseline.py`**
+  Tests frozen DINOv2 nearest-neighbor patch baseline, position/density-aware enhanced scoring, foreground masking policies, and macro averaging.
+- **`tests/unit/test_dinov3_baseline.py`**
+  Tests frozen DINOv3 nearest-neighbor patch baseline and cross-category macro reporting.
+- **`tests/unit/test_shared_evaluation_metrics.py`**
+  Validates canonical 256x256 image-level AUROC and pixel-level AUPIMO metrics conformance under `fair-eval-v1`.
 - **`tests/unit/test_cli.py`**
-  Validates CLI argument preprocessing, `key=value` argument conversion, and `--preprocessing-config` JSON parsing.
+  Validates CLI argument preprocessing, `key=value` argument conversion, `--preprocessing-config` JSON parsing, and subcommand dispatching (`patchcore`, `cae`, `baseline`, `dinov2`, `dinov3`).
 - **`tests/unit/test_config.py`**
   Tests core settings and environment configurations.
 

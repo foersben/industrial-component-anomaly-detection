@@ -39,13 +39,13 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
         apply_foreground_mask = trial.suggest_categorical("apply_foreground_mask", [True, False])
 
     # Build preprocessing steps
-    preprocessing_steps = []
+    pipeline = []
     if apply_foreground_mask:
-        preprocessing_steps.append({"name": "foreground_mask", "params": {}})
+        pipeline.append({"name": "foreground_mask", "params": {}})
     if apply_clahe:
-        preprocessing_steps.append({"name": "clahe", "params": {}})
+        pipeline.append({"name": "clahe", "params": {}})
     if apply_blur:
-        preprocessing_steps.append({"name": "gaussian_blur", "params": {"kernel_size": blur_ksize}})
+        pipeline.append({"name": "gaussian_blur", "params": {"kernel_size": blur_ksize}})
 
     # We use fewer epochs and a smaller batch size to quickly prune bad trials
     epochs = 20
@@ -56,7 +56,7 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
             data_root=data_root,
             category=category_name,
             latent_channels=latent_channels,
-            preprocessing_steps=preprocessing_steps,
+            pipeline=pipeline,
             epochs=epochs,
             batch_size=batch_size,
             force_retrain=True,  # Force retrain so it explores the space
@@ -85,7 +85,20 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
 
 
 def run_study(category_name: str, n_trials: int = 15, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
-    """Run the Optuna study and save the best parameters."""
+    """Run the Optuna study and save the best parameters.
+
+    This function uses Optuna to find the best hyperparameters for the Keras CAE model
+    for a specific MVTec AD category. It uses the fair-eval-v1 protocol to evaluate the
+    model and prunes trials that are unlikely to yield good results.
+
+    Args:
+        category_name: MVTec category name to optimize.
+        n_trials: Number of trials to run (default: 15).
+        data_root: Path to the MVTec AD dataset.
+
+    Returns:
+        Best parameters dictionary.
+    """
     study_name = f"keras_cae_{category_name}"
 
     storage_path = Path("data/hyperparameters/keras_cae_optuna.db")
@@ -156,9 +169,14 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
+    from app.core.tf_device import configure_tensorflow, preload_cuda_shared_libraries
+
+    preload_cuda_shared_libraries()
+    configure_tensorflow()
+
     parser = argparse.ArgumentParser(description="Run Optuna study for Keras CAE")
     parser.add_argument("--category", type=str, required=True, help="MVTec category name")
-    parser.add_argument("--n-trials", type=int, default=10, help="Number of trials to run")
+    parser.add_argument("--n-trials", type=int, default=30, help="Number of trials to run (default: 30)")
     parser.add_argument("--data-root", type=str, default="data/raw/mvtec_ad", help="Dataset root directory")
 
     args = parser.parse_args()

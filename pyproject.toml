@@ -19,7 +19,7 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "uvicorn>=0.50.0",
-    "anomalib>=2.5.0,<3",
+    "anomalib>=2.6.0,<3",
     "opencv-python>=4.9.0",
     "tensorflow>=2.16,<3",
     "scikit-image>=0.24.0,<1",
@@ -40,7 +40,7 @@ dev = [
     "pyyaml>=6.0.2",
     "types-PyYAML>=6.0.12.20240806",    # Explicitly add type stubs for mypy
     "nbstripout>=0.8.0",
-    "hypothesis>=6.0.0", "pre-commit-uv>=4.2.2,<5",
+    "hypothesis>=6.0.0",
 ]
 
 [tool.ruff]
@@ -140,6 +140,7 @@ optuna = ">=4.9.0,<5"
 cuda-version = "12.*"
 cuda-libraries = "12.*"
 cuda-cupti = "12.*"
+cuda-nvcc = "12.*"
 cudnn = ">=9.0,<10"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
@@ -164,9 +165,10 @@ dev = { features = ["dev", "gpu"], solve-group = "default" }
 ci = { features = ["cpu"], solve-group = "ci" }
 ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
 
+
 [tool.pixi.target.linux-64.activation.env]
 LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 
 [tool.pixi.tasks]
-api = { cmd = "uvicorn app.api.main:app --reload --port 8000", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }
-ui = { cmd = "streamlit run app/ui.py --server.port 8501", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }
+
+ui = { cmd = "streamlit run app/ui/main.py --server.port 8501", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }

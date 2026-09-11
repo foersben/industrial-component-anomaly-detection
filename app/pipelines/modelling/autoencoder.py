@@ -12,6 +12,16 @@ from torchvision import transforms
 from app.core.logger import logger
 from app.domain import MVTecImageDataset, build_mvtec_manifest
 
+__all__ = [
+    "ConvAutoencoder",
+    "MVTecImageDataset",
+    "build_mvtec_manifest",
+    "evaluate_autoencoder",
+    "prepare_autoencoder_dataloaders",
+    "run_autoencoder_pipeline",
+    "train_autoencoder",
+]
+
 
 class ConvAutoencoder(nn.Module):
     """Convolutional autoencoder for reconstructed image anomaly detection."""
@@ -54,20 +64,18 @@ class ConvAutoencoder(nn.Module):
         return decoded
 
 
-def evaluate_autoencoder(
+def _collect_autoencoder_test_scores(
     model: nn.Module,
     test_loader: DataLoader[Any],
-    class_names: list[str] | None = None,  # Ignore Parameters  # noqa: ARG001
-) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any], dict[str, Any]]:
-    """Evaluate autoencoder reconstruction error on test set.
+) -> tuple[list[float], list[int], list[str]]:
+    """Perform inference on test dataloader and collect sample MSE reconstruction scores.
 
     Args:
-        model: Trained autoencoder model.
-        test_loader: Test dataloader yielding (x, y_cls, path/c_name).
-        class_names: Optional class names list.
+        model: Evaluated PyTorch autoencoder neural network.
+        test_loader: Dataloader yielding (image_batch, class_labels, class_names).
 
     Returns:
-        Tuple of (reconstruction scores, true labels, metrics dictionary).
+        A tuple of (reconstruction_mse_scores, true_integer_labels, class_name_strings).
     """
     model.eval()
     scores: list[float] = []
@@ -84,6 +92,26 @@ def evaluate_autoencoder(
                 true_class_names.extend(c_name)
             else:
                 true_class_names.append(str(c_name))
+
+    return scores, true_labels, true_class_names
+
+
+def evaluate_autoencoder(
+    model: nn.Module,
+    test_loader: DataLoader[Any],
+    class_names: list[str] | None = None,  # noqa: ARG001
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """Evaluate autoencoder reconstruction error and compute classification metrics.
+
+    Args:
+        model: Trained autoencoder model.
+        test_loader: Test dataloader yielding (x, y_cls, path/c_name).
+        class_names: Optional class names list.
+
+    Returns:
+        Tuple of (reconstruction scores, true labels, metrics dictionary).
+    """
+    scores, true_labels, _ = _collect_autoencoder_test_scores(model, test_loader)
 
     binary_gt = [0 if label == 0 else 1 for label in true_labels]
     normal_scores = [s for s, b in zip(scores, binary_gt, strict=False) if b == 0]

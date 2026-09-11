@@ -22,3 +22,7 @@ In this section, you will find:
 5. **[Keras CAE Preprocessing](keras_cae_preprocessing.md):** Data augmentation, image loading, and Otsu+Canny foreground extraction (BGRP-G).
 6. **[Keras CAE Inference & Evaluation](keras_cae_inference.md):** Top-K pooling, adaptive thresholds (Quantile/Mahalanobis), Precision-Recall curves, and strict industrial FPR ($10^{-5}$) validation.
 7. **[Keras CAE Explainability](keras_cae_explainability.md):** Reconstruction error heatmaps, sliding window overlap stitching, robust quantile clamping, and side-by-side ground truth validation.
+8. **[Fair PatchCore and CAE Evaluation Protocol](fair_model_evaluation_handoff.md):** Scientific implementation plan, required tests, and acceptance criteria for the shared 85/15 zero-leakage comparison protocol.
+9. **[DINO Vision Transformer Baselines](dinov2_baseline.md):** Patch nearest-neighbour baselines using frozen foundation models (DINOv2/DINOv3) with foreground PCA masking and spatial density adaptations.
+10. **[Hardware Device Selection](tf_device_selection.md):** Dynamic CPU/GPU hardware negotiation, VRAM thresholding, and AVX2 multi-threading optimizations.
+11. **[Exploratory Data Analysis Plan](eda_plan.md):** Comprehensive analysis of class imbalance, pixel distribution, cross-category variance, and spatial anomaly morphology.

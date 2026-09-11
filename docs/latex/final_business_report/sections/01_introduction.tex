@@ -1,0 +1,15 @@
+\section{Introduction}
+\label{sec:introduction}
+
+In modern high-throughput manufacturing, industrial quality assurance is persistently constrained by a fundamental operational conflict: balancing the direct scrap and downtime costs of false alarms against the downstream commercial and legal liability of uncontained defect escapes. Manual visual inspection remains limited by human fatigue, while conventional rule-based machine vision systems exhibit extreme parametric brittleness to supplier tolerances and ambient illumination shifts. To solve this, we present the technical and commercial justification for an enterprise-grade, self-supervised Anomaly Detection Software-as-a-Service (SaaS) platform. We position our architecture as an auditable, cost-sensitive risk-management pipeline. We evaluate components continuously against empirical anomaly score distributions, calibrating line-side divert thresholds directly against each customer's specific costs of false alarms versus missed defects.
+
+We developed our technical foundation using the PatchCore architecture with a frozen ResNet-18 neural network. Evaluated across the canonical MVTec Anomaly Detection benchmark under our strict zero-test-leakage protocol, our reference engine achieves a macro-average Image $F_1$-score of $0.929$, PR-AUC of $0.988$, and AUPIMO of $0.603$, decisively outperforming generative convolutional autoencoders. For plant directors, the relationship between these headline metrics warrants a plain explanation: the $F_1$-score is \emph{dynamic} -- measuring how profitably the system makes pass/reject decisions at a specific operational threshold -- whilst AUPIMO is \emph{fixed} -- measuring how cleanly and reliably the model pinpoints defects independent of any threshold setting. In everyday terms: AUPIMO tells management how sharp the camera system's ``eyes'' inherently are, whilst the $F_1$-score measures how well that vision performs at your chosen factory setting.
+
+\begin{figure}[tp]
+    \centering
+    \placeholder{1.8cm}{Three-panel composite: (left) original component image; (centre) continuous anomaly score heatmap; (right) binary defect mask.}
+    \caption{Production-line explainability output for a representative defective component. From left to right: the original camera image, the continuous patch-distance anomaly heatmap, and the binarised defect mask produced by applying the calibrated operational threshold.}
+    \label{fig:intro_heatmap}
+\end{figure}
+
+The remainder of this report is structured as follows. Section~\ref{sec:cost_model} establishes the economic cost model underlying our threshold calibration. Section~\ref{sec:dataset_landscape} characterises the MVTec AD benchmark and extracts the empirical data properties that govern metric selection. Sections~\ref{sec:model_selection} and~\ref{sec:empirical_results} detail our model architecture and its empirical benchmark performance. Section~\ref{sec:deployment} addresses hardware execution, explainability, and enterprise reliability. Section~\ref{sec:conclusion} concludes the report.

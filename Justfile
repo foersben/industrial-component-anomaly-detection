@@ -33,33 +33,10 @@ check:
 format:
 	pixi run --frozen -e dev ruff format .
 
-# Kill any running FastAPI/Streamlit instances (frees ports 8000 and 8501)
-stop:
-    @echo "Stopping FastAPI and Streamlit..."
-    @fuser -k 8000/tcp 2>/dev/null || true
-    @fuser -k 8501/tcp 2>/dev/null || true
-    @echo "Done."
-
-# Start FastAPI (uvicorn) and Streamlit frontend concurrently
+# Start Streamlit frontend
 run:
-    #!/usr/bin/env bash
-    set -euo pipefail
+	pixi run --frozen -e dev ui
 
-    # Release ports if previous run was killed uncleanly
-    fuser -k 8000/tcp 2>/dev/null || true
-    fuser -k 8501/tcp 2>/dev/null || true
-    sleep 0.3
-
-    echo "Starting FastAPI and Streamlit..."
-    pixi run --frozen -e dev api &
-    API_PID=$!
-    pixi run --frozen -e dev ui &
-    UI_PID=$!
-
-    # Propagate SIGINT/SIGTERM to both child processes and wait cleanly
-    trap 'echo; echo "Shutting down gracefully..."; kill "$API_PID" "$UI_PID" 2>/dev/null; wait "$API_PID" "$UI_PID" 2>/dev/null; exit 0' INT TERM
-
-    wait
 
 # Clean all temporary files, cache folders, compilation files, and local environments
 clean:
@@ -98,10 +75,20 @@ fetch-data: download-data
 run-dummy *args:
 	pixi run --frozen -e dev python -m app.main dummy {{args}}
 
-# Run the Patchcore baseline on the MVTec AD dataset
+# Run the Patchcore baseline on the MVTec AD dataset (backward compatibility alias)
 # Example: just run-baseline category="bottle"
 run-baseline *args:
 	pixi run --frozen -e dev python -m app.main baseline {{args}}
+
+# Run the PatchCore pipeline on the MVTec AD dataset
+# Example: just run-patchcore category="bottle"
+run-patchcore *args:
+	pixi run --frozen -e dev python -m app.main patchcore {{args}}
+
+# Run the Keras Convolutional Autoencoder (CAE) pipeline on the MVTec AD dataset
+# Example: just run-cae category="bottle" epochs=20
+run-cae *args:
+	pixi run --frozen -e dev python -m app.main cae {{args}}
 
 # Run model evaluations
 # Example: just evaluate keras --tuned
@@ -138,9 +125,25 @@ upload-data local_dir='data/raw/mvtec_ad':
 clean-notebooks:
 	find notebooks/ -type d -name ".ipynb_checkpoints" -exec rm -rf {} +
 
+# Run cognitive complexity analysis with Complexipy across the repository
+complexity:
+	uvx complexipy . --failed
+
+# Run local cognitive complexity analysis with Complexipy
+complexity-local:
+	uvx complexipy . --failed
+
+# Run CI cognitive complexity analysis with Complexipy
+complexity-ci:
+	uvx complexipy . --failed
+
 # Run the CI pipeline locally using GitHub 'act' tool
 act-ci:
 	act -W .github/workflows/ci.yml
+
+# Run cognitive complexity GitHub Actions workflow locally via act
+act-complexity:
+	act -j cognitive-complexity
 
 # Install the recommended VS Code extensions list
 install-extensions:

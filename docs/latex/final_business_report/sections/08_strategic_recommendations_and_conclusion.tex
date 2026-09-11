@@ -1,0 +1,8 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+In this report, we established a robust and economically calibrated anomaly detection platform for industrial computer vision. We demonstrated that the inspection threshold is a practical business decision, which we calibrated directly against the real financial consequences of false alarms and missed defects on the production line. A stripped fastener thread and a contaminated pharmaceutical tablet differ in their defect escape liability by orders of magnitude; we purposefully designed our platform to make this risk-tiered calibration simple, transparent, and mathematically sound.
+
+We built the underlying engineering architecture to execute this operational vision efficiently. We deployed a PatchCore engine with a frozen ResNet-18 backbone, delivering strong macro-average performance across diverse industrial categories without requiring complex model training on factory computers. We decoupled the coreset memory bank to accommodate raw material variations and ambient illumination drift in seconds, and we engineered high-resolution spatial explainability overlays to render every divert decision auditable by line-side quality inspectors. 
+
+Looking forward, we aim to extend this foundation to encompass multi-camera perspectives and continuous online learning, adapting to more complex multi-part assemblies without manual intervention. By systematically replacing arbitrary heuristics with transparent, economically grounded algorithms, we have successfully transformed automated visual quality assurance from an unpredictable engineering experiment into an auditable, deterministic, and highly reliable operational asset for the manufacturing industry.

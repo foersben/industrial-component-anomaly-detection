@@ -20,3 +20,4 @@ In this section, you will learn about:
 3. **[Open Knowledge Format (OKF)](open_knowledge_format.md):** How we structure repository documentation to serve as a machine-readable knowledge base.
 4. **[Linting & Type Safety (Ruff & Mypy)](linting_and_types.md):** How we use modern, high-performance static analysis tools to maintain a bug-free code environment.
 5. **[Data Validation (Pydantic)](data_validation.md):** How we enforce robust runtime type checking, schema parsing, and configuration validation.
+6. **[Architecture Transition](architecture_transition.md):** The rationale and design of transitioning from a decoupled FastAPI/Streamlit microservice model to a consolidated monolithic Streamlit runtime.
