@@ -205,7 +205,7 @@ def test_dinov2_runner_uses_shared_partitions_and_raw_evaluator(
     )
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.build_pipeline_from_configs", lambda _steps: [])
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.MVTecAD", lambda **_kwargs: FakeDataModule())
-    monkeypatch.setattr("app.pipelines.modelling.dino.engine._configure_patchcore_partitions", lambda *_args: None)
+    monkeypatch.setattr("app.pipelines.modelling.dino.engine.configure_anomalib_partitions", lambda *_args: None)
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.AnomalyDINO", fake_model)
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.Engine", FakeEngine)
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.extract_and_save_pr_metrics", fake_evaluate)

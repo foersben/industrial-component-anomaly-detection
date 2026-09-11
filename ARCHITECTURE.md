@@ -76,6 +76,8 @@ The codebase is organized into clear domain layers under `app/`:
   - Automated disk caching and hyperparameter study scripts (`optuna_study.py`).
 - **`dino/`**:
   - Unified vision foundation model family (DINOv2 and DINOv3) patch nearest-neighbor baselines with multi-layer position/density-aware scoring (`engine.py`, `v2.py`, `v3.py`, `enhanced.py`).
+- **`anomalib/`**:
+  - Shared Anomalib foundation utilities (`dataset.py`, `visualization.py`), providing canonical partition configuration, deterministic seeding, raw score multi-panel visualization, and heatmap overlay serialization across PatchCore and DINO pipelines.
 - **`autoencoder.py`**:
   - Classical PyTorch convolutional autoencoder baseline.
 - **`dummy_classifier.py`**:

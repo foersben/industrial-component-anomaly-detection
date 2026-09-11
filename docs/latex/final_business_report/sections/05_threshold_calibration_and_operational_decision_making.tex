@@ -1,0 +1,46 @@
+\section{Operational Threshold Calibration: The Anomaly Score as a Financial Dial}
+\label{sec:threshold_calibration}
+
+A pervasive failure mode in industrial computer vision deployments is the uncalibrated transfer of decision thresholds derived during laboratory model development directly onto the factory floor. In academic literature, algorithms are benchmarked using integrated area-under-the-curve metrics such as AUROC, PR-AUC, or AUPIMO. These metrics compress discriminatory capability across the entire operating spectrum into a single scalar. Whilst indispensable for offline algorithm selection -- resolving which mathematical architecture achieves superior feature separation between nominal and defective populations -- these metrics provide zero guidance for operational commissioning.
+
+An industrial quality gate does not execute a continuous characteristic curve; it executes an instantaneous binary divert decision. At any given conveyor cycle, a manufactured component is either passed downstream or diverted into a secondary quarantine buffer. The numerical threshold governing this decision represents the single most sensitive operational parameter in the facility, and it must be calibrated to minimise total economic loss rather than to maximise an academic abstraction.
+
+\subsection{The Operational Distinction Between AUPIMO and Decision Thresholds}
+
+The AUPIMO metric warrants explicit clarification, as its role is frequently misinterpreted by non-specialist stakeholders. AUPIMO integrates the per-image localisation overlap between predicted anomaly heatmaps and ground-truth defect contours strictly within the ultra-low false-positive rate window $\text{FPR} \in [10^{-5}, 10^{-4}]$. It constitutes a mathematically rigorous instrument for quantifying spatial localisation fidelity under extreme tolerance constraints, and it is rightly adopted as our primary metric for offline feature extractor selection. However, AUPIMO provides no threshold parameter for production execution. An algorithm exhibiting an outstanding AUPIMO of $0.603$ will fail commercially if coupled to an arbitrary operational operating point, whereas a model with an AUPIMO of $0.500$ calibrated precisely to the client's cost-of-quality matrix will deliver immediate economic value.
+
+By the same principle, pixel-level AUROC is categorically discarded as an operational metric. Given that conforming pixels comprise roughly $98.5\%$ of total inspection surface area, AUROC accumulates an overwhelming true-negative mass that inflates the metric score regardless of true defect sensitivity. While reported in Table~\ref{tab:paradigm_comparison} to ensure benchmark reproducibility, it exerts zero influence on operational threshold calibration.
+
+\subsection{The \texttt{fair-eval-v1} Protocol: Leakage-Free Calibration}
+
+The platform mandates an immutable, audit-compliant calibration protocol that enforces strict isolation between model development, threshold derivation, and final acceptance testing.
+
+For every component category, all available nominal training imagery is partitioned deterministically (seed 42) into an 85\% fitting partition, dedicated to coreset memory bank construction, and a 15\% normal validation partition, held out exclusively for statistical threshold calibration. Crucially, the official evaluation split (the test set) remains completely untouched and unseen throughout the entire fitting and calibration lifecycle. This strict partition enforces authentic commissioning conditions: in a live factory rollout, engineering teams possess access solely to nominal production samples, with defect examples remaining entirely unobserved prior to production deployment.
+
+The operational decision threshold $\tau$ is derived empirically from the score distribution generated across the held-out normal validation partition. Formally,
+
+\begin{equation}
+    \tau_{\alpha} = \mathrm{Quantile}_{1 - \alpha}\!\left(\{s_i \mid x_i \in \mathcal{D}_{\mathrm{val, normal}}\}\right),
+    \label{eq:threshold_quantile}
+\end{equation}
+
+where $\alpha$ denotes the plant's tolerable false-alarm budget (the Type I error ceiling). Specifying $\alpha = 0.005$ establishes an empirical threshold ensuring that $99.5\%$ of conforming components within the calibration population pass the gate without intervention; conversely, specifying $\alpha = 0.05$ accepts a 5\% pseudo-scrap rate to guarantee aggressive defect capture. As established in Section~\ref{sec:cost_model}, the parameter $\alpha$ is governed strictly by the client's financial cost ratio $\rho$ via Equation~\ref{eq:optimal_threshold}.
+
+\subsection{Standardised Risk-Tiered Operating Profiles}
+
+To operationalise this framework across diverse manufacturing sectors, the platform standardises three predefined risk tiers:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Tier 1: Life-Safety and High-Liability (e.g., Pharmaceuticals, Medical Devices, Critical Semiconductors):} Governed by an $F_2$-optimised calibration objective ($\alpha \approx 0.05$). This profile weights defect recall four times more heavily than precision, shifting the decision threshold into the nominal distribution tail. Every borderline component is diverted to manual audit, eliminating defect escapes at the expense of a controlled, quantified pseudo-scrap rate.
+    \item \textbf{Tier 2: Precision Industrial (e.g., Automotive Powertrain, Bearing Assemblies, Structural Cables):} Governed by a balanced $F_1$-optimised objective ($\alpha \approx 0.01$). This profile establishes a cost-neutral equilibrium between Type I and Type II errors, appropriate for mid-tier risk environments where defect escapes incur rework rather than total product recalls.
+    \item \textbf{Tier 3: High-Throughput Commodity (e.g., Threaded Fasteners, Stamped Washers, Continuous Zippers):} Governed by an $F_{0.5}$-optimised objective ($\alpha \approx 0.002$). This profile penalises false alarms twice as heavily as defect escapes, preventing pseudo-scrap from choking downstream automated packaging equipment while reliably catching severe structural anomalies.
+\end{itemize}
+
+Figure~\ref{fig:threshold_calibration} depicts the empirical anomaly score distributions across normal validation and defective evaluation sets, illustrating how the physical separation between distributions dictates achievable defect containment across the three risk tiers.
+
+\begin{figure}[tp]
+    \centering
+    \placeholder{2.2cm}{Two-panel or multi-panel figure showing empirical anomaly score distributions. Left panel (or top row): kernel density estimates (KDE) or histograms of image-level anomaly scores for normal validation images (shaded in blue/grey) and anomalous test images (shaded in red/orange) for a low-difficulty category (e.g., Leather or Bottle). Right panel (or bottom row): same for a high-difficulty category (e.g., Screw or Cable), where the distributions substantially overlap. Vertical dashed lines mark the three operational threshold tiers ($\tau_{0.002}$, $\tau_{0.01}$, $\tau_{0.05}$). The figure should make visually clear that threshold choice directly controls the precision-recall trade-off and that the achievable recall depends on the degree of score distribution separation.}
+    \caption{Empirical anomaly score distributions on the normal validation partition (blue) and the anomalous evaluation split (red) for representative categories. Vertical dashed lines mark the three operational threshold tiers calibrated under the \texttt{fair-eval-v1} protocol. Categories exhibiting sharp distribution separation (e.g., Leather) permit aggressive thresholds that attain zero escape with negligible false alarms; categories with overlapping distributions (e.g., Screw) necessitate explicit economic optimisation to establish the operational operating point.}
+    \label{fig:threshold_calibration}
+\end{figure}

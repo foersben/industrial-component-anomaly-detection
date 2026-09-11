@@ -1,0 +1,53 @@
+\section{Empirical Performance and Benchmark Results}
+\label{sec:empirical_results}
+
+Under the formal \texttt{fair-eval-v1} protocol, exhaustive empirical evaluations were executed across all 15 MVTec AD categories, with operational decision thresholds calibrated exclusively on held-out normal validation partitions. The results documented below characterise the production-grade reference architecture: PatchCore utilising a frozen ResNet-18 backbone, representing the optimal convergence of defect discriminability, deterministic edge latency, and hardware efficiency.
+
+\subsection{Category-Level Performance Breakdown}
+
+Table~\ref{tab:category_results} provides the disaggregated performance across all 15 industrial categories. Evaluated under the default balanced $F_1$ threshold, the platform achieves a macro-average Image $F_1$-score of $0.929$, an Image PR-AUC of $0.988$, and a pixel-level AUPIMO of $0.603$. Defect recall across the benchmark averages $0.928$ with an average precision of $0.940$. When operational risk-tier adjustments are applied at line commissioning, these operating points shift deterministically in accordance with the client's cost-of-quality model.
+
+\begin{table}[bp]
+\centering
+\caption{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under the \texttt{fair-eval-v1} protocol. Decision thresholds are calibrated strictly from the 15\% normal validation partition; evaluation sets remained completely unobserved during development.}
+\label{tab:category_results}
+\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Category} & \textbf{Image $F_1$} & \textbf{Recall} & \textbf{Precision} & \textbf{PR-AUC} & \textbf{AUPIMO} \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{Discrete Structural Objects}} \\
+Bottle     & 0.962 & 1.000 & 0.926 & 1.000 & 0.982 \\
+Cable      & 0.933 & 0.913 & 0.955 & 0.985 & 0.511 \\
+Capsule    & 0.982 & 0.982 & 0.982 & 0.996 & 0.563 \\
+Hazelnut   & 0.971 & 0.943 & 1.000 & 0.999 & 0.863 \\
+Metal Nut  & 0.963 & 0.989 & 0.939 & 0.998 & 0.760 \\
+Pill       & 0.891 & 0.816 & 0.983 & 0.982 & 0.293 \\
+Screw      & 0.796 & 0.672 & 0.976 & 0.983 & 0.380 \\
+Toothbrush & 0.923 & 1.000 & 0.857 & 0.949 & 0.414 \\
+Transistor & 0.916 & 0.950 & 0.884 & 0.976 & 0.427 \\
+Zipper     & 0.962 & 0.958 & 0.966 & 0.985 & 0.251 \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{Continuous Textures}} \\
+Carpet     & 0.926 & 0.989 & 0.871 & 0.994 & 0.796 \\
+Grid       & 0.916 & 0.860 & 0.980 & 0.986 & 0.506 \\
+Leather    & 0.898 & 1.000 & 0.814 & 0.998 & 0.972 \\
+Tile       & 0.951 & 0.917 & 0.987 & 0.993 & 0.685 \\
+Wood       & 0.952 & 0.983 & 0.922 & 0.995 & 0.642 \\
+\midrule
+\textbf{Macro Average} & \textbf{0.929} & \textbf{0.928} & \textbf{0.940} & \textbf{0.988} & \textbf{0.603} \\
+\bottomrule
+\end{tabular}%
+\end{table}
+
+\subsection{Engineering Analysis of Boundary Categories}
+
+The two categories presenting the most pronounced economic asymmetry -- pharmaceutical tablets (\emph{Pill}) and threaded fasteners (\emph{Screw}) -- represent opposing poles of the empirical performance spectrum and warrant detailed engineering scrutiny.
+
+Under balanced default calibration, the \emph{Pill} category attains an Image $F_1$-score of $0.891$ and PR-AUC of $0.982$, with default recall at $0.816$. In a life-critical pharmaceutical facility, an $18.4\%$ defect escape rate is legally and commercially intolerable. However, when configured under Tier 1 calibration ($F_2$-optimised objective), the operational threshold is adjusted to capture the nominal tail: defect recall reaches $1.000$ whilst maintaining precision above $89\%$. In operational terms, every defective tablet within the evaluation split is intercepted and diverted to secondary inspection, whilst fewer than one in nine diverted units constitutes a false alarm. This operational profile fulfills strict regulatory compliance (such as GMP and FDA inspection mandates) whilst bounding the manual secondary audit volume to a commercially viable overhead.
+
+Conversely, the \emph{Screw} category presents the most severe technical challenge across the entire benchmark, recording an Image $F_1$-score of $0.796$ and AUPIMO of $0.380$. This performance ceiling is rooted in component physics: screws are acquired under arbitrary rotational orientations in single-channel greyscale, and anomalous manifestations -- such as microscopic thread swarf, minor pitch irregularities, or minute tip shears -- produce feature embeddings that overlap substantially with the nominal distribution. Because ResNet-18 residual features operate across receptive fields designed for natural imagery, they lack native inductive bias for sub-millimetre helical thread geometries. Crucially, when evaluating pixel-level localisation on \emph{Screw}, absolute precision values must be contextualised against the extreme class imbalance: a trivial majority-class (always-nominal) classifier yields a Pixel Average Precision of merely $0.0025$, reflecting the exact random chance baseline for sub-millimetre thread defects. Against this no-skill reference, the non-learned baseline achieves a $5\times$ lift over chance ($0.0126$), whilst the PatchCore feature-matching engine achieves over a $20\times$ lift over chance. Under Tier 3 calibration ($F_{0.5}$ objective), the system prioritises precision ($0.976$), ensuring that automated driving stations are not plagued by pseudo-scrap whilst reliably catching catastrophic structural failures (such as sheared shanks or absent threading). Given the bounded commercial cost of single fastener escapes, this trade-off is economically optimal.
+
+\subsection{Texture Category Performance and Spatial Localisation Quality}
+
+Continuous texture categories systematically record the highest spatial localisation fidelity under the AUPIMO metric. \emph{Leather} ($0.972$), \emph{Carpet} ($0.796$), and \emph{Tile} ($0.685$) benefit from stationary surface statistics, generating intense patch-distance contrast between nominal weave patterns and localised structural disruptions (such as surface cuts or voids). Even categories exhibiting higher natural stochasticity -- such as \emph{Wood} ($0.642$) and \emph{Grid} ($0.506$) -- maintain Image PR-AUC values exceeding $0.985$. This demonstrates that even when intricate material grain marginally broadens localised heatmaps, image-level classification and divert reliability remain exceptionally robust.

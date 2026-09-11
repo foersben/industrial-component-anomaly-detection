@@ -1,30 +1,40 @@
-"""Reconstruction Error Heatmap explainability for the Keras CAE.
+"""Reconstruction error heatmaps and explainability overlays for autoencoder models.
 
-Why not Grad-CAM?
-=================
-Grad-CAM works by tracing the gradient of the anomaly score back to the last spatial
-convolutional layer. This works perfectly for models with Global Average Pooling.
-However, our Keras CAE uses a `Flatten()` followed by a `Dense(128)` bottleneck layer.
-The Dense layer completely destroys spatial locality — every pixel in the reconstructed
-image depends on every feature in the encoder's output. When we backpropagate through
-it, the gradients pool indiscriminately, resulting in a giant, useless blob in the
-center of the image regardless of where the actual defect is.
+This module provides pixel-level reconstruction error calculation and visual
+overlay generation for autoencoder-based anomaly detection models (such as the
+fully convolutional Keras CAE and PyTorch Autoencoder).
 
-The Right Tool: Pixel Reconstruction Error
-==========================================
-For an Autoencoder, we don't need to guess which features caused the anomaly using
-gradients. The Autoencoder *directly outputs* the pixel-wise reconstruction.
-The anomaly score is exactly derived from the (MSE) difference between the input image
-and the reconstruction.
+Why Reconstruction Error Over Grad-CAM:
+    Grad-CAM is an attribution technique originally designed for discriminative
+    classification networks, where a scalar class score is backpropagated to
+    intermediate convolutional feature maps to highlight the receptive fields
+    influencing a decision. For autoencoder anomaly detection, direct pixel-wise
+    reconstruction error is mathematically and practically superior:
 
-Therefore, the exact, mathematically faithful "heatmap" of the anomaly is simply the
-squared error map itself. We just apply a slight Gaussian blur to make it visually
-interpretable (smooth like Grad-CAM) and blend it over the original image.
+    1. Native Generative Objective:
+       Autoencoders are trained exclusively on normal patterns to reconstruct
+       nominal image geometry and texture. The anomaly signal is fundamentally
+       defined as the residual between the original image and its reconstruction
+       (e.g., squared pixel error or structural dissimilarity). Because the
+       decoder yields a full-resolution spatial reconstruction directly, no
+       gradient attribution proxy is needed.
+    2. Resolution and Spatial Locality:
+       Backpropagating an aggregated scalar reconstruction loss via Grad-CAM
+       pools gradients into coarse bottleneck feature maps (e.g., H/16 x W/16),
+       yielding blurry, low-resolution saliency maps that require bilinear
+       upsampling and can suffer from gradient saturation. In contrast, the
+       per-pixel residual map preserves fine-grained defect contours at full
+       spatial resolution without gradient artifacts.
 
-Module Contents
----------------
-- ``compute_error_heatmap``: Main function — returns heatmap for one image.
-- ``overlay_heatmap``: Blends a heatmap onto an original image with a colourmap.
+    To produce smooth, visually interpretable overlays analogous to Grad-CAM,
+    the raw per-pixel reconstruction residual is regularized with a gentle
+    Gaussian blur (default sigma=3.0), percentile-clipped to suppress outliers,
+    and blended over the original image using a perceptual colormap.
+
+Typical usage example:
+    error_dict = compute_error_heatmap(model, input_image, sigma=3.0)
+    overlay = overlay_heatmap(original_uint8_image, error_dict["heatmap"])
+    gt_overlay = overlay_ground_truth(overlay, binary_ground_truth_mask)
 """
 
 from __future__ import annotations

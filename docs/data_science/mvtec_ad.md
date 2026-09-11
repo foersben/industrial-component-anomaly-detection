@@ -157,7 +157,6 @@ To avoid choosing an arbitrary threshold $t$ during benchmarking, performance is
     Plots $TPR(t)$ (Recall) on the x-axis against $PRC(t)$ (Precision) on the y-axis. It is highly sensitive to class imbalance, making it a strict measure of false-positive containment.
 * **AUPRO (Area Under the Per-Region Overlap Curve - Crucial Contribution):**
     Plots the Set $FPR(t)$ on the x-axis against $PRO(t)$ on the y-axis.
-
     * **Logistical Integration Bound:** In a real factory, triggering a false positive rate above $30\%$ is unacceptable (it would mean rejecting nearly a third of all normal products). Therefore, the AUPRO is integrated only up to a strict False Positive Rate threshold (typically $FPR \le 0.3$) and normalized back to $[0, 1]$:
 
         $$\text{AUPRO} = \frac{1}{0.3} \int_0^{0.3} PRO(FPR^{-1}(f)) \, df$$

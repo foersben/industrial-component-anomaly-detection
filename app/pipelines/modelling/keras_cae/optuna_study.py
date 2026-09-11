@@ -85,7 +85,20 @@ def objective(trial: optuna.Trial, category_name: str, data_root: str = "data/ra
 
 
 def run_study(category_name: str, n_trials: int = 15, data_root: str = "data/raw/mvtec_ad") -> dict[str, Any]:
-    """Run the Optuna study and save the best parameters."""
+    """Run the Optuna study and save the best parameters.
+
+    This function uses Optuna to find the best hyperparameters for the Keras CAE model
+    for a specific MVTec AD category. It uses the fair-eval-v1 protocol to evaluate the
+    model and prunes trials that are unlikely to yield good results.
+
+    Args:
+        category_name: MVTec category name to optimize.
+        n_trials: Number of trials to run (default: 15).
+        data_root: Path to the MVTec AD dataset.
+
+    Returns:
+        Best parameters dictionary.
+    """
     study_name = f"keras_cae_{category_name}"
 
     storage_path = Path("data/hyperparameters/keras_cae_optuna.db")

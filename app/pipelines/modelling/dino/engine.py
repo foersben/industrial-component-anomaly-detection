@@ -19,6 +19,11 @@ from app.pipelines.evaluation.metrics import (
     AUPIMO_FPR_BOUNDS,
     fair_metric_evidence,
 )
+from app.pipelines.modelling.anomalib.dataset import (
+    configure_anomalib_partitions,
+    seed_anomalib_run,
+)
+from app.pipelines.modelling.anomalib.visualization import RawScoreImageVisualizer
 from app.pipelines.modelling.dino.artifacts import (
     load_completed_category_result,
     persist_dino_artifacts_and_format,
@@ -34,17 +39,16 @@ from app.pipelines.modelling.patchcore import (
     EvaluationArtifacts,
     extract_and_save_pr_metrics,
 )
-from app.pipelines.modelling.patchcore.dataset import (
-    _configure_patchcore_partitions,
-    _seed_patchcore_run,
-)
-from app.pipelines.modelling.patchcore.registry import _normalize_preprocessing_steps
-from app.pipelines.modelling.patchcore.visualization import (
-    _RawScoreImageVisualizer,
-)
 from app.pipelines.preprocessing.adapter import PreprocessingTransformAdapter
 from app.pipelines.preprocessing.base import PreprocessingPipeline
-from app.pipelines.preprocessing.factory import build_pipeline_from_configs
+from app.pipelines.preprocessing.factory import (
+    build_pipeline_from_configs,
+    normalize_preprocessing_steps,
+)
+
+# Backwards compatibility aliases
+_configure_patchcore_partitions = configure_anomalib_partitions
+_seed_patchcore_run = seed_anomalib_run
 
 METRIC_PATHS: dict[str, tuple[str, str]] = {
     "image_f1": ("image_level", "f1_score"),
@@ -199,7 +203,7 @@ def instantiate_dino_model(
         "coreset_subsampling": False,
         "post_processor": False,
         "evaluator": False,
-        "visualizer": _RawScoreImageVisualizer(),
+        "visualizer": RawScoreImageVisualizer(),
     }
     if model_generation == "dinov3":
         model_kwargs["pre_processor"] = AnomalyDINO.configure_pre_processor((input_size, input_size))
@@ -294,7 +298,7 @@ def run_dino_category(
         raw_prep_list: list[dict[str, Any]] = []
     else:
         proc_pipeline = build_pipeline_from_configs(steps_config)
-        raw_prep_list = _normalize_preprocessing_steps(steps_config)
+        raw_prep_list = normalize_preprocessing_steps(steps_config)
 
     active_manifest = manifest if manifest is not None else build_mvtec_manifest(data_root)
     fair_split = build_fair_evaluation_split(active_manifest, category)
@@ -339,13 +343,13 @@ def run_dino_category(
         val_split_mode="none",
     )
     transform_adapter = PreprocessingTransformAdapter(proc_pipeline)
-    _configure_patchcore_partitions(
+    configure_anomalib_partitions(
         datamodule,
         fair_split,
         transform_adapter if len(proc_pipeline) > 0 else None,
     )
 
-    _seed_patchcore_run(model_seed)
+    seed_anomalib_run(model_seed)
     model = instantiate_dino_model(
         num_neighbors=num_neighbors,
         encoder_name=encoder_name,
