@@ -68,10 +68,10 @@ def test_dinov3_all_category_dispatch_reports_macro_averages(
     fake_manifest = object()
     monkeypatch.setattr("app.pipelines.modelling.dino.engine.build_mvtec_manifest", lambda _root: fake_manifest)
 
-    result = run_dinov3_baseline(category="all", registry_base=tmp_path)
+    result = run_dinov3_baseline(category="all", registry_base=tmp_path, reuse_complete=False)
 
     assert list(result["categories"]) == list(MVTEC_CATEGORIES)
-    assert all(call["reuse_complete"] is True for call in calls)
+    assert all(call["reuse_complete"] is False for call in calls)
     assert all(call["manifest"] is fake_manifest for call in calls)
     assert all(not category_result["heatmap_overlays"] for category_result in result["categories"].values())
     assert result["macro_average"]["image_f1"] == pytest.approx(8 / 15)

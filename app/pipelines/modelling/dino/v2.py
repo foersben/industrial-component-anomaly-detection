@@ -32,6 +32,7 @@ def run_dinov2_baseline(
     position_radius: int = 1,
     spatial_weight: float = 0.05,
     density_neighbors: int = 5,
+    reuse_complete: bool = False,
 ) -> BaselineResult | AllCategoriesResult:
     """Run one MVTec category or all canonical categories with frozen DINOv2.
 
@@ -55,6 +56,7 @@ def run_dinov2_baseline(
         position_radius: Patch search radius for enhanced spatial matching.
         spatial_weight: Penalty weight for spatial distance in enhanced scoring.
         density_neighbors: Number of neighbours for local density estimation.
+        reuse_complete: Return saved evaluation artifacts for an exact cache hit.
 
     Returns:
         BaselineResult for a single category, or AllCategoriesResult for 'all'.
@@ -77,6 +79,7 @@ def run_dinov2_baseline(
             position_radius=position_radius,
             spatial_weight=spatial_weight,
             density_neighbors=density_neighbors,
+            reuse_complete=reuse_complete,
             model_generation="dinov2",
             model_name="DINOv2",
             input_size=DINO_V2_INPUT_SIZE,
@@ -104,6 +107,7 @@ def run_dinov2_baseline(
         input_size=DINO_V2_INPUT_SIZE,
         patch_size=DINO_V2_PATCH_SIZE,
         batch_size=DINO_V2_BATCH_SIZE,
+        reuse_complete=reuse_complete,
         save_summary_files=False,
     )
 

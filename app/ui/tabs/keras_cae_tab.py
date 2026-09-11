@@ -504,6 +504,8 @@ def _execute_and_display_cae(
             return
 
     _render_evaluation_summary(results)
+    st.session_state["_kcae_displayed_results"] = results
+    st.session_state["_kcae_displayed_signature"] = _cae_display_signature(cfg)
     st.caption(
         f"Adaptive Threshold: `{results.get('threshold', 0.0):.6f}` | "
         f"Final Training Loss: `{results.get('final_train_loss', 0.0):.6f}`"
@@ -533,6 +535,18 @@ def render_keras_cae_tab() -> None:
 
     cfg, run_clicked = _render_cae_config_controls()
     if not (load_selected_clicked or run_clicked):
+        cached_results = st.session_state.get("_kcae_displayed_results")
+        if (
+            isinstance(cached_results, dict)
+            and st.session_state.get("_kcae_displayed_signature") == _cae_display_signature(cfg)
+        ):
+            _render_evaluation_summary(cached_results)
+            st.caption(
+                f"Adaptive Threshold: `{cached_results.get('threshold', 0.0):.6f}` | "
+                f"Final Training Loss: `{cached_results.get('final_train_loss', 0.0):.6f}`"
+            )
+            _render_cae_loss_history(cached_results.get("loss_history"))
+            _render_heatmap_explorer(cached_results)
         return
 
     _execute_and_display_cae(
@@ -541,3 +555,9 @@ def render_keras_cae_tab() -> None:
         selected_meta=selected_meta,
         load_selected_clicked=load_selected_clicked,
     )
+
+
+def _cae_display_signature(cfg: dict[str, Any]) -> str:
+    """Return a stable identity for the currently visible CAE controls."""
+    visible_cfg = {key: value for key, value in cfg.items() if key != "force_retrain"}
+    return json.dumps(visible_cfg, sort_keys=True, separators=(",", ":"))

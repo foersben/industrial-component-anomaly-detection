@@ -3,6 +3,7 @@
 import gc
 import hashlib
 import json
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -311,7 +312,7 @@ def run_dino_category(
         "pixel_threshold_quantile": PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     }
 
-    _identity, model_hash, enhanced_scorer = build_dino_identity_and_hash(
+    _identity, configuration_hash, enhanced_scorer = build_dino_identity_and_hash(
         category=category,
         encoder_name=encoder_name,
         num_neighbors=num_neighbors,
@@ -327,13 +328,27 @@ def run_dino_category(
         density_neighbors=density_neighbors,
     )
 
-    base_dir = Path(registry_base) / model_hash
-    base_dir.mkdir(parents=True, exist_ok=True)
+    active_hash = configuration_hash
+    base_dir = Path(registry_base) / active_hash
     if reuse_complete:
-        completed_result = load_completed_category_result(base_dir, category, model_hash, run_heatmap)
+        completed_result = load_completed_category_result(
+            base_dir, category, active_hash, run_heatmap, load_heatmaps=False
+        )
         if completed_result is not None:
-            logger.info("Reusing complete %s result for %s (Hash: %s)", model_name, category, model_hash)
+            logger.info("Reusing complete %s result for %s (Hash: %s)", model_name, category, active_hash)
             return completed_result
+
+    if base_dir.exists():
+        archived_hash = hashlib.sha256(f"{configuration_hash}:{time.time_ns()}".encode()).hexdigest()[:12]
+        archived_dir = Path(registry_base) / archived_hash
+        base_dir.rename(archived_dir)
+        archived_metadata_path = archived_dir / "metadata.json"
+        if archived_metadata_path.is_file():
+            archived_metadata = json.loads(archived_metadata_path.read_text(encoding="utf-8"))
+            archived_metadata["hash"] = archived_hash
+            archived_metadata["configuration_hash"] = configuration_hash
+            archived_metadata_path.write_text(json.dumps(archived_metadata, indent=4), encoding="utf-8")
+    base_dir.mkdir(parents=True)
 
     datamodule = MVTecAD(
         root=data_root,
@@ -362,13 +377,15 @@ def run_dino_category(
         spatial_weight=spatial_weight,
         density_neighbors=density_neighbors,
     )
+    if isinstance(model.visualizer, RawScoreImageVisualizer):
+        model.visualizer.output_dir = base_dir / "four_panel_images"
 
     engine = Engine(accelerator="auto", devices=1, deterministic=True)
     train_dataloader = datamodule.train_dataloader()
     validation_dataloader = datamodule.val_dataloader()
     test_dataloader = datamodule.test_dataloader()
 
-    logger.info("Building %s normal patch bank for %s (Hash: %s)...", model_name, category, model_hash)
+    logger.info("Building %s normal patch bank for %s (Hash: %s)...", model_name, category, active_hash)
     engine.fit(model, train_dataloaders=train_dataloader)
     memory_bank = getattr(model.model, "memory_bank", None)
     if memory_bank is not None and hasattr(memory_bank, "numel") and memory_bank.numel() == 0:
@@ -419,7 +436,8 @@ def run_dino_category(
     return persist_dino_artifacts_and_format(
         category=category,
         base_dir=base_dir,
-        model_hash=model_hash,
+        model_hash=active_hash,
+        configuration_hash=configuration_hash,
         model_generation=model_generation,
         variant=variant,
         encoder_name=encoder_name,
@@ -472,6 +490,7 @@ def run_dino_all_categories(
     input_size: int,
     patch_size: int,
     batch_size: int,
+    reuse_complete: bool = False,
     save_summary_files: bool = False,
 ) -> AllCategoriesResult:
     """Orchestrate sequential evaluation across all canonical MVTec categories.
@@ -496,6 +515,7 @@ def run_dino_all_categories(
         input_size: Square model input dimension.
         patch_size: Encoder patch dimension.
         batch_size: DataLoader batch size.
+        reuse_complete: Reuse complete artifacts for each category.
         save_summary_files: If True, writes summary.json and category_metrics.csv.
 
     Returns:
@@ -516,7 +536,7 @@ def run_dino_all_categories(
                 run_heatmap=run_heatmap,
                 registry_base=registry_base,
                 model_seed=model_seed,
-                reuse_complete=True,
+                reuse_complete=reuse_complete,
                 variant=variant,
                 feature_layers=feature_layers,
                 position_radius=position_radius,

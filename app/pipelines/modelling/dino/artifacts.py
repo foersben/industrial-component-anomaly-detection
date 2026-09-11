@@ -17,6 +17,7 @@ from app.pipelines.evaluation.metrics import (
     PIXEL_METRICS_VERSION,
 )
 from app.pipelines.modelling.anomalib.visualization import (
+    load_heatmap_overlays,
     print_anomalib_results_table,
     save_heatmap_overlays,
 )
@@ -37,6 +38,7 @@ def load_completed_category_result(
     category: str,
     model_hash: str,
     run_heatmap: bool,
+    load_heatmaps: bool = True,
 ) -> BaselineResult | None:
     """Load a complete category result without retaining saved heatmap pixels.
 
@@ -45,6 +47,7 @@ def load_completed_category_result(
         category: MVTec category expected in the metadata.
         model_hash: Unique SHA-256 fingerprint expected in the metadata.
         run_heatmap: Whether heatmap overlays are required to declare completion.
+        load_heatmaps: Whether to deserialize heatmap pixels into the returned result.
 
     Returns:
         Reconstituted BaselineResult if complete artifacts exist, or None.
@@ -62,6 +65,7 @@ def load_completed_category_result(
         if run_heatmap and (not heatmap_path or not (base_dir / str(heatmap_path)).is_file()):
             return None
 
+        heatmap_overlays = load_heatmap_overlays(base_dir / str(heatmap_path)) if heatmap_path and load_heatmaps else {}
         raw_results = metadata["raw_results"]
         result = format_results(
             test_results=[raw_results],
@@ -78,7 +82,7 @@ def load_completed_category_result(
             anomaly_map_min=float(metadata["anomaly_map_min"]),
             anomaly_map_max=float(metadata["anomaly_map_max"]),
             anomaly_map_range=float(metadata["anomaly_map_range"]),
-            heatmap_overlays={},
+            heatmap_overlays=heatmap_overlays,
             anomalous_indices=list(metadata.get("anomalous_indices", [])),
             preprocessing_steps=list(metadata.get("preprocessing_steps", [])),
             hyperparameters=dict(metadata.get("hyperparameters", {})),
@@ -101,6 +105,7 @@ def persist_dino_artifacts_and_format(
     category: str,
     base_dir: Path,
     model_hash: str,
+    configuration_hash: str,
     model_generation: Literal["dinov2", "dinov3"],
     variant: DINOVariant,
     encoder_name: str,
@@ -120,7 +125,8 @@ def persist_dino_artifacts_and_format(
     Args:
         category: MVTec category evaluated.
         base_dir: Base directory where artifacts are saved.
-        model_hash: 12-character unique model hash string.
+        model_hash: Unique run hash string.
+        configuration_hash: Stable hash for equivalent model configurations.
         model_generation: Encoder architecture family.
         variant: Scorer variant ('baseline' or 'enhanced').
         encoder_name: Model backbone identifier.
@@ -151,8 +157,10 @@ def persist_dino_artifacts_and_format(
     print_anomalib_results_table(raw_results)
 
     heatmap_archive = save_heatmap_overlays(artifacts.heatmap_overlays, base_dir / "heatmap_overlays.npz")
+    four_panel_dir = base_dir / "four_panel_images"
     metadata = {
         "hash": model_hash,
+        "configuration_hash": configuration_hash,
         "model_type": f"{model_generation}_enhanced_knn" if variant == "enhanced" else f"{model_generation}_knn",
         "model_generation": model_generation,
         "category": category,
@@ -194,6 +202,7 @@ def persist_dino_artifacts_and_format(
         "anomaly_map_max": artifacts.pixel_metrics.anomaly_map_max,
         "anomaly_map_range": artifacts.pixel_metrics.anomaly_map_range,
         "heatmap_overlays_path": heatmap_archive.name if heatmap_archive is not None else None,
+        "four_panel_images_path": four_panel_dir.name if four_panel_dir.is_dir() else None,
         "anomalous_indices": artifacts.anomalous_indices,
         "raw_results": raw_results,
         "timestamp": datetime.now(UTC).isoformat(),
