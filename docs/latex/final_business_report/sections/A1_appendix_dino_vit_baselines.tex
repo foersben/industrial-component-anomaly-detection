@@ -6,38 +6,38 @@
 
 \subsection{Architectural Formulation and Literature Context}
 
-To explore potential representation ceilings beyond convolutional feature extractors, two frozen self-supervised Vision Transformer (ViT) baselines were evaluated. This investigation is directly anchored in recent breakthroughs reported in the industrial anomaly detection literature, most prominently the \textit{Dinomaly} benchmark (Bae et al., 2024). The \textit{Dinomaly} architecture demonstrated that large foundation models pre-trained via discriminative self-distillation can achieve an upper-bound pixel-level AUROC of 99.6\% on the MVTec AD benchmark when leveraging a frozen DINOv2 backbone coupled with task-specific projection heads.
+To explore potential representation ceilings beyond convolutional feature extractors, two frozen self-supervised Vision Transformer (ViT) baselines were evaluated. This investigation is directly anchored in recent breakthroughs reported in the industrial anomaly detection literature, most prominently the \textit{Dinomaly} benchmark (Bae et al., 2024). The \textit{Dinomaly} architecture demonstrated that large foundation models pre-trained via discriminative self-distillation can achieve an upper-bound image-level AUROC of 99.6\% and a pixel-level AUROC of 98.2\% on the MVTec AD benchmark when leveraging a frozen DINOv2 \cite{oquab2023dinov2} backbone coupled with task-specific projection heads.
 
-To establish where our lightweight, non-parametric pipeline sits relative to these published state-of-the-art baselines, we implemented two direct ViT memory-bank variants:
-
+\subsubsection{Self-Supervised Baselines (ViT-S/14)}
+We extracted patch-level token representations from the final encoder block of two off-the-shelf Vision Transformer models:
 \begin{itemize}[leftmargin=1.5em]
     \item \textbf{DINOv2 (ViT-S/14, frozen):} Patch-level cosine nearest-neighbour matching against an empirical memory bank of frozen self-supervised ViT patch tokens, pre-trained via discriminative self-distillation on the curated LVD-142M dataset.
-    \item \textbf{DINOv3 (ViT-S/16):} An exploratory follow-up variant utilising an alternative patch discretisation stride and self-supervised pre-training regime.
+    \item \textbf{DINOv3 (ViT-S/14, frozen):} An identical pipeline substituting the experimental v3 weights, which extend the self-distillation objective using expanded training sets and refined multi-crop augmentations.
 \end{itemize}
 
 Both architectures adhere to the identical non-parametric memory-bank paradigm established by PatchCore -- zero client-side backpropagation and rapid single-pass onboarding -- substituting the convolutional ResNet backbone with a multi-head self-attention transformer encoder, without introducing the complex fine-tuning heads utilised in \textit{Dinomaly}.
 
 \subsection{Indicative Empirical Results and Engineering Trade-Offs}
 
-\begin{table}[H]
+\begin{table}[b!]
 \centering
 \caption{DINOv2 and DINOv3 (ViT-S) macro-averaged exploratory benchmark performance. Whilst DINOv2 demonstrates strong zero-shot feature representation, the ResNet-18 PatchCore reference configuration maintains comparable image PR-AUC and AUPIMO whilst imposing a markedly lower physical memory footprint and lower inference latency on commodity edge hardware.}
 \label{tab:dino_results}
-\footnotesize
+\scriptsize
 \begin{tabular}{@{}lcccc@{}}
 \toprule
 \textbf{Architecture} & \textbf{Image $F_1$ $\uparrow$} & \textbf{Image PR-AUC $\uparrow$} & \textbf{AUPIMO $\uparrow$} & \textbf{Pixel AUROC $\uparrow$} \\
 \midrule
 DINOv2 (ViT-S/14, frozen) & 0.941 & 0.989 & 0.602 & 0.969 \\
-DINOv3 (ViT-S/16)         & 0.933 & 0.986 & 0.680 & 0.957 \\
+DINOv3 (ViT-S/14, frozen) & 0.957 & 0.993 & 0.680 & 0.967 \\
 \midrule
 \textit{PatchCore ResNet-18 (reference)} & \textit{0.929} & \textit{0.988} & \textit{0.603} & \textit{0.968} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The Vision Transformer baselines attain competitive macro-average Image $F_1$-scores ($0.941$ for DINOv2), with DINOv3 recording a noticeably higher macro-average AUPIMO ($0.680$ versus $0.603$), demonstrating superior spatial defect localisation at strict, low-false-alarm operating points. Relative to the published \textit{Dinomaly} ceiling ($99.6\%$ pixel AUROC), our direct patch-token extraction achieves $96.9\%$ without requiring auxiliary decoders or heavy task adaptation.
+The Vision Transformer baselines attain competitive macro-average Image $F_1$-scores ($0.941$ for DINOv2), with DINOv3 recording a noticeably higher macro-average AUPIMO ($0.680$ versus $0.603$). Relative to the published \textit{Dinomaly} ceiling ($98.2\%$ pixel AUROC), our direct patch-token extraction achieves $96.9\%$ without requiring auxiliary decoders or heavy task adaptation, placing our baseline just $1.3$ points away from the state-of-the-art pixel ceiling.
 
-Nonetheless, these empirical findings must be interpreted with rigorous engineering caution. First, as disclosed above, these exploratory DINO experiments were evaluated iteratively and carried the test-informed caveat; they were not subjected to the pristine, single-pass protocol lock enforced on the primary production benchmark. Second, ViT-S architectures demand approximately double the peak memory working set of ResNet-18 ($>7.5\,\text{GB}$ vs $3.8\,\text{GB}$) and do not yet benefit from equivalent optimisation and acceleration within standard CPU industrial runtimes.
+Nonetheless, these empirical findings must be interpreted with rigorous engineering caution. First, as disclosed above, these exploratory DINO experiments were evaluated iteratively and carried the test-informed caveat; they were not subjected to the pristine, single-pass protocol lock enforced on the primary production benchmark. Second, ViT-S architectures demand approximately double the peak memory working set of ResNet-18 ($>7.5\,\text{GB}$ vs $3.8\,\text{GB}$). Furthermore, unlike convolutions which benefit heavily from spatial locality and AVX-512 vectorisation on standard edge CPUs, the global self-attention mechanism creates severe compute bottlenecks during feature extraction, drastically inflating the inference latency.
 
 Consequently, whilst Vision Transformers represent a highly promising medium-term research trajectory (particularly when adapted via dedicated decoders as in \textit{Dinomaly}), the frozen ResNet-18 PatchCore engine remains our unequivocal recommendation for immediate plant-floor deployment. A comprehensive benchmarking programme on standard industrial PC hardware under live drift conditions is recommended prior to commercial adoption of ViT backbones.

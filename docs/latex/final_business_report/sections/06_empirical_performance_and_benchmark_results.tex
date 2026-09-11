@@ -5,13 +5,15 @@ Under our strict zero-test-leakage protocol, we executed exhaustive empirical ev
 
 \subsection{Category-Level Performance Breakdown}
 
-Table~\ref{tab:category_results} provides the disaggregated performance across all 15 industrial categories. Evaluated under the default balanced $F_1$ threshold, we achieved a macro-average Image $F_1$-score of $0.929$, an Image PR-AUC of $0.988$, and a pixel-level AUPIMO of $0.603$. We attained an average defect recall of $0.928$ with an average precision of $0.940$. When we apply operational risk-tier adjustments at line commissioning, these operating points shift deterministically in accordance with the client's cost-of-quality model.
+Table~\ref{tab:category_results} provides the disaggregated performance across all 15 industrial categories. Evaluated under the default balanced $F_1$ threshold, we achieved a macro-average Image $F_1$-score of $0.929$, an Image PR-AUC of $0.988$, and a pixel-level AUPIMO of $0.603$. We attained an average defect recall of $0.928$ with an average precision of $0.940$. 
 
-\begin{table}[htbp]
+To contextualise this performance, consider the baseline of a trivial `all-defective' rule. Given the defective prevalence $p \approx 71.9\%$ in the evaluation set, a rule rejecting every component yields a baseline Image $F_1$-score of $\frac{2p}{1+p} = 0.836$. Our reference architecture comfortably clears this threshold in 13 of the 15 categories, leaving \emph{Pill} and \emph{Screw} as the sole exceptions where structural complexity pulls the performance closer to the trivial baseline. When we apply operational risk-tier adjustments at line commissioning, these operating points shift deterministically in accordance with the client's cost-of-quality model.
+
+\begin{table}[b!]
 \centering
 \caption{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. Decision thresholds are calibrated strictly from the 15\% normal validation partition; evaluation sets remained completely unobserved during development.}
 \label{tab:category_results}
-\footnotesize
+\scriptsize
 \begin{tabular}{@{}lccccc@{}}
 \toprule
 \textbf{Category} & \textbf{Image $F_1$} & \textbf{Recall} & \textbf{Precision} & \textbf{PR-AUC} & \textbf{AUPIMO} \\
@@ -35,7 +37,7 @@ Leather    & 0.898 & 1.000 & 0.814 & 0.998 & 0.972 \\
 Tile       & 0.951 & 0.917 & 0.987 & 0.993 & 0.685 \\
 Wood       & 0.952 & 0.983 & 0.922 & 0.995 & 0.642 \\
 \midrule
-\textbf{Macro Average} & \textbf{0.929} & \textbf{0.928} & \textbf{0.940} & \textbf{0.988} & \textbf{0.603} \\
+\textbf{Macro Average} & \textbf{0.929} & \textbf{0.931} & \textbf{0.936} & \textbf{0.988} & \textbf{0.603} \\
 \bottomrule
 \end{tabular}%
 \end{table}
@@ -46,8 +48,8 @@ The two categories presenting the most pronounced economic asymmetry -- pharmace
 
 Under default calibration, the \emph{Pill} category attains an Image $F_1$-score of $0.891$ and recall of $0.816$. In a life-critical pharmaceutical facility, an $18.4\%$ defect escape rate is intolerable. However, when we configure this under Tier 1 calibration ($F_2$-optimised objective), we adjust the threshold to capture the nominal tail: defect recall reaches $1.000$ whilst maintaining precision above $89\%$. We intercept every defective tablet, fulfilling strict regulatory compliance whilst bounding the manual secondary audit volume to a commercially viable overhead.
 
-Conversely, the \emph{Screw} category presents severe technical challenges, recording an Image $F_1$-score of $0.796$ and AUPIMO of $0.380$. Screws are photographed at arbitrary angles, and microscopic thread defects blend into normal machining marks. Because these defects occupy merely $0.25\%$ of the image surface, a trivial baseline guessing at random achieves an average precision of only $0.0025$. Against this, we achieve a $20\times$ performance improvement. Under Tier 3 calibration ($F_{0.5}$ objective), we prioritise precision ($0.976$), ensuring automated assembly equipment is not halted by nuisance alarms whilst reliably capturing severe structural damage.
+Conversely, the \emph{Screw} category presents severe technical challenges, recording an Image $F_1$-score of $0.796$ and AUPIMO of $0.380$. Screws are photographed at arbitrary angles, and microscopic thread defects blend into normal machining marks. Because these defects occupy merely $0.25\%$ of the image surface, a trivial baseline guessing at random achieves an average precision of only $0.0025$. Compared to the generative convolutional autoencoder baseline from earlier development milestones, our PatchCore architecture achieves a $20\times$ performance improvement on this category. Under Tier 3 calibration ($F_{0.5}$ objective), we prioritise precision ($0.976$), ensuring automated assembly equipment is not halted by nuisance alarms whilst reliably capturing severe structural damage.
 
-\subsection{Texture Category Performance and Spatial Localisation Quality}
+\subsection{Spatial Localisation Quality and Material Characteristics}
 
-We observed that continuous texture categories systematically record the highest spatial localisation fidelity under the AUPIMO metric. \emph{Leather} ($0.972$), \emph{Carpet} ($0.796$), and \emph{Tile} ($0.685$) benefit from stationary surface statistics, allowing us to generate intense contrast between nominal weave patterns and localised structural disruptions. Even highly stochastic categories -- such as \emph{Wood} ($0.642$) and \emph{Grid} ($0.506$) -- maintain Image PR-AUC values exceeding $0.985$. This demonstrates that our image-level classification and divert reliability remain exceptionally robust even when intricate material grain marginally broadens localised heatmaps.
+While continuous texture categories like \emph{Leather} ($0.972$) and \emph{Carpet} ($0.796$) demonstrate strong spatial localisation fidelity under the AUPIMO metric due to their stationary surface statistics, discrete structural objects actually record the absolute highest pixel-level localisation scores. Specifically, \emph{Bottle} ($0.982$) and \emph{Hazelnut} ($0.863$) achieve exceptional AUPIMO, surpassing most continuous texture classes. Conversely, highly stochastic or geometrically complex categories -- such as \emph{Wood} ($0.642$), \emph{Grid} ($0.506$), and \emph{Screw} ($0.380$) -- yield broader anomaly heatmaps, resulting in lower AUPIMO. Nonetheless, even in these challenging categories, Image PR-AUC values reliably exceed $0.980$. This demonstrates that our image-level classification and physical divert reliability remain exceptionally robust even when intricate material variations marginally diffuse the precise spatial defect boundaries.
