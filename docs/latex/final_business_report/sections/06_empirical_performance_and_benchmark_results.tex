@@ -1,12 +1,3 @@
-\section{Empirical Performance and Benchmark Results}
-\label{sec:empirical_results}
-
-Under our strict zero-test-leakage protocol, we executed exhaustive empirical evaluations across all 15 MVTec AD categories, calibrating operational decision thresholds exclusively on held-out normal validation partitions. The results documented below characterise our production-grade reference architecture: PatchCore utilising a frozen ResNet-18 backbone.
-
-\subsection{Category-Level Performance Breakdown}
-
-Table~\ref{tab:category_results} provides the disaggregated performance across all 15 industrial categories. Evaluated under the default balanced $F_1$ threshold, we achieved a macro-average Image $F_1$-score of $0.929$, an Image PR-AUC of $0.988$, and a pixel-level AUPIMO of $0.603$. We attained an average defect recall of $0.928$ with an average precision of $0.940$. When we apply operational risk-tier adjustments at line commissioning, these operating points shift deterministically in accordance with the client's cost-of-quality model.
-
 \begin{table}[bp]
 \centering
 \caption{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. Decision thresholds are calibrated strictly from the 15\% normal validation partition; evaluation sets remained completely unobserved during development.}
@@ -39,6 +30,15 @@ Wood       & 0.952 & 0.983 & 0.922 & 0.995 & 0.642 \\
 \bottomrule
 \end{tabular}%
 \end{table}
+
+\section{Empirical Performance and Benchmark Results}
+\label{sec:empirical_results}
+
+Under our strict zero-test-leakage protocol, we executed exhaustive empirical evaluations across all 15 MVTec AD categories, calibrating operational decision thresholds exclusively on held-out normal validation partitions. The results documented below characterise our production-grade reference architecture: PatchCore utilising a frozen ResNet-18 backbone.
+
+\subsection{Category-Level Performance Breakdown}
+
+Table~\ref{tab:category_results} provides the disaggregated performance across all 15 industrial categories. Evaluated under the default balanced $F_1$ threshold, we achieved a macro-average Image $F_1$-score of $0.929$, an Image PR-AUC of $0.988$, and a pixel-level AUPIMO of $0.603$. We attained an average defect recall of $0.928$ with an average precision of $0.940$. When we apply operational risk-tier adjustments at line commissioning, these operating points shift deterministically in accordance with the client's cost-of-quality model.
 
 \subsection{Engineering Analysis of Boundary Categories}
 

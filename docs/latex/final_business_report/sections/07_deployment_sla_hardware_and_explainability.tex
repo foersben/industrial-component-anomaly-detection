@@ -7,23 +7,6 @@ Deploying deep learning systems into active high-speed manufacturing environment
 
 We incorporated a hardware-tiered execution runtime that dynamically matches the inference pathway to locally available compute resources. Table~\ref{tab:hardware_sla} summarises our measured latency and effective throughput across representative factory deployment targets.
 
-\begin{table}[bp]
-\centering
-\caption{Inference latency and effective throughput across hardware execution targets for PatchCore ResNet-18.}
-\label{tab:hardware_sla}
-\footnotesize
-\begin{tabular}{@{}lccc@{}}
-\toprule
-\textbf{Compute Target} & \textbf{Batch Size} & \textbf{Latency / Image} & \textbf{Throughput (Parts / s)} \\
-\midrule
-Edge GPU (NVIDIA T2000, FP32) & 1  & 18 -- 28\,ms  & 35 -- 55  \\
-Edge GPU (batched streaming)   & 8  & 8 -- 12\,ms   & 80 -- 125 \\
-Industrial PC (Intel Core i7, standard CPU) & 1 & 65 -- 95\,ms & 10 -- 15 \\
-Standard CPU Fallback (unoptimised) & 1 & 320 -- 450\,ms & 2 -- 3 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
 Our CPU execution profile represents the most commercially significant result in this benchmarking suite. By taking advantage of standard processor optimisation libraries, we execute the ResNet-18 feature extraction and nearest-neighbour search in 65--95\,ms on a standard, fanless Industrial Personal Computer (IPC). This achieves a reliable throughput of 10--15 parts per second on standard edge computers already installed in existing factory electrical cabinets. For retrofit installations, this completely removes the need to purchase dedicated graphics cards (GPUs), avoiding substantial hardware expenditure and thermal maintenance overheads.
 
 Where edge GPU acceleration is present, we drop latency to 18--28\,ms per single image (35--55 parts per second), or under 12\,ms in streaming batch configurations (up to 125 parts per second), comfortably matching the highest-cadence automated assembly lines.
@@ -41,10 +24,27 @@ We counteract this vulnerability by providing continuous, pixel-level spatial ex
     \label{fig:xai_reconstructions}
 \end{figure}
 
-We deploy the line-side interface via a reactive Streamlit frontend coupled to a high-throughput FastAPI REST microservice. Quality engineers can inspect diverted components in real time, examine the spatial heatmap justification, and validate or reclassify the divert. This feedback action appends the verified embeddings to the local memory bank, transforming line operators into active stewards of continuous system refinement whilst requiring zero machine learning background.
+We deploy the line-side interface as a reactive Streamlit application. Quality engineers can inspect diverted components in real time, examine the spatial heatmap justification, and validate or reclassify the divert. This feedback action appends the verified embeddings to the local memory bank, transforming line operators into active stewards of continuous system refinement whilst requiring zero machine learning background.
 
 \subsection{Enterprise Software Architecture and Intellectual Property Safeguards}
 
 Beyond inference latency, we designed the platform to satisfy rigorous IT governance, reliability, and cybersecurity criteria. We built the platform upon a strictly reproducible software supply chain. We deterministically resolve environment dependencies using \texttt{uv}, and orchestrate operational tasks via \texttt{Just}. This guarantees that software installations execute deterministically across distributed edge nodes without library collisions.
 
 Furthermore, we adhere to strict corporate IP and legal compliance standards. We constructed the core runtime exclusively upon permissively licensed, enterprise-compliant open-source frameworks (notably PyTorch and Anomalib under Apache 2.0 and MIT licences). We strictly exclude viral copyleft licences (such as GPL/AGPL) that could legally threaten client intellectual property. This guarantees legal security for corporate procurement and ensures that manufacturing designs remain strictly confidential.
+
+\begin{table}[bp]
+\centering
+\caption{Inference latency and effective throughput across hardware execution targets for PatchCore ResNet-18.}
+\label{tab:hardware_sla}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Compute Target} & \textbf{Batch Size} & \textbf{Latency / Image} & \textbf{Throughput (Parts / s)} \\
+\midrule
+Edge GPU (NVIDIA T2000, FP32) & 1  & 18 -- 28\,ms  & 35 -- 55  \\
+Edge GPU (batched streaming)   & 8  & 8 -- 12\,ms   & 80 -- 125 \\
+Industrial PC (Intel Core i7, standard CPU) & 1 & 65 -- 95\,ms & 10 -- 15 \\
+Standard CPU Fallback (unoptimised) & 1 & 320 -- 450\,ms & 2 -- 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
