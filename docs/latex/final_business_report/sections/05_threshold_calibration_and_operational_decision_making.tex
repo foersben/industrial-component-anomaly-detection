@@ -20,9 +20,9 @@ We derive the operational decision threshold $\tau$ empirically from the score d
     \label{eq:threshold_quantile}
 \end{equation}
 
-where $x_i$ represents an individual image within the held-out normal validation set $\mathcal{D}_{\mathrm{val, normal}}$, $s_i$ denotes the corresponding continuous anomaly score computed by the model for that image, and $\alpha$ denotes the plant's tolerable false-alarm budget (the Type I error ceiling). Specifying $\alpha = 0.005$ establishes an empirical threshold $\tau_{\alpha}$ ensuring that exactly $99.5\%$ of conforming components within the calibration population pass the gate without intervention. 
+where $x_i$ represents an individual image within the held-out normal validation set $\mathcal{D}_{\mathrm{val, normal}}$, $s_i$ denotes the corresponding continuous anomaly score computed by the model for that image, and $\alpha$ denotes the plant's tolerable false-alarm budget (the Type I error ceiling). The final results in Table~\ref{tab:category_results} use the category-specific 95th percentile of normal-validation image scores, corresponding to $\alpha = 0.05$; this threshold was frozen before official test inference.
 
-Crucially, $\alpha$ is not an arbitrary hyperparameter; it is inextricably linked to the economic optimal threshold $t^*$ defined in Equation~\ref{eq:optimal_threshold}. Under the assumption that the financial loss of false alarms and defect escapes must be minimised, we directly set the false-alarm budget $\alpha = t^*$. This precisely maps the theoretical cost-derived ratio $t^*$ (a probability) directly into the empirical score boundary $\tau_\alpha$ (a physical threshold quantile) on the factory floor, ensuring the operational defect divert rate strictly obeys the plant's cost-of-quality model.
+Equation~\ref{eq:optimal_threshold} and Equation~\ref{eq:threshold_quantile} operate on different scales. The former is a probability decision rule under calibrated posterior probabilities, whereas the latter is a quantile of model-specific patch-distance scores. We therefore do not equate $\alpha$ with $t^*$. Instead, the cost ratio informs the choice among predeclared false-alarm budgets, and each selected budget is converted into a physical score boundary using only the normal validation distribution.
 
 \subsection{Standardised Risk-Tiered Operating Profiles}
 
@@ -34,11 +34,11 @@ To operationalise this framework across diverse manufacturing sectors, we standa
     \item \textbf{Tier 3: High-Throughput Commodity (e.g., Threaded Fasteners):} Governed by an $F_{0.5}$-optimised objective ($\alpha \approx 0.01$). We weight precision four times more heavily than defect recall, preventing pseudo-scrap from choking downstream automated packaging equipment while catching severe structural anomalies.
 \end{itemize}
 
-Figure~\ref{fig:threshold_calibration} depicts the empirical anomaly score distributions across normal validation and defective evaluation sets, illustrating how the physical separation between distributions dictates achievable defect containment across the three risk tiers.
+Figure~\ref{fig:threshold_calibration} illustrates how the three profiles select different quantiles of the same normal-validation distribution. The curves are schematic because the final report retains the frozen thresholds and metrics, but not the underlying per-image validation-score arrays.
 
 \begin{figure}[tp]
     \centering
-    \placeholder{2.2cm}{Two-panel or multi-panel figure showing empirical anomaly score distributions.}
-    \caption{Empirical anomaly score distributions on the normal validation partition (blue) and the anomalous evaluation split (red) for representative categories. Vertical dashed lines mark the three operational threshold tiers calibrated under our strict zero-test-leakage protocol.}
+    \includegraphics[width=\linewidth]{figures/business_threshold_tiers.png}
+    \caption{Schematic relationship between the normal-validation score distribution and the three predeclared operating profiles. The reported benchmark uses the Tier 2 setting, $\alpha=0.05$; no empirical result is inferred from the illustrative curve shapes.}
     \label{fig:threshold_calibration}
 \end{figure}

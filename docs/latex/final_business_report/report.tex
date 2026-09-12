@@ -22,17 +22,6 @@
 \usepackage{multirow}
 \usepackage{titlesec}
 \usepackage{eurosym}
-\usepackage{mdframed}
-
-% Draft figure placeholder: \placeholder{height}{intent description}
-\newcommand{\placeholder}[2]{%
-    \begin{mdframed}[backgroundcolor=gray!12, linecolor=gray!50, linewidth=0.6pt,
-                    innertopmargin=6pt, innerbottommargin=6pt,
-                    innerleftmargin=8pt, innerrightmargin=8pt]
-        \centering\vspace{#1}\par
-        {\small\itshape\color{gray!60!black} [Placeholder  --  #2]}\par\vspace{#1}
-    \end{mdframed}%
-}
 
 \geometry{a4paper, margin=1in, top=1.2in, bottom=1.2in}
 \setlength{\headheight}{14pt}
@@ -74,9 +63,9 @@
 \noindent
 In modern industrial manufacturing, automated visual quality assurance must resolve a fundamental operational conflict: balancing the downtime and scrap costs caused by false alarms against the severe financial liability of letting defective components reach customers. This report presents the commercial and technical case for an enterprise-grade, self-supervised Anomaly Detection Software-as-a-Service (SaaS) platform designed for discrete parts and continuous surface materials. Within this architecture, the inspection threshold is treated not as an arbitrary benchmark number, but as a practical business setting calibrated directly against each customer's actual costs of false alarms versus missed defects.
 
-Benchmarked across all 15 categories of the MVTec Anomaly Detection dataset under our strict zero-test-leakage protocol (strictly reserving an 85\% fitting partition and a 15\% normal validation partition), our reference PatchCore engine with a frozen ResNet-18 backbone achieves a macro-average Image $F_1$-score of $0.929$, PR-AUC of $0.988$, and AUPIMO of $0.603$. This decisively outperforms generative convolutional autoencoders while requiring no complex model training on the factory floor. New product parts are onboarded in under fifteen seconds using a quick single pass over standard reference images, and gradual factory changes (such as lighting shifts or tool wear) are handled simply by updating reference examples without retraining.
+Benchmarked across all 15 categories of the MVTec Anomaly Detection dataset under our strict zero-test-leakage protocol (strictly reserving an 85\% fitting partition and a 15\% normal validation partition), our reference PatchCore engine with a frozen ResNet-18 backbone achieves a macro-average Image $F_1$-score of $0.929$, PR-AUC of $0.988$, and AUPIMO of $0.603$. This decisively outperforms generative convolutional autoencoders while requiring no client-side backpropagation. New product parts can be onboarded through a single pass over standard reference images, and gradual factory changes (such as lighting shifts or tool wear) can be handled by updating the local reference set without retraining the frozen backbone.
 
-Furthermore, the report introduces a clear economic cost model showing that high-speed commodity fasteners and life-critical pharmaceutical tablets require vastly different inspection thresholds based on their specific error costs. A three-tier calibration methodology translates these business risks into reliable line-side sorting rules. Inspecting each component in 65--95\,ms on standard industrial PCs (factory edge computers without costly dedicated graphics cards), the platform delivers an estimated capital payback period of 4.2 months, providing an empirical foundation for replacing manual audit workflows.
+Furthermore, the report introduces a clear economic cost model showing that high-speed commodity fasteners and life-critical pharmaceutical tablets require vastly different inspection thresholds based on their specific error costs. A three-tier calibration methodology translates these business risks into line-side sorting profiles. Deployment latency, hardware capacity, and payback must be validated for each plant using measured target-hardware throughput together with local labour, downtime, scrap, and integration costs; the MVTec benchmark alone does not establish a universal payback period.
 \end{abstract}
 
 \input{sections/01_introduction.tex}
@@ -89,6 +78,7 @@ Furthermore, the report introduces a clear economic cost model showing that high
 \input{sections/08_strategic_recommendations_and_conclusion.tex}
 
 \begin{thebibliography}{99}
+\small
 
 \bibitem{bergmann2019mvtec}
 Bergmann, P., Fauser, M., Sattlegger, D., \& Steger, C. (2019).
@@ -122,14 +112,25 @@ European Conference on Computer Vision (ECCV), 2024.
 
 \bibitem{oquab2023dinov2}
 Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., ... \& Bojanowski, P. (2023).
-\textit{Dinova2: Learning Robust Visual Features without Supervision.}
+\textit{DINOv2: Learning Robust Visual Features without Supervision.}
 arXiv preprint arXiv:2304.07193.
+
+\bibitem{guo2024dinomaly}
+Guo, J., Lu, S., Zhang, W., Chen, F., Liao, H., \& Li, H. (2024).
+\textit{Dinomaly: The Less Is More Philosophy in Multi-Class Unsupervised Anomaly Detection.}
+arXiv preprint arXiv:2405.14325.
+
+\bibitem{simeoni2025dinov3}
+Sim\'{e}oni, O., Vo, H.~V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., et al. (2025).
+\textit{DINOv3.}
+arXiv preprint arXiv:2508.10104.
 
 \bibitem{anomalib}
 Akcay, S., et al. (2022).
 \textit{Anomalib: A Deep Learning Library for Anomaly Detection.}
 IEEE International Conference on Image Processing (ICIP), 2022.
 
+\normalsize
 \end{thebibliography}
 
 \cleardoublepage
