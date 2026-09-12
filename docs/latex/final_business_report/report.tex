@@ -2,6 +2,11 @@
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{tikz}
+\usetikzlibrary{calc, positioning, arrows.meta}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{standalone}
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{amsmath}
@@ -22,6 +27,20 @@
 \usepackage{multirow}
 \usepackage{titlesec}
 \usepackage{eurosym}
+
+% Colors for tier diagram
+\definecolor{tierGreen}{HTML}{2E7D32}
+\definecolor{tierGreenLight}{HTML}{E8F5E9}
+\definecolor{tierYellow}{HTML}{F57F17}
+\definecolor{tierYellowLight}{HTML}{FFFDE7}
+\definecolor{tierRed}{HTML}{C62828}
+\definecolor{tierRedLight}{HTML}{FFEBEE}
+\definecolor{axisGray}{HTML}{555555}
+\definecolor{pltBlue}{HTML}{2B65E6}
+\definecolor{pltRed}{HTML}{D32828}
+\definecolor{pltGreen}{HTML}{24A143}
+\definecolor{pltPurple}{HTML}{8857FA}
+\definecolor{pltOrange}{HTML}{E37704}
 
 \geometry{a4paper, margin=1in, top=1.2in, bottom=1.2in}
 \setlength{\headheight}{14pt}
@@ -46,10 +65,10 @@
 }
 
 \author{
-    Benjamin F{\"o}rster \and
-    Ali Abul Hawa \and
-    Mahboubeh Nadaf \and
-    Karim Khalifa
+    Benjamin \\ F{\"o}rster \and
+    Ali \\ Abul Hawa \and
+    Mahboubeh (Mina) \\ Nadaf \and
+    Karim \\ Khalifa
 }
 
 \date{\today}

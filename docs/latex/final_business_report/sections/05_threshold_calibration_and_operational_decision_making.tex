@@ -38,7 +38,9 @@ Figure~\ref{fig:threshold_calibration} illustrates how the three profiles select
 
 \begin{figure}[tp]
     \centering
-    \includegraphics[width=\linewidth]{figures/business_threshold_tiers.pdf}
+    \resizebox{\linewidth}{!}{%
+        \input{figures/business_threshold_tiers.tikz}%
+    }
     \caption{Schematic relationship between the normal-validation score distribution and the three predeclared operating profiles. The reported benchmark uses the Tier 2 setting, $\alpha=0.05$; no empirical result is inferred from the illustrative curve shapes.}
     \label{fig:threshold_calibration}
 \end{figure}
