@@ -7,11 +7,11 @@ We developed and empirically evaluated two architectural paradigms under identic
 
 We recommend PatchCore, utilising a frozen ResNet-18 backbone pre-trained on ImageNet, as the production-grade engine for plant-wide deployment. Beyond superior empirical detection metrics, we selected this architecture because it exhibits three decisive practical advantages that resolve longstanding operational pain points in manufacturing IT.
 
-First, we eliminated complex model training on the factory floor. The core neural network (ResNet-18) acts as a fixed feature extractor. Once deployed, the factory computer never needs to train models or tune parameters. We can add a new product type in less than fifteen seconds, requiring only a single forward pass over 100--200 standard reference images to build the baseline.
+First, we eliminated client-side backpropagation. The core neural network (ResNet-18) acts as a fixed feature extractor. Once deployed, onboarding a new product type requires a single pass over its available standard reference images to build the memory bank. The elapsed onboarding time depends on reference-set size, target hardware, and coreset configuration and must therefore be measured during commissioning.
 
 Second, our memory bank guarantees complete client data sovereignty and protection of intellectual property. We store conforming patterns locally in a reference memory bank rather than in network weights. Because this representation does not alter the underlying model, proprietary part geometries, CAD toolpaths, and confidential material formulations remain strictly confined to the local industrial personal computer (IPC). Furthermore, we employ a coreset selection algorithm to compress the stored reference library by an order of magnitude, guaranteeing fast inspection times that easily match conveyor speeds.
 
-Third, we deliberately avoid expensive specialised hardware. Whilst we evaluated heavier neural networks (such as Wide-ResNet-50-2), these architectures introduce severe compute bottlenecks during high-resolution feature extraction, overloading standard industrial CPU execution cadences. By standardising on ResNet-18, we alleviated this compute bottleneck and reduced peak memory usage to under 3.8\,GB. We accepted a sacrifice of less than one percentage point in academic $F_1$-score to eliminate the need for costly industrial graphics cards and enable reliable 65--95\,ms inspection on standard, fanless industrial PCs.
+Third, we selected a comparatively lightweight backbone. Wide-ResNet-50-2 repeatedly exhausted the available GPU memory during the automated Optuna sweeps, so we standardised on ResNet-18 to preserve stable, reproducible execution. The final study did not perform a controlled backbone-accuracy comparison or a production IPC latency benchmark; memory capacity and cycle-time compliance must therefore be verified on the customer's target hardware before deployment.
 
 \subsection{Comparative Analysis: The Failure Modes of Generative Autoencoders}
 
@@ -29,7 +29,7 @@ Whilst generative reconstruction models offer conceptual appeal, we discovered t
 \toprule
 \textbf{Architecture} & \textbf{Image $F_1$ $\uparrow$} & \textbf{Image PR-AUC $\uparrow$} & \textbf{AUPIMO $\uparrow$} & \textbf{Pixel AUROC $\uparrow$} & \textbf{Client Training} \\
 \midrule
-PatchCore (ResNet-18)       & \textbf{0.929} & \textbf{0.988} & \textbf{0.603} & 0.968 & None ($<$15\,s forward pass) \\
+PatchCore (ResNet-18)       & \textbf{0.929} & \textbf{0.988} & \textbf{0.603} & 0.968 & Memory-bank construction only \\
 Keras CAE (MIM + SSIM+MSE)  & 0.495          & 0.867          & 0.058          & 0.875 & Iterative GPU training \\
 \bottomrule
 \end{tabular}%
@@ -42,4 +42,4 @@ Empirically, the Keras CAE trails our PatchCore architecture by an order of magn
 
 We designed the decoupled coreset architecture to absorb manufacturing distribution drift without requiring model retraining. When minor physical alterations occur on the line -- such as a new steel batch exhibiting marginal surface roughness variations or illumination drift caused by lamp aging -- conventional deep learning pipelines begin generating elevated anomaly scores for nominal parts. In a standard convolutional network, resolving this issue requires collecting fresh image batches, executing full backpropagation, and redeploying weights.
 
-Within our PatchCore framework, this drift is resolved deterministically at line side. Quality assurance operators examine the flagged units via the local inspection terminal and confirm them as false positives. The system extracts feature patch embeddings from the confirmed nominal components and appends them directly to the active coreset memory bank. We execute an incremental coreset subsampling step to restore optimal memory density within seconds, and the decision threshold is automatically updated against the expanded normal validation pool. This enables line-side personnel to adapt the inspection system to legitimate process drift within thirty seconds, requiring zero data science expertise.
+Within our PatchCore framework, this drift can be addressed at line side without retraining the frozen feature extractor. Quality assurance operators examine flagged units via the local inspection terminal and confirm eligible examples as nominal. After controlled review, the system can rebuild the coreset and recalibrate the decision threshold against a refreshed normal validation pool. Update duration and acceptance criteria are deployment measurements rather than outcomes of the final MVTec benchmark.

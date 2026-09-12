@@ -1,15 +1,15 @@
 \section{Production Deployment: Hardware, Latency, Explainability}
 \label{sec:deployment}
 
-Deploying deep learning systems into active high-speed manufacturing environments introduces deterministic physical constraints entirely absent from offline academic research. Automated conveyors operate at cycle cadences ranging from five to thirty components per second. We must execute the full automated inspection pipeline synchronously within this physical takt time. In discrete manufacturing, this imposes an immutable latency budget of 30--200\,ms per component. We designed our architecture to satisfy this throughput constraint without requiring maintenance-heavy, liquid-cooled compute infrastructure on the factory floor.
+Deploying deep learning systems into active high-speed manufacturing environments introduces deterministic physical constraints entirely absent from offline academic research. For capacity planning, a representative cadence of five to thirty components per second implies a nominal latency budget of approximately 30--200\,ms per component. These figures are illustrative engineering assumptions, not measurements from the MVTec evaluation. Each deployment must establish its actual takt time, end-to-end latency budget, and hardware acceptance criteria on the target line.
 
 \subsection{Hardware-Tiered Inference and Cycle-Time Profiling}
 
-We incorporated a hardware-tiered execution runtime that dynamically matches the inference pathway to locally available compute resources. Our CPU execution profile represents one of the most commercially significant results in this architecture. 
+The software can select execution settings according to locally available compute resources. The final scientific evaluation establishes detection quality, but it does not constitute a controlled CPU/GPU hardware benchmark.
 
-By standardising on the lightweight ResNet-18 backbone rather than heavier models like Wide-ResNet-50-2, we constrained the model's memory footprint significantly. This compact design allows the feature extraction and nearest-neighbour search to execute efficiently on standard, fanless Industrial Personal Computers (IPCs). It achieves reliable throughput on standard edge computers already installed in existing factory electrical cabinets. For retrofit installations, this completely removes the strict requirement to purchase dedicated graphics cards (GPUs), avoiding substantial hardware expenditure, thermal maintenance overheads, and complex IT infrastructure changes.
+By standardising on ResNet-18 after Wide-ResNet-50-2 exhausted the development GPU memory during Optuna sweeps, we reduced deployment risk relative to the heavier candidate. Whether feature extraction and nearest-neighbour search meet a plant's throughput target on a fanless Industrial Personal Computer (IPC) remains an acceptance-test question. A retrofit may avoid a dedicated GPU where measured CPU throughput satisfies that line's takt time; otherwise GPU acceleration remains an available deployment option.
 
-Where edge GPU acceleration is present, the pipeline scales seamlessly to support batched streaming configurations, easily accommodating the highest-cadence automated assembly lines without requiring liquid-cooled data-centre compute environments.
+Where edge GPU acceleration is present, the same pipeline can use batched execution, subject to target-hardware profiling and end-to-end line validation.
 
 \subsection{Explainable AI (XAI) and Operator Interface Architecture}
 
@@ -17,10 +17,10 @@ An uninterpretable divert signal introduces a severe operational vulnerability: 
 
 We counteract this vulnerability by providing continuous, pixel-level spatial explainability. Utilising the nearest-neighbour patch distance tensor, our runtime renders a calibrated, colour-coded anomaly heatmap that pinpoints the exact spatial coordinates driving the elevated score. Applying the calibrated decision threshold $\tau$, we derive a binarised defect contour mask, providing the line operator with both an unambiguous anomaly score and an auditable spatial justification. We rescale both outputs to the canonical $256 \times 256$ resolution prior to display, guaranteeing precise geometric alignment with physical part coordinates. Figure~\ref{fig:xai_reconstructions} illustrates representative defect heatmaps and contour overlays.
 
-\begin{figure}[tp]
+\begin{figure}[t]
     \centering
-    \placeholder{2.4cm}{Grid of component images arranged in rows by category. Each sequence displays raw acquisition, continuous heatmap, and binary mask.}
-    \caption{Line-side explainability overlays for representative defective components. This spatial precision provides quality assurance personnel with immediate, auditable verification for every divert event.}
+    \includegraphics[width=0.88\linewidth]{figures/business_xai_grid.png}
+    \caption{Stored PatchCore qualitative outputs for representative Bottle, Cable, and Screw defects. Each row shows the input, ground-truth mask, anomaly-map overlay, and predicted contour mask.}
     \label{fig:xai_reconstructions}
 \end{figure}
 
