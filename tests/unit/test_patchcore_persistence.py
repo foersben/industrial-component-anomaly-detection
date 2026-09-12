@@ -429,7 +429,8 @@ def test_run_patchcore_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
     assert result["image_level"]["f1_score"] == 0.95
     assert result["pixel_level"]["f1_score"] == 0.88
     assert result["dataset_split"]["train_normal"] == 17
-    assert result["heatmap_overlays"] == overlays
+    assert result["heatmap_overlays"] == {}
+    assert result["metadata"]["heatmap_overlays_path"] == "heatmap_overlays.npz"
 
 
 def test_fair_evaluation_rejects_legacy_patchcore_cache(tmp_path: Path) -> None:

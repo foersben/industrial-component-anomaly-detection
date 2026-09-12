@@ -11,19 +11,19 @@ First, we eliminated complex model training on the factory floor. The core neura
 
 Second, our memory bank guarantees complete client data sovereignty and protection of intellectual property. We store conforming patterns locally in a reference memory bank rather than in network weights. Because this representation does not alter the underlying model, proprietary part geometries, CAD toolpaths, and confidential material formulations remain strictly confined to the local industrial personal computer (IPC). Furthermore, we employ a coreset selection algorithm to compress the stored reference library by an order of magnitude, guaranteeing fast inspection times that easily match conveyor speeds.
 
-Third, we deliberately avoid expensive specialised hardware. Whilst we evaluated heavier neural networks (such as Wide-ResNet-50-2), their large memory footprint (11.8\,GB of RAM) overloads standard industrial PCs. By standardising on ResNet-18, we reduced memory usage to under 3.8\,GB. We accepted a sacrifice of less than one percentage point in academic $F_1$-score to eliminate the need for costly industrial graphics cards and enable reliable 65--95\,ms inspection on standard, fanless industrial PCs.
+Third, we deliberately avoid expensive specialised hardware. Whilst we evaluated heavier neural networks (such as Wide-ResNet-50-2), these architectures introduce severe compute bottlenecks during high-resolution feature extraction, overloading standard industrial CPU execution cadences. By standardising on ResNet-18, we alleviated this compute bottleneck and reduced peak memory usage to under 3.8\,GB. We accepted a sacrifice of less than one percentage point in academic $F_1$-score to eliminate the need for costly industrial graphics cards and enable reliable 65--95\,ms inspection on standard, fanless industrial PCs.
 
 \subsection{Comparative Analysis: The Failure Modes of Generative Autoencoders}
 
-The alternative paradigm we evaluated is a fully convolutional autoencoder implemented in Keras, trained to reconstruct nominal images via a composite loss function combining the Structural Similarity Index Measure (SSIM) and Mean Squared Error (MSE), augmented by masked image modelling (MIM). During inference, we use the pixel-wise reconstruction residual as the continuous anomaly map, from which we extract image-level classification scores via spatial aggregation.
+The alternative paradigm we evaluated is a fully convolutional autoencoder implemented in Keras, trained to reconstruct nominal images via a composite loss function combining the Structural Similarity Index Measure (SSIM) \cite{wang2004ssim} and Mean Squared Error (MSE), augmented by masked image modelling (MIM). During inference, we use the pixel-wise reconstruction residual as the continuous anomaly map, from which we extract image-level classification scores via spatial aggregation.
 
 Whilst generative reconstruction models offer conceptual appeal, we discovered they suffer from a fatal structural flaw in industrial practice. Pixel-level reconstruction objectives inherently minimise global image variance rather than local defect contrast. On high-frequency stochastic textures -- such as \emph{Wood} grain, \emph{Carpet} pile, or \emph{Leather} surfaces -- the generative decoder yields slightly smoothed reconstructions of high-frequency spatial patterns. This slight blur generates elevated residual errors across conforming surfaces, inducing severe pseudo-scrap and artificially deflating the operational $F_1$-score. Table~\ref{tab:paradigm_comparison} quantifies this performance disparity across all 15 benchmark categories.
 
-\begin{table}[bp]
+\begin{table}[b!]
 \centering
 \caption{Macro-averaged performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol.}
 \label{tab:paradigm_comparison}
-\footnotesize
+\scriptsize
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{@{}lccccc@{}}
 \toprule

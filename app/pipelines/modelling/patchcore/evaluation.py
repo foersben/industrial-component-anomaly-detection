@@ -10,16 +10,7 @@ from anomalib.engine import Engine
 from sklearn.metrics import f1_score, roc_auc_score
 
 from app.core.logger import logger
-from app.pipelines.evaluation.metrics import (
-    AUPIMO_FPR_BOUNDS,
-    AUPIMO_NUM_THRESHOLDS,
-    CANONICAL_MAP_SIZE,
-    compute_and_save_pr_metrics,
-    compute_image_confusion_metrics,
-    compute_shared_pixel_metrics,
-)
-from app.pipelines.evaluation.scoring import compute_adaptive_threshold
-from app.pipelines.modelling.patchcore.types import (
+from app.domain.evaluation import (
     PATCHCORE_IMAGE_THRESHOLD_QUANTILE,
     PATCHCORE_PIXEL_THRESHOLD_QUANTILE,
     BaselineResult,
@@ -29,6 +20,15 @@ from app.pipelines.modelling.patchcore.types import (
     PixelEvaluationMetrics,
     Thresholds,
 )
+from app.pipelines.evaluation.metrics import (
+    AUPIMO_FPR_BOUNDS,
+    AUPIMO_NUM_THRESHOLDS,
+    CANONICAL_MAP_SIZE,
+    compute_and_save_pr_metrics,
+    compute_image_confusion_metrics,
+    compute_shared_pixel_metrics,
+)
+from app.pipelines.evaluation.scoring import compute_adaptive_threshold
 from app.pipelines.modelling.patchcore.visualization import (
     _generate_test_heatmaps,
     _RawScoreImageVisualizer,
