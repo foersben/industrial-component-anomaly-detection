@@ -11,7 +11,7 @@ We evaluated two frozen self-supervised Vision Transformer (ViT) baselines to ex
 \subsubsection{Self-Supervised Baselines (ViT-S/14)}
 We extracted patch-level token representations from the final encoder block of two off-the-shelf Vision Transformer models:
 \begin{itemize}[leftmargin=1.5em]
-    \item \textbf{DINOv2 (ViT-S/14, frozen):} Patch-level cosine nearest-neighbour matching against an empirical memory bank of frozen self-supervised ViT patch tokens, pre-trained via discriminative self-distillation on the curated LVD-142M dataset.
+    \item \textbf{DINOv2 (ViT-S/14, frozen):} Patch-level cosine nearest-neighbour matching against an empirical memory bank of frozen self-supervised ViT patch tokens, pre-trained via discriminative self-distillation on the curated LVD-142M dataset \cite{oquab2023dinov2}.
     \item \textbf{DINOv3 (ViT-S/14, frozen):} An identical pipeline substituting DINOv3 weights \cite{simeoni2025dinov3}, which introduce scaled pre-training and Gram anchoring for dense-feature quality.
 \end{itemize}
 
