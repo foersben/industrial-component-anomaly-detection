@@ -1,0 +1,101 @@
+\documentclass[tikz, border={5pt 5pt 5pt 1pt}]{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Colors matched precisely to the provided matplotlib image
+\definecolor{pltBlue}{HTML}{2B65E6}
+\definecolor{pltRed}{HTML}{D32828}
+\definecolor{pltGreen}{HTML}{24A143}
+\definecolor{pltPurple}{HTML}{8857FA}
+\definecolor{pltOrange}{HTML}{E37704}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    width=16cm,
+    height=8cm,
+    font=\sffamily,
+    title={Risk tiers select different quantiles of the same normal-validation distribution},
+    title style={
+        font=\small,
+        yshift=-1.5ex,   % Pulls the title down closer to the top border (adjust to taste)
+        inner ysep=0pt   % Strips the node's internal top/bottom padding
+    },
+    xlabel={\scriptsize Illustrative anomaly score (higher means less like the normal reference set)},
+    ylabel={\scriptsize Relative density},
+    xmin=0, xmax=1,
+    ymin=0, ymax=1.15,
+    xtick={0, 0.2, 0.4, 0.6, 0.8, 1.0},
+    ytick=\empty, % No numbers on the Y-axis, matching the original image
+    xmajorgrids=true,
+    grid style={gray!20},
+    axis on top, % Ensures fills go behind the grid lines
+    enlarge x limits=false,
+    enlarge y limits=false,
+    legend cell align={left},
+    legend style={
+        fill=none,
+        draw=none,
+        anchor=north east,
+        font=\tiny,                         % 1. Smallest standard LaTeX font
+        nodes={scale=0.8, transform shape}, % 2. Custom multiplier (adjust 0.8 as needed)
+    },
+    % Thicker axis borders
+    every outer x axis line/.append style={thick},
+    every outer y axis line/.append style={thick}
+]
+
+    % Math definitions for the Gaussian distributions
+    % Normal Validation (Blue)
+    \def\muBlue{0.36}
+    \def\sigmaBlue{0.125}
+    \def\scaleBlue{1.10}
+    \def\gaussBlue{\scaleBlue * exp(-((x-\muBlue)^2)/(2*\sigmaBlue^2))}
+
+    % Potential Defect (Red)
+    \def\muRed{0.68}
+    \def\sigmaRed{0.14}
+    \def\scaleRed{0.86}
+    \def\gaussRed{\scaleRed * exp(-((x-\muRed)^2)/(2*\sigmaRed^2))}
+
+    % 1. Filled Area Distributions (Plotted first so lines go on top)
+    \addplot[fill=pltBlue, fill opacity=0.25, draw=none, domain=0:1, samples=150] {\gaussBlue} \closedcycle;
+    \addplot[fill=pltRed, fill opacity=0.25, draw=none, domain=0:1, samples=150] {\gaussRed} \closedcycle;
+
+    % 2. Solid Lines for Distributions
+    \addplot[color=pltBlue, line width=1.5pt, domain=0:1, samples=150] {\gaussBlue};
+    \addlegendentry{Normal validation scores}
+
+    \addplot[color=pltRed, line width=1.5pt, domain=0:1, samples=150] {\gaussRed};
+    \addlegendentry{Potential defect scores}
+
+    % 3. Vertical Threshold Lines (Dashed)
+    % =========================================================================
+    % MATHEMATICAL DETAIL: QUANTILE CORRECTION
+    % The blue curve represents a Gaussian N(mu=0.36, sigma^2=0.125^2).
+    % The decision thresholds represent the (1 - alpha) quantiles of this curve.
+    % In previous versions, the thresholds were visually approximated at 
+    % x = 0.54, 0.59, and 0.69.
+    % 
+    % To ensure absolute mathematical correctness, they are computed as:
+    % x = mu + sigma * Z_{1-alpha}
+    % - Tier 1 (alpha=0.10): z=1.2815 -> x = 0.36 + 0.125 * 1.2815 = 0.520
+    % - Tier 2 (alpha=0.05): z=1.6449 -> x = 0.36 + 0.125 * 1.6449 = 0.566
+    % - Tier 3 (alpha=0.01): z=2.3263 -> x = 0.36 + 0.125 * 2.3263 = 0.651
+    % =========================================================================
+    \addplot[color=pltGreen, line width=1.5pt, dashed] coordinates {(0.52,0) (0.52,1.15)};
+    \addlegendentry{Tier 1: recall-prioritised (alpha=0.10)}
+
+    \addplot[color=pltPurple, line width=1.5pt, dashed] coordinates {(0.566,0) (0.566,1.15)};
+    \addlegendentry{Tier 2: balanced / reported (alpha=0.05)}
+
+    \addplot[color=pltOrange, line width=1.5pt, dashed] coordinates {(0.651,0) (0.651,1.15)};
+    \addlegendentry{Tier 3: precision-prioritised (alpha=0.01)}
+
+    % 4. Top-Left Text Node
+    \node[anchor=north west, text=gray!80!black, font=\scriptsize] 
+        at (axis cs:0.01, 1.35) {Schematic - not an empirical score distribution};
+
+\end{axis}
+\end{tikzpicture}
+\end{document}
