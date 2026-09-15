@@ -35,17 +35,18 @@ With VSA, the agent is directed to a single folder (e.g., `app/pipelines/registe
 
 If a feature is deprecated, you just delete the folder. There are no lingering routes in a massive `routes.py` file or dead code in a global `UserService`.
 
-## How to use it in this template
+## How to use it in this repository
 
-All feature slices are placed inside the `app/pipelines/` directory.
+Feature slices are organized domain-first inside `app/pipelines/`:
 
-When you want to add a new feature, you:
-
-1. Create a new directory under `app/pipelines/`, for example: `app/pipelines/process_payment/`.
-2. Inside this directory, create the necessary files:
-   * `models.py` (Pydantic schemas specifically for this feature)
-   * `router.py` (The FastAPI endpoint)
-   * `logic.py` (The core business rules and database interactions)
-3. Wire the `router.py` into the main FastAPI application in `app/api/`.
-
-By keeping the feature isolated, you ensure that if the payment process gets incredibly complex, it won't clutter the rest of the application.
+1. **Modelling Slices (`app/pipelines/modelling/`):**
+   * Dedicated subpackages for each model family: `patchcore/`, `keras_cae/`, and `dino/`.
+   * Each slice encapsulates its dataset loader, model definition, training/fitting logic, Optuna hyperparameter study, and evaluation pipeline.
+2. **Preprocessing Slices (`app/pipelines/preprocessing/`):**
+   * Cohesive preprocessing steps in `steps/` (`clahe.py`, `gaussian_blur.py`, `foreground_mask.py`).
+   * Step composition factory (`factory.py`) and standard adapter (`adapter.py`).
+3. **Evaluation Slices (`app/pipelines/evaluation/`):**
+   * Standardized scientific evaluation metrics (`metrics.py`), adaptive threshold calibration (`cae_metrics.py`, `scoring.py`), and visualization/heatmap generators (`heatmaps.py`).
+4. **Presentation Slices (`app/ui/tabs/` and `app/cli.py`):**
+   * Interactive Streamlit dashboard tabs co-located by feature area.
+   * Command-line interface subcommands dispatching directly to modelling pipeline methods.

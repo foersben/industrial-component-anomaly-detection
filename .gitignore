@@ -226,9 +226,37 @@ __marimo__/
 data/raw/
 data/processed/
 data/external/
-models/
+data/tmp/
 
-# Temporary outputs
-data/
+# Locally trained notebook checkpoints (directory or local symlink)
+/models
+
 results/
+data/models/
+data/
+
+# Latex artifacts
+*.aux
+*.bbl
+*.blg
+*.brf
+*.bcf
+*.fdb_latexmk
+*.fls
+*.idx
+*.ilg
+*.ind
+*.lof
+*.log
+*.lot
+*.out
+*.toc
+*.run.xml
+*.synctex.gz
+*.snm
+*.nav
+*.vrb
 scratch/
+
+# Docs related - ignore notes e.g. like markdown
+docs/latex/**/*.md

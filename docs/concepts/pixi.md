@@ -41,7 +41,7 @@ Python's standard package managers (like `pip` or `poetry`) are excellent for pu
 
 ### 1. Non-Python & Binary Dependencies
 
-Machine Learning frameworks (like PyTorch or TensorFlow) rely heavily on system-level libraries like CUDA, cuDNN, OpenBLAS, or native compiler toolchains. `pip` cannot install system libraries. Pixi, leveraging the Conda-Forge ecosystem, can install **everything**—not just Python packages, but C++ libraries, compilers, and even tools like `just` or `git`, ensuring a 100% reproducible environment.
+Machine Learning frameworks (like PyTorch or TensorFlow) rely heavily on system-level libraries like CUDA, cuDNN, OpenBLAS, or native compiler toolchains. `pip` cannot install system libraries. Pixi, leveraging the Conda-Forge ecosystem, can install **everything**-not just Python packages, but C++ libraries, compilers, and even tools like `just` or `git`, ensuring a 100% reproducible environment.
 
 ### 2. Deterministic Environments & Lockfiles
 
@@ -75,7 +75,7 @@ GitHub Actions runners are continuously upgraded to secure, modern runtimes. To 
 
 ### Automated Dependency Management via Dependabot
 
-Maintaining updated GitHub Action versions manually is prone to oversight. To automate version upgrades, a [Dependabot configuration](file:///.github/dependabot.yml) is situated in the `.github/` folder:
+Maintaining updated GitHub Action versions manually is prone to oversight. To automate version upgrades, a [Dependabot configuration](https://github.com/foersben/industrial-component-anomaly-detection/tree/main/.github/dependabot.yml) is situated in the `.github/` folder:
 
 - **Ecosystem**: `github-actions`
 - **Schedule**: Weekly checks for new versions of checkout, setup-pixi, and other Actions.

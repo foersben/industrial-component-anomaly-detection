@@ -45,3 +45,34 @@ jobs:
           vuln-type: 'os,library'
           skip-dirs: '.pixi,.cache'
           severity: 'CRITICAL,HIGH'
+
+  cognitive-complexity:
+    name: Complexipy SARIF Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Run Complexipy Scan
+        # Runs statelessly via uvx, exporting standard SARIF format and printing a failed-only summary
+        run: |
+          [ -d .cache/.complexity_cache ] && mv .cache/.complexity_cache .complexipy_cache || true
+          uvx complexipy . --output-format sarif --output metrics-results.sarif --ignore-complexity
+          uvx complexipy . --failed || true
+
+      - name: Cleanup Complexipy Cache
+        if: always()
+        run: |
+          mkdir -p .cache
+          [ -d .cache/.complexity_cache ] && rm -rf .cache/.complexity_cache || true
+          [ -d .complexipy_cache ] && mv .complexipy_cache .cache/.complexity_cache || true
+
+      - name: Upload Bottlenecks to GitHub Code Scanning
+        if: ${{ !env.ACT }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: metrics-results.sarif

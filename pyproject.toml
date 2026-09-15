@@ -18,8 +18,11 @@ dependencies = [
     "fastapi[standard]>=0.115.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-  "uvicorn>=0.50.0",
-    "anomalib>=2.5.0,<3",
+    "uvicorn>=0.50.0",
+    "anomalib>=2.6.0,<3",
+    "opencv-python>=4.9.0",
+    "tensorflow>=2.16,<3",
+    "scikit-image>=0.24.0,<1",
 ]
 
 [dependency-groups]
@@ -37,7 +40,7 @@ dev = [
     "pyyaml>=6.0.2",
     "types-PyYAML>=6.0.12.20240806",    # Explicitly add type stubs for mypy
     "nbstripout>=0.8.0",
-    "hypothesis>=6.0.0", "pre-commit-uv>=4.2.2,<5",
+    "hypothesis>=6.0.0",
 ]
 
 [tool.ruff]
@@ -89,7 +92,12 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing --cov-report=html"
 cache_dir = ".cache/pytest_cache"
-hypothesis_database_file = ".cache/hypothesis"
+filterwarnings = [
+    "ignore::FutureWarning",
+    "ignore::DeprecationWarning",
+    "ignore:Importing from timm.models.layers is deprecated:FutureWarning",
+    "ignore:The anomalib.models.components.dinov2 package is deprecated:FutureWarning",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -115,24 +123,41 @@ huggingface_hub = ">=1.22.0,<2"
 just = ">=1.55.1,<2"
 jupyter = "*"
 jupyterlab = "*"
+ipykernel = "*"
 matplotlib = ">=3.11.0,<4"
-opencv = ">=5.0.0,<6"
 pandas = ">=3.0.3,<4"
 pillow = ">=12.3.0,<13"
+requests = ">=2.32.0,<3"
 scikit-learn = ">=1.9.0,<2"
 seaborn = ">=0.13.2,<0.14"
 statsmodels = ">=0.14.6,<0.15"
 streamlit = ">=1.59.1,<2"
+pynvml = ">=11.5.0,<12"    # Runtime CUDA/VRAM detection for TF device selection
+scikit-image = "*"
+optuna = ">=4.9.0,<5"
+
+[tool.pixi.feature.gpu.dependencies]
+cuda-version = "12.*"
+cuda-libraries = "12.*"
+cuda-cupti = "12.*"
+cuda-nvcc = "12.*"
+cudnn = ">=9.0,<10"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
-torch = { version = "==2.5.1" }
-torchvision = { version = "==0.20.1" }
-torchaudio = { version = "==2.5.1" }
+# ── PyTorch (GPU / CUDA) ────────────────────────────────────────────────────
+torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cu121" }
+torchvision = { version = "==0.20.1", index = "https://download.pytorch.org/whl/cu121" }
+torchaudio = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cu121" }
+
+
 
 [tool.pixi.feature.cpu.pypi-dependencies]
+# ── PyTorch (CPU / x86-64 SIMD) ─────────────────────────────────────────────
 torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cpu" }
 torchvision = { version = "==0.20.1", index = "https://download.pytorch.org/whl/cpu" }
 torchaudio = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cpu" }
+
+
 
 [tool.pixi.environments]
 default = { features = ["gpu"], solve-group = "default" }
@@ -140,4 +165,10 @@ dev = { features = ["dev", "gpu"], solve-group = "default" }
 ci = { features = ["cpu"], solve-group = "ci" }
 ci-dev = { features = ["dev", "cpu"], solve-group = "ci" }
 
+
+[tool.pixi.target.linux-64.activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+
 [tool.pixi.tasks]
+
+ui = { cmd = "streamlit run app/ui/main.py --server.port 8501", env = { PYTHONWARNINGS = "ignore::FutureWarning" } }

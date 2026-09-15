@@ -1,0 +1,41 @@
+\appendix
+\section{Post-Project Extension: Self-Supervised Vision Transformer Baselines}
+\label{app:dino}
+
+\textit{Explanatory Note: These architectures were evaluated iteratively after the primary project evaluation and therefore carry the same test-informed caveat as earlier prototypes. They pre-date the definitive freezing of the strict zero-test-leakage protocol and are included only for technical completeness and future direction; they did not form part of the benchmarked production scope in the core report.}
+
+\subsection{Architectural Formulation and Literature Context}
+
+We evaluated two frozen self-supervised Vision Transformer (ViT) baselines to explore representation ceilings beyond convolutional features. For literature context, \textit{Dinomaly} by Guo et al.\ \cite{guo2024dinomaly} reports 99.6\% image-level AUROC and 98.2\% pixel-level AUROC on MVTec AD using foundation-model features in a purpose-built reconstruction architecture.
+
+\subsubsection{Self-Supervised Baselines (ViT-S/14)}
+We extracted patch-level token representations from the final encoder block of two off-the-shelf Vision Transformer models:
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{DINOv2 (ViT-S/14, frozen):} Patch-level cosine nearest-neighbour matching against an empirical memory bank of frozen self-supervised ViT patch tokens, pre-trained via discriminative self-distillation on the curated LVD-142M dataset \cite{oquab2023dinov2}.
+    \item \textbf{DINOv3 (ViT-S/14, frozen):} An identical pipeline substituting DINOv3 weights \cite{simeoni2025dinov3}, which introduce scaled pre-training and Gram anchoring for dense-feature quality.
+\end{itemize}
+
+Both use PatchCore's non-parametric memory-bank paradigm -- zero client-side backpropagation and single-pass onboarding -- while replacing the convolutional backbone with a self-attention transformer encoder; neither introduces the specialised reconstruction architecture used by \textit{Dinomaly}.
+
+\subsection{Indicative Empirical Results and Engineering Trade-Offs}
+
+\begin{table}[b!]
+\centering
+\caption{Macro-averaged results from the exploratory DINOv2 and DINOv3 runs. Because these runs were test-informed, the values are reported for transparency and must not be ranked against the clean-protocol PatchCore reference.}
+\label{tab:dino_results}
+\scriptsize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Architecture} & \textbf{Image $F_1$ $\uparrow$} & \textbf{Image PR-AUC $\uparrow$} & \textbf{AUPIMO $\uparrow$} & \textbf{Pixel AUROC $\uparrow$} \\
+\midrule
+DINOv2 (ViT-S/14, frozen) & 0.941 & 0.989 & 0.602 & 0.969 \\
+DINOv3 (ViT-S/14, frozen) & 0.957 & 0.993 & 0.680 & 0.967 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The exploratory outputs were DINOv2: Image $F_1=0.941$, PR-AUC $=0.989$, AUPIMO $=0.602$, and pixel AUROC $=0.969$; and DINOv3: $0.957$, $0.993$, $0.680$, and $0.967$, respectively. For context only, DINOv2 pixel AUROC is 1.3 percentage points below Dinomaly's published 98.2\%; this is not a protocol-matched ranking because the architecture and evaluation protocol differ.
+
+These test-informed DINO runs were not subject to the clean, single-pass protocol lock used for the production benchmark. Nor did the project complete a controlled DINO-versus-ResNet memory and latency benchmark on a common industrial PC, so no quantitative model or hardware ranking is claimed.
+
+Vision Transformers remain a promising research direction, particularly in purpose-built architectures such as Dinomaly. The frozen ResNet-18 PatchCore engine remains the deployment reference because it was evaluated under the clean final protocol; ViT deployment claims require a controlled benchmark on target industrial PC hardware and live drift conditions.

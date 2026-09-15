@@ -12,6 +12,9 @@ setup:
 install:
 	@just setup
 
+init:
+	pixi shell --manifest-path ./pyproject.toml -e dev
+
 # Run the pytest test suite in the dev environment
 test:
 	pixi run --frozen -e dev pytest
@@ -30,9 +33,10 @@ check:
 format:
 	pixi run --frozen -e dev ruff format .
 
-# Start the production FastAPI web server
+# Start Streamlit frontend
 run:
-	pixi run --frozen fastapi run app/main.py
+	pixi run --frozen -e dev ui
+
 
 # Clean all temporary files, cache folders, compilation files, and local environments
 clean:
@@ -66,7 +70,35 @@ fetch-data: download-data
 	mv data/external/aupimo_repo/data/experiments/benchmark/* data/external/aupimo_benchmarks/
 	rm -rf data/external/aupimo_repo
 
+# Run the dummy classifier evaluation to demonstrate the accuracy paradox (supports theoretical or real mode)
+# Example: just run-dummy mode=real data_root=data/raw/mvtec_ad category=bottle
+run-dummy *args:
+	pixi run --frozen -e dev python -m app.main dummy {{args}}
 
+# Run the Patchcore baseline on the MVTec AD dataset (backward compatibility alias)
+# Example: just run-baseline category="bottle"
+run-baseline *args:
+	pixi run --frozen -e dev python -m app.main baseline {{args}}
+
+# Run the PatchCore pipeline on the MVTec AD dataset
+# Example: just run-patchcore category="bottle"
+run-patchcore *args:
+	pixi run --frozen -e dev python -m app.main patchcore {{args}}
+
+# Run the Keras Convolutional Autoencoder (CAE) pipeline on the MVTec AD dataset
+# Example: just run-cae category="bottle" epochs=20
+run-cae *args:
+	pixi run --frozen -e dev python -m app.main cae {{args}}
+
+# Run model evaluations
+# Example: just evaluate keras --tuned
+evaluate model *args:
+	pixi run --frozen -e dev python scripts/evaluate.py --model {{model}} {{args}}
+
+# Run Optuna sweeps for hyperparameter tuning
+# Example: just sweep keras
+sweep model:
+	pixi run --frozen -e dev python scripts/sweep.py --model {{model}}
 
 # Extract the downloaded MVTec AD tar.xz package locally (if downloaded manually from the official site)
 extract-data:
@@ -93,9 +125,25 @@ upload-data local_dir='data/raw/mvtec_ad':
 clean-notebooks:
 	find notebooks/ -type d -name ".ipynb_checkpoints" -exec rm -rf {} +
 
+# Run cognitive complexity analysis with Complexipy across the repository
+complexity:
+	uvx complexipy . --failed
+
+# Run local cognitive complexity analysis with Complexipy
+complexity-local:
+	uvx complexipy . --failed
+
+# Run CI cognitive complexity analysis with Complexipy
+complexity-ci:
+	uvx complexipy . --failed
+
 # Run the CI pipeline locally using GitHub 'act' tool
 act-ci:
 	act -W .github/workflows/ci.yml
+
+# Run cognitive complexity GitHub Actions workflow locally via act
+act-complexity:
+	act -j cognitive-complexity
 
 # Install the recommended VS Code extensions list
 install-extensions:

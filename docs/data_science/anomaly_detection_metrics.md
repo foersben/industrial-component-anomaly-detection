@@ -280,10 +280,36 @@ By re-evaluating established state-of-the-art architectures (e.g., PatchCore, Ef
 
 ---
 
-## 7. Mathematical and Practical Limitations of AUPIMO
+## 8. Operational Implementation in Manufacturing Lines
 
-Despite its advantages, practitioners must be aware of AUPIMO's limitations:
+### 8.1 The Strict Industrial FPR Threshold ($T_{AUPIMO}^{min}$)
 
-1. **No Precision Evaluation (Recall-Only):** AUPIMO measures segmentation recall ($T_i$) under a low false-positive constraint on normal images. However, it does not penalize over-segmentation (low precision) *inside* the anomalous image itself. If a model detects a 2-pixel scratch but segments a massive 500-pixel blob around it, the AUPIMO score is unaffected (provided the model remains quiet on clean images).
-2. **Multiple Anomalies Masking Effect:** Because recall is averaged at the image scope ($T_i$) rather than the region scope, an image with two separate defects where one is fully detected and the other is fully missed yields a score of $\approx 50\%$. This masks the fact that a distinct anomaly was completely missed.
-3. **Resolution Dependency:** The default bounds ($10^{-5}$ to $10^{-4}$) assume high-resolution imagery. On a $64 \times 64$ image (total $4096$ pixels), the lower bound $10^{-5}$ represents $0.04$ pixels, which is mathematically impossible to evaluate, rendering the default bounds meaningless for low-resolution inputs.
+In actual factory deployment, quality control software cannot evaluate continuous integral bounds at runtime; it requires an explicit **operating binarization threshold** $T_{AUPIMO}^{min}$.
+
+```mermaid
+graph LR
+    NormalSet["Normal Validation Pixels (Y^0)"] --> QuantileCalc["FPR Constraint Calibration: F_sh(t) = 1e-5"]
+    QuantileCalc --> TMin["Operating Threshold: T_AUPIMO^min"]
+    TMin --> EvalDefect["Evaluate Recall on Actual Defect Pixels: Recall(T_AUPIMO^min)"]
+    EvalDefect --> UIReport["Production Guarantee: Catch X% defects at <1 false alarm/100k pixels"]
+```
+
+1. **Threshold Determination:** The lower integration bound of AUPIMO corresponds to a False Positive Rate of $FPR = 10^{-5}$ on strictly normal samples $\mathcal{Y}^0$. We solve for the threshold $T_{AUPIMO}^{min}$ such that:
+
+$$T_{AUPIMO}^{min} = F_{sh}^{-1}(10^{-5})$$
+
+2. **Pixel Detection Reliability:** At this high operating threshold, we evaluate the fraction of ground-truth defect pixels that exceed $T_{AUPIMO}^{min}$:
+
+$$\text{Reliability} = \text{Recall}(T_{AUPIMO}^{min}) \times 100\%$$
+
+3. **Dashboard Interpretation:** This allows the UI dashboard to present operators with an intuitive, mathematically grounded statement:
+   > *"The strict industrial False Positive Rate (1e-5) threshold limit was calculated as **0.9857**. The model must exceed this high threshold to flag a pixel without violating the FPR constraint. At this threshold, the model finds **X%** of the actual anomalous pixels, guaranteeing highly reliable defect localization with fewer than 1 false alarm per 100,000 normal pixels."*
+
+### 8.2 Precision-Recall Curve (PR-AUC) vs. AUPIMO
+
+| Feature | Precision-Recall Curve (AUPR) | AUPIMO |
+| :--- | :--- | :--- |
+| **Primary Focus** | Precision vs. Recall trade-off across all operating points | True Positive Rate strictly under $FPR \le 10^{-4}$ on normal items |
+| **Normal Pixel False Alarms** | Indirectly penalized via Precision denominator ($TP / (TP + FP)$) | Directly and strictly bounded by Shared FPR integration |
+| **Curve Ordering** | Monotonically decreasing in Recall across increasing thresholds | Monotonically increasing in Image TPR across increasing Shared FPR |
+| **Production Decision** | Defines the Optimal Breakpoint ($T_{crossover}$) where Precision $\approx$ Recall | Establishes the hard industrial threshold limit ($T_{AUPIMO}^{min}$) for zero-defect standards |

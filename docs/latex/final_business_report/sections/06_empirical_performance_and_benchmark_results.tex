@@ -1,0 +1,55 @@
+\section{Empirical Performance and Benchmark Results}
+\label{sec:empirical_results}
+
+Under our strict zero-test-leakage protocol, we executed exhaustive empirical evaluations across all 15 MVTec AD categories, calibrating operational decision thresholds exclusively on held-out normal validation partitions. The results documented below characterise our production-grade reference architecture: PatchCore utilising a frozen ResNet-18 backbone.
+
+\subsection{Category-Level Performance Breakdown}
+
+Table~\ref{tab:category_results} provides the disaggregated performance across all 15 industrial categories. Evaluated at the frozen category-specific 95th-percentile normal-validation threshold ($\alpha=0.05$), we achieved a macro-average Image $F_1$-score of $0.929$, an Image PR-AUC of $0.988$, and a pixel-level AUPIMO of $0.603$. The unrounded category values average to defect recall $0.932$ and precision $0.936$.
+
+To contextualise this performance, we compare each category with its own trivial `all-defective' rule, whose Image $F_1$ is $2p/(1+p)$ for that category's defective prevalence $p$. PatchCore exceeds this category-specific reference in 13 of the 15 categories. The exceptions are \emph{Pill} ($0.891$ versus a trivial $0.916$) and \emph{Screw} ($0.796$ versus $0.853$). Their Image PR-AUC values remain high at $0.982$ and $0.983$, respectively, indicating strong score ranking despite weaker performance at the frozen validation-calibrated operating point.
+
+\begin{table}[H]
+\centering
+\caption{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. Image decisions use the category-specific 95th percentile of scores from the 15\% normal validation partition ($\alpha=0.05$), frozen before official test inference.}
+\label{tab:category_results}
+\scriptsize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Category} & \textbf{Image $F_1$} & \textbf{Recall} & \textbf{Precision} & \textbf{PR-AUC} & \textbf{AUPIMO} \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{Discrete Structural Objects}} \\
+Bottle     & 0.962 & 1.000 & 0.926 & 1.000 & 0.982 \\
+Cable      & 0.933 & 0.913 & 0.955 & 0.985 & 0.511 \\
+Capsule    & 0.982 & 0.982 & 0.982 & 0.996 & 0.563 \\
+Hazelnut   & 0.971 & 0.943 & 1.000 & 0.999 & 0.863 \\
+Metal Nut  & 0.963 & 0.989 & 0.939 & 0.998 & 0.760 \\
+Pill       & 0.891 & 0.816 & 0.983 & 0.982 & 0.293 \\
+Screw      & 0.796 & 0.672 & 0.976 & 0.983 & 0.380 \\
+Toothbrush & 0.923 & 1.000 & 0.857 & 0.949 & 0.414 \\
+Transistor & 0.916 & 0.950 & 0.884 & 0.976 & 0.427 \\
+Zipper     & 0.962 & 0.958 & 0.966 & 0.985 & 0.251 \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{Continuous Textures}} \\
+Carpet     & 0.926 & 0.989 & 0.871 & 0.994 & 0.796 \\
+Grid       & 0.916 & 0.860 & 0.980 & 0.986 & 0.506 \\
+Leather    & 0.898 & 1.000 & 0.814 & 0.998 & 0.972 \\
+Tile       & 0.951 & 0.917 & 0.987 & 0.993 & 0.685 \\
+Wood       & 0.952 & 0.983 & 0.922 & 0.995 & 0.642 \\
+\midrule
+\textbf{Macro Average} & \textbf{0.929} & \textbf{0.932} & \textbf{0.936} & \textbf{0.988} & \textbf{0.603} \\
+\bottomrule
+\end{tabular}%
+\end{table}
+
+\subsection{Engineering Analysis of Boundary Categories}
+
+The two categories presenting the most pronounced economic asymmetry -- pharmaceutical tablets (\emph{Pill}) and threaded fasteners (\emph{Screw}) -- warrant detailed scrutiny. 
+
+At the reported $\alpha=0.05$ operating point, the \emph{Pill} category attains an Image $F_1$-score of $0.891$, recall of $0.816$, and precision of $0.983$. In a life-critical pharmaceutical facility, an $18.4\%$ defect escape rate would be intolerable. Tier 1 therefore proposes a lower, recall-prioritised threshold and manual review of borderline cases. This is a commissioning policy to be validated on plant-specific acceptance data, not a separately benchmarked claim of perfect recall in Table~\ref{tab:category_results}.
+
+Conversely, the \emph{Screw} category is the most difficult image-level classification case, recording an Image $F_1$-score of $0.796$ and AUPIMO of $0.380$. Screws are photographed at arbitrary angles, and microscopic thread defects blend into normal machining marks. Against the final Keras CAE baseline, PatchCore raises Screw Image $F_1$ from $0.421$ to $0.796$ and AUPIMO from $0.005$ to $0.380$. At the reported operating point, precision is $0.976$ and recall is $0.672$; a distinct Tier 3 operating point would require separate commissioning validation.
+
+\subsection{Spatial Localisation Quality and Material Characteristics}
+
+While continuous texture categories like \emph{Leather} ($0.972$) and \emph{Carpet} ($0.796$) demonstrate strong spatial localisation fidelity under the AUPIMO metric, the highest score belongs to the discrete \emph{Bottle} category ($0.982$); \emph{Hazelnut} ($0.863$) also surpasses most texture classes. Localisation difficulty is not identical to image-level classification difficulty: \emph{Zipper} has the lowest AUPIMO ($0.251$), followed by \emph{Pill} ($0.293$) and \emph{Screw} ($0.380$), whereas Screw has the lowest Image $F_1$. The corresponding Image PR-AUC values remain $0.985$, $0.982$, and $0.983$, showing that category ranking can remain strong even when spatial boundaries or a frozen operating point are challenging.
