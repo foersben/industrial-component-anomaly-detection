@@ -227,3 +227,8 @@ data/raw/
 data/processed/
 data/external/
 models/
+
+# Temporary outputs
+data/
+results/
+scratch/

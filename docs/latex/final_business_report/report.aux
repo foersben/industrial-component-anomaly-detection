@@ -1,0 +1,83 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{roth2022patchcore}
+\citation{bergmann2019mvtec}
+\citation{bergmann2021mvtec}
+\citation{bertoldo2024aupimo}
+\providecommand \oddpage@label [2]{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\newlabel{sec:introduction}{{1}{1}{Introduction}{section.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces PatchCore explainability output for a representative defective bottle. From left to right: the input image, continuous anomaly-map overlay, and predicted contour mask at the frozen validation-calibrated operating threshold.}}{2}{figure.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:intro_heatmap}{{1}{2}{PatchCore explainability output for a representative defective bottle. From left to right: the input image, continuous anomaly-map overlay, and predicted contour mask at the frozen validation-calibrated operating threshold}{figure.caption.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Error Asymmetry and Cost-Sensitive Decision Making}{2}{section.2}\protected@file@percent }
+\newlabel{sec:cost_model}{{2}{2}{Error Asymmetry and Cost-Sensitive Decision Making}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}The Economic Cost Model}{2}{subsection.2.1}\protected@file@percent }
+\newlabel{eq:cost}{{1}{2}{The Economic Cost Model}{equation.1}{}}
+\newlabel{eq:optimal_threshold}{{2}{3}{The Economic Cost Model}{equation.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}The Industrial Liability Spectrum: Screws and Pills as Boundary Cases}{3}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Industrial Data: Lessons from the MVTec AD Benchmark}{3}{section.3}\protected@file@percent }
+\newlabel{sec:dataset_landscape}{{3}{3}{Industrial Data: Lessons from the MVTec AD Benchmark}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}The Accuracy Paradox and Its Implications for Metric Selection}{3}{subsection.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Economic error asymmetry across representative industrial manufacturing categories.}}{3}{table.caption.2}\protected@file@percent }
+\newlabel{tab:cost_asymmetry}{{1}{3}{Economic error asymmetry across representative industrial manufacturing categories}{table.caption.2}{}}
+\citation{bertoldo2024aupimo}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Per-image defect-area distributions computed from the 1,258 defective MVTec AD test masks. Boxes show category-level interquartile ranges on a logarithmic axis; the dashed line marks the all-image median of $1.54\%$.}}{4}{figure.caption.3}\protected@file@percent }
+\newlabel{fig:imbalance_eda}{{2}{4}{Per-image defect-area distributions computed from the 1,258 defective MVTec AD test masks. Boxes show category-level interquartile ranges on a logarithmic axis; the dashed line marks the all-image median of $1.54\%$}{figure.caption.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Heterogeneous Preprocessing and the Cold-Start Dilemma}{4}{subsection.3.2}\protected@file@percent }
+\citation{wang2004ssim}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Solution Architecture and Model Selection}{5}{section.4}\protected@file@percent }
+\newlabel{sec:model_selection}{{4}{5}{Solution Architecture and Model Selection}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}PatchCore: Deep Feature Transfer and Coreset Memory Banks}{5}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Comparative Analysis: The Failure Modes of Generative Autoencoders}{5}{subsection.4.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Macro-averaged performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol.}}{5}{table.caption.4}\protected@file@percent }
+\newlabel{tab:paradigm_comparison}{{2}{5}{Macro-averaged performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol}{table.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Continuous Calibration: Mitigate Operational Drift Without Retraining}{6}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Operational Threshold Calibration}{6}{section.5}\protected@file@percent }
+\newlabel{sec:threshold_calibration}{{5}{6}{Operational Threshold Calibration}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}The Operational Distinction Between AUPIMO and Decision Thresholds}{6}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Strict Zero-Test-Leakage Calibration Protocol}{6}{subsection.5.2}\protected@file@percent }
+\newlabel{eq:threshold_quantile}{{3}{7}{Strict Zero-Test-Leakage Calibration Protocol}{equation.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Standardised Risk-Tiered Operating Profiles}{7}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Empirical Performance and Benchmark Results}{7}{section.6}\protected@file@percent }
+\newlabel{sec:empirical_results}{{6}{7}{Empirical Performance and Benchmark Results}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Category-Level Performance Breakdown}{7}{subsection.6.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Schematic relationship between the normal-validation score distribution and the three predeclared operating profiles. The reported benchmark uses the Tier 2 setting, $\alpha =0.05$; no empirical result is inferred from the illustrative curve shapes.}}{8}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:threshold_calibration}{{3}{8}{Schematic relationship between the normal-validation score distribution and the three predeclared operating profiles. The reported benchmark uses the Tier 2 setting, $\alpha =0.05$; no empirical result is inferred from the illustrative curve shapes}{figure.caption.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. Image decisions use the category-specific 95th percentile of scores from the 15\% normal validation partition ($\alpha =0.05$), frozen before official test inference.}}{8}{table.caption.6}\protected@file@percent }
+\newlabel{tab:category_results}{{3}{8}{PatchCore (ResNet-18) empirical performance across all 15 MVTec AD categories under our strict zero-test-leakage protocol. Image decisions use the category-specific 95th percentile of scores from the 15\% normal validation partition ($\alpha =0.05$), frozen before official test inference}{table.caption.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Engineering Analysis of Boundary Categories}{8}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Spatial Localisation Quality and Material Characteristics}{9}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Production Deployment: Hardware, Latency, Explainability}{9}{section.7}\protected@file@percent }
+\newlabel{sec:deployment}{{7}{9}{Production Deployment: Hardware, Latency, Explainability}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Hardware-Tiered Inference and Cycle-Time Profiling}{9}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Explainable AI (XAI) and Operator Interface Architecture}{9}{subsection.7.2}\protected@file@percent }
+\citation{anomalib}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Stored PatchCore qualitative outputs for representative Bottle, Cable, and Screw defects. Each row shows the input, ground-truth mask, anomaly-map overlay, and predicted contour mask.}}{10}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:xai_reconstructions}{{4}{10}{Stored PatchCore qualitative outputs for representative Bottle, Cable, and Screw defects. Each row shows the input, ground-truth mask, anomaly-map overlay, and predicted contour mask}{figure.caption.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Enterprise Software Architecture and Intellectual Property Safeguards}{10}{subsection.7.3}\protected@file@percent }
+\bibcite{bergmann2019mvtec}{1}
+\bibcite{bergmann2021mvtec}{2}
+\bibcite{bergmann2019ssim}{3}
+\bibcite{roth2022patchcore}{4}
+\bibcite{wang2004ssim}{5}
+\bibcite{bertoldo2024aupimo}{6}
+\bibcite{oquab2023dinov2}{7}
+\bibcite{guo2024dinomaly}{8}
+\bibcite{simeoni2025dinov3}{9}
+\bibcite{anomalib}{10}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{11}{section.8}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{11}{Conclusion}{section.8}{}}
+\citation{guo2024dinomaly}
+\citation{oquab2023dinov2}
+\citation{simeoni2025dinov3}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Post-Project Extension: Self-Supervised Vision Transformer Baselines}{12}{appendix.A}\protected@file@percent }
+\newlabel{app:dino}{{A}{12}{Post-Project Extension: Self-Supervised Vision Transformer Baselines}{appendix.A}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Architectural Formulation and Literature Context}{12}{subsection.A.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {A.1.1}Self-Supervised Baselines (ViT-S/14)}{12}{subsubsection.A.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}Indicative Empirical Results and Engineering Trade-Offs}{12}{subsection.A.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Macro-averaged results from the exploratory DINOv2 and DINOv3 runs. Because these runs were test-informed, the values are reported for transparency and must not be ranked against the clean-protocol PatchCore reference.}}{12}{table.caption.8}\protected@file@percent }
+\newlabel{tab:dino_results}{{4}{12}{Macro-averaged results from the exploratory DINOv2 and DINOv3 runs. Because these runs were test-informed, the values are reported for transparency and must not be ranked against the clean-protocol PatchCore reference}{table.caption.8}{}}
+\gdef \@abspage@last{12}
