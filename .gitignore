@@ -233,6 +233,7 @@ data/tmp/
 
 results/
 data/models/
+data/
 
 # Latex artifacts
 *.aux
