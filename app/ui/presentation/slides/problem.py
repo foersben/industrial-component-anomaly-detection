@@ -2,13 +2,13 @@
 
 # ruff: noqa: E501
 
-from app.ui.presentation.theme import DATASET, img, slide_html
+from app.ui.presentation.theme import DEFECT_EXAMPLES, img, slide_html
 
 
 def render() -> None:
     """Show why pixel imbalance makes the inspection problem difficult."""
-    defect = DATASET / "capsule" / "test" / "squeeze" / "013.png"
-    mask = DATASET / "capsule" / "ground_truth" / "squeeze" / "013_mask.png"
+    defect = DEFECT_EXAMPLES / "problem_capsule_squeeze.png"
+    mask = DEFECT_EXAMPLES / "problem_capsule_squeeze_mask.png"
     body = f"""
     <div style="display:grid;grid-template-columns:1.25fr .52fr .92fr;gap:2.6cqw;height:100%;align-items:center">
       <div>

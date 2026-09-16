@@ -4,22 +4,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import streamlit as st
 
 from app.ui.presentation.theme import RESULTS
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-def _available_ids(directory: Path, suffix: str) -> list[str]:
-    return sorted(path.name.removeprefix("image_").removesuffix(suffix) for path in directory.glob(f"image_*{suffix}"))
-
 
 def _open_dashboard() -> None:
     st.session_state["application_mode"] = "Technical Dashboard"
+
+
+def _select_category(category: str) -> None:
+    st.session_state["presentation_demo_category"] = category
 
 
 def render() -> None:
@@ -29,19 +24,32 @@ def render() -> None:
         '<div style="font:790 3.2cqw/.98 Inter,sans-serif;letter-spacing:-.045em">Live inspection</div></div>',
         unsafe_allow_html=True,
     )
-    controls, visual = st.columns([0.3, 0.7], gap="large")
+    controls, visual = st.columns([0.36, 0.64], gap="large")
     categories = sorted(path.name for path in (RESULTS / "patchcore").iterdir() if path.is_dir())
+    if st.session_state.get("presentation_demo_category") not in categories:
+        st.session_state["presentation_demo_category"] = "bottle"
+    category = st.session_state["presentation_demo_category"]
     with controls:
-        category = st.selectbox("Component category", categories, index=categories.index("bottle"))
-        pred_dir = RESULTS / "patchcore" / category / "heatmaps" / "prediction"
-        gt_dir = RESULTS / "patchcore" / category / "heatmaps" / "ground_truth_overlay"
-        sample_ids = sorted(set(_available_ids(pred_dir, "_prediction.png")) & set(_available_ids(gt_dir, "_gt_overlay.png")), key=int)
-        sample = st.select_slider("Inspection sample", options=sample_ids, value=sample_ids[0])
+        st.markdown("**Component category**")
+        with st.container():
+            for row_start in range(0, len(categories), 3):
+                columns = st.columns(3, gap="small")
+                for column, option in zip(columns, categories[row_start : row_start + 3], strict=True):
+                    column.button(
+                        option.replace("_", " ").title(),
+                        key=f"presentation_demo_category_button_{option}",
+                        type="primary" if option == category else "secondary",
+                        on_click=_select_category,
+                        args=(option,),
+                        width="stretch",
+                    )
+        panel_dir = RESULTS / "patchcore" / category / "four_panel"
+        samples = sorted(panel_dir.glob("slide_09_*_sample_*.png"))
         st.markdown(
-            "**Operator reading**  \nWarm regions carry anomaly evidence. The contour shows the frozen decision boundary."
+            "**Two inspection examples**  \nEach row reads left to right: source image, dataset mask, anomaly evidence, and the thresholded decision."
         )
         st.button("Open technical dashboard", on_click=_open_dashboard, width="stretch")
     with visual:
-        left, right = st.columns(2, gap="medium")
-        left.image(str(gt_dir / f"image_{sample}_gt_overlay.png"), caption="Ground-truth reference", width="stretch")
-        right.image(str(pred_dir / f"image_{sample}_prediction.png"), caption="PatchCore prediction", width="stretch")
+        for sample_number, sample in enumerate(samples, start=1):
+            defect = sample.stem.split("_sample_", maxsplit=1)[-1].split("_", maxsplit=1)[-1].replace("_", " ").title()
+            st.image(str(sample), caption=f"Sample {sample_number} · {defect}", width="stretch")

@@ -29,4 +29,4 @@ def render() -> None:
       </div>
     </div>
     """
-    slide_html("Deployment recommendation", body, eyebrow="09 · Decision", extra_class="dark")
+    slide_html("Deployment recommendation", body, eyebrow="09 · Decision")

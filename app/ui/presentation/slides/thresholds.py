@@ -2,12 +2,12 @@
 
 # ruff: noqa: E501
 
-from app.ui.presentation.theme import RESULTS, img, slide_html
+from app.ui.presentation.theme import GENERATED_CHARTS, img, slide_html
 
 
 def render() -> None:
     """Use an actual evaluation curve to explain threshold economics."""
-    curve = RESULTS / "patchcore" / "bottle" / "image_level_tradeoff_curve.png"
+    curve = GENERATED_CHARTS / "patchcore_bottle_threshold_tradeoff.png"
     body = f"""
     <div style="display:grid;grid-template-columns:1.3fr .7fr;gap:3.7cqw;height:100%;align-items:center">
       <div class="image-frame" style="height:48cqh;background:white;padding:1cqh 1cqw">

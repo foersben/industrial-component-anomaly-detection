@@ -13,9 +13,10 @@ from pathlib import Path
 
 import streamlit as st
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DATASET = REPO_ROOT / "data" / "raw" / "mvtec_ad"
-RESULTS = REPO_ROOT / "results" / "evaluation"
+ASSETS = Path(__file__).resolve().parent / "assets"
+DEFECT_EXAMPLES = ASSETS / "defect_examples"
+GENERATED_CHARTS = ASSETS / "generated_charts"
+RESULTS = ASSETS / "demo_results"
 
 
 @lru_cache(maxsize=64)
@@ -192,6 +193,18 @@ html, body, #root, [data-testid="stApp"], [data-testid="stAppViewContainer"],
 .st-key-defense_stage:has(.demo-marker) label { font-size: 1.03cqw; color: var(--ink) !important; }
 .st-key-defense_stage:has(.demo-marker) [data-baseweb="select"] { font-size: 1.02cqw; }
 .st-key-defense_stage:has(.demo-marker) button { min-height: 36px; }
+[class*="st-key-presentation_demo_category_button_"] button {
+  min-height: 32px !important;
+  padding: 0 .3cqw !important;
+  font-size: 1cqw !important;
+  white-space: nowrap !important;
+}
+[class*="st-key-presentation_demo_category_button_"] button * {
+  font-size: 1cqw !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+}
 .st-key-defense_stage:has(.demo-marker) [data-testid="stButton"] button,
 .st-key-defense_stage:has(.demo-marker) [data-testid="stButton"] button * {
     color: #ffffff !important;
