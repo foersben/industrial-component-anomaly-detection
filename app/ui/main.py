@@ -4,6 +4,7 @@ import warnings
 
 import streamlit as st
 
+from app.ui.presentation import render_defense_presentation
 from app.ui.tabs.autoencoder_tab import render_autoencoder_tab
 from app.ui.tabs.dino_tab import render_dino_tab
 from app.ui.tabs.dummy_tab import render_dummy_evaluation_tab
@@ -30,6 +31,22 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+    st.session_state.setdefault("application_mode", "Defense Presentation")
+    mode = st.session_state["application_mode"]
+    if mode == "Defense Presentation":
+        render_defense_presentation()
+        return
+
+    mode = st.segmented_control(
+        "Application mode",
+        ["Defense Presentation", "Technical Dashboard"],
+        key="application_mode",
+        label_visibility="collapsed",
+        width="stretch",
+    )
+    if mode == "Defense Presentation":
+        st.rerun()
+
     st.title("Industrial Component Anomaly Detection Dashboard")
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
