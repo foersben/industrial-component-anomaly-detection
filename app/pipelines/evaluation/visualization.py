@@ -1,5 +1,7 @@
 """Evaluation visualization functions for Streamlit."""
 
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, NamedTuple
 
 import matplotlib.pyplot as plt
@@ -33,20 +35,29 @@ class ProcessedEvaluationData(NamedTuple):
     eval_level_label: str
 
 
-def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
-    """Loads .npz data, aligns array shapes, and computes PR/AUPIMO metrics.
+MAX_PLOT_POINTS = 5_000
 
-    Args:
-        data_path: Path to the .npz file containing precision, recall, and thresholds.
 
-    Returns:
-        Data container with processed evaluation metrics.
-    """
-    data = np.load(data_path, allow_pickle=True)
+def _downsample_curve(
+    x: np.ndarray[Any, Any], y: np.ndarray[Any, Any]
+) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]:
+    """Bound chart rendering cost without changing full-resolution metric calculations."""
+    if len(x) <= MAX_PLOT_POINTS:
+        return x, y
+    indices = np.linspace(0, len(x) - 1, num=MAX_PLOT_POINTS, dtype=np.int64)
+    return x[indices], y[indices]
 
-    precisions = data["precision"]
-    recalls = data["recall"]
-    thresholds = data["thresholds"]
+
+@st.cache_data(show_spinner=False)
+def _load_and_prepare_evaluation_data_cached(data_path: str, modified_ns: int) -> ProcessedEvaluationData:
+    """Load processed metrics once for an unchanged on-disk artifact."""
+    del modified_ns
+    with np.load(data_path, allow_pickle=True) as data:
+        precisions = data["precision"]
+        recalls = data["recall"]
+        thresholds = data["thresholds"]
+        raw_level = str(data["level"]) if "level" in data else ""
+
     # Align shapes if metrics returned boundary values
     if len(precisions) == len(thresholds) + 1:
         precisions = precisions[:-1]
@@ -67,9 +78,6 @@ def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
         sorted_precisions = np.append(sorted_precisions, sorted_precisions[-1])
 
     integrated_aupr = float(auc(sorted_recalls, sorted_precisions))
-
-    # Detect evaluation level
-    raw_level = str(data["level"]) if "level" in data else ""
     eval_level_label = (
         "Image-Level (Classification)" if "image" in raw_level or "image" in data_path else "Pixel-Level (Localization)"
     )
@@ -86,6 +94,19 @@ def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
     )
 
 
+def load_and_prepare_evaluation_data(data_path: str) -> ProcessedEvaluationData:
+    """Loads .npz data, aligns array shapes, and computes PR/AUPIMO metrics.
+
+    Args:
+        data_path: Path to the .npz file containing precision, recall, and thresholds.
+
+    Returns:
+        Data container with processed evaluation metrics.
+    """
+    metrics_path = Path(data_path)
+    return _load_and_prepare_evaluation_data_cached(str(metrics_path), metrics_path.stat().st_mtime_ns)
+
+
 def plot_tradeoff_curve(data: ProcessedEvaluationData) -> Figure:
     """Generate the precision and recall threshold-tradeoff figure.
 
@@ -95,9 +116,11 @@ def plot_tradeoff_curve(data: ProcessedEvaluationData) -> Figure:
     Returns:
         The matplotlib figure.
     """
+    thresholds, precisions = _downsample_curve(data.thresholds, data.precisions)
+    _, recalls = _downsample_curve(data.thresholds, data.recalls)
     fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
-    ax.plot(data.thresholds, data.precisions, label="Precision", color="#1f77b4", linewidth=2)
-    ax.plot(data.thresholds, data.recalls, label="Recall", color="#ff7f0e", linewidth=2)
+    ax.plot(thresholds, precisions, label="Precision", color="#1f77b4", linewidth=2)
+    ax.plot(thresholds, recalls, label="Recall", color="#ff7f0e", linewidth=2)
     ax.axvline(
         x=data.t_crossover,
         color="gray",
@@ -122,16 +145,17 @@ def plot_pr_curve(data: ProcessedEvaluationData) -> Figure:
     Returns:
         The matplotlib figure.
     """
+    recalls, precisions = _downsample_curve(data.sorted_recalls, data.sorted_precisions)
     fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
     # Full PR Curve
     ax.plot(
-        data.sorted_recalls,
-        data.sorted_precisions,
+        recalls,
+        precisions,
         label=f"PR Curve (AUPR={data.integrated_aupr:.4f})",
         color="#8E44AD",
         lw=2.5,
     )
-    ax.fill_between(data.sorted_recalls, data.sorted_precisions, alpha=0.2, color="#8E44AD")
+    ax.fill_between(recalls, precisions, alpha=0.2, color="#8E44AD")
 
     ax.set_xlim(0.0, 1.03)
     ax.set_ylim(-0.03, 1.05)
@@ -141,6 +165,50 @@ def plot_pr_curve(data: ProcessedEvaluationData) -> Figure:
     ax.grid(True, ls="--", alpha=0.5)
     ax.legend()
     return fig
+
+
+def _save_figure_once(figure: Figure, output_path: Path) -> None:
+    """Persist a figure atomically unless an existing cache is already available."""
+    if output_path.is_file():
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            dir=output_path.parent, prefix=f".{output_path.stem}-", suffix=".png", delete=False
+        ) as tmp:
+            temp_path = Path(tmp.name)
+        figure.savefig(temp_path, bbox_inches="tight")
+        if not output_path.exists():
+            temp_path.replace(output_path)
+            temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _resolve_or_create_curve_images(data_path: str, data: ProcessedEvaluationData) -> tuple[Path, Path]:
+    """Return persistent chart images, generating only cache misses."""
+    metrics_path = Path(data_path)
+    tradeoff_path = metrics_path.with_name(f"{metrics_path.stem}_threshold_tradeoff.png")
+    pr_path = metrics_path.with_name(f"{metrics_path.stem}_precision_recall.png")
+
+    if not tradeoff_path.is_file():
+        tradeoff_figure = plot_tradeoff_curve(data)
+        try:
+            _save_figure_once(tradeoff_figure, tradeoff_path)
+        finally:
+            plt.close(tradeoff_figure)
+
+    if not pr_path.is_file():
+        pr_figure = plot_pr_curve(data)
+        try:
+            _save_figure_once(pr_figure, pr_path)
+        finally:
+            plt.close(pr_figure)
+
+    return tradeoff_path, pr_path
 
 
 def render_evaluation_curves(data_path: str) -> None:
@@ -165,15 +233,9 @@ def render_evaluation_curves(data_path: str) -> None:
     cols[0].metric("Optimal Breakpoint (Prec ~= Rec)", f"{data.t_crossover:.4f}")
     cols[1].metric("PR-AUC (AUPR)", f"{data.integrated_aupr:.4f}")
 
+    tradeoff_path, pr_path = _resolve_or_create_curve_images(data_path, data)
+
     # 2. Streamlit Charts Side-by-Side
     col_chart1, col_chart2 = st.columns(2)
-
-    with col_chart1:
-        fig1 = plot_tradeoff_curve(data)
-        st.pyplot(fig1)
-        plt.close(fig1)
-
-    with col_chart2:
-        fig2 = plot_pr_curve(data)
-        st.pyplot(fig2)
-        plt.close(fig2)
+    col_chart1.image(str(tradeoff_path), width="stretch")
+    col_chart2.image(str(pr_path), width="stretch")

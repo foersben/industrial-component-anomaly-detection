@@ -406,8 +406,9 @@ def _render_explorer_content(
     The model processes test images and generates a pixel-wise **Anomaly Map**. High values indicate that the model
     believes those specific pixels are defective based on what it learned from normal components.
 
-    **Red / warm** — high anomaly score → likely a defect
-    **Blue / cool** — low anomaly score → looks normal to the model
+    - **Red / warm** — high anomaly score → likely a defect
+
+    - **Blue / cool** — low anomaly score → looks normal to the model
     """)
 
     model_hash = str(results.get("model_hash", "current"))

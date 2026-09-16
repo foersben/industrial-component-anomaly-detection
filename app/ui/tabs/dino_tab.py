@@ -8,7 +8,6 @@ import pandas as pd
 import streamlit as st
 
 from app.domain.categories import discover_dataset_categories
-from app.pipelines.evaluation.visualization import render_evaluation_curves
 from app.pipelines.modelling.dino import (
     delete_cached_dino_model,
     list_trashed_dino_models,
@@ -433,10 +432,6 @@ def _render_dino_results(results_dict: dict[str, Any], category: str) -> None:
         _render_dino_all_categories_summary(results_dict)
     elif isinstance(results_dict, dict):
         _render_evaluation_summary(results_dict, model_type="patchcore")
-        pixel_metrics = results_dict.get("pixel_level", {})
-        if metrics_path := pixel_metrics.get("metrics_path"):
-            if Path(metrics_path).is_file():
-                render_evaluation_curves(metrics_path)
         _render_heatmap_explorer(results_dict)
     else:
         st.text_area("Results", value=str(results_dict), height=180)
