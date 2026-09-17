@@ -6,27 +6,62 @@ from app.ui.presentation.theme import slide_html
 
 
 def render() -> None:
-    """Render the recommended system and the remaining validation gates."""
+    """Render the recommended production system, validation gates, and future prospects."""
     body = """
-    <div style="display:grid;grid-template-columns:1.14fr .86fr;gap:5cqw;height:100%;align-items:center">
+    <div style="display:grid;grid-template-columns:1.08fr .92fr;gap:3.5cqw;height:100%;align-items:center">
       <div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.8cqw;align-items:center">
-          <div style="background:#dceee9;color:#10212b;border-radius:1cqw;padding:2.3cqh .8cqw;text-align:center;font-size:1.05cqw;font-weight:760">PatchCore</div>
-          <div style="background:#dceee9;color:#10212b;border-radius:1cqw;padding:2.3cqh .8cqw;text-align:center;font-size:1.05cqw;font-weight:760">ResNet-18</div>
-          <div style="background:#f7e2d5;color:#10212b;border-radius:1cqw;padding:2.3cqh .8cqw;text-align:center;font-size:1.05cqw;font-weight:760">Calibrated threshold</div>
-          <div style="background:#0f3038;color:white;border-radius:1cqw;padding:2.3cqh .8cqw;text-align:center;font-size:1.05cqw;font-weight:760">Heatmap + contour</div>
+        <div style="display:flex;gap:.8cqw;margin-bottom:1.4cqh">
+          <span class="badge">Production Recommendation</span>
+          <span class="badge">PatchCore + ResNet-18</span>
         </div>
-        <div style="font-size:2.1cqw;font-weight:790;line-height:1.18;margin-top:5cqh">A practical quality gate from normal-only examples</div>
-        <div class="def-sub" style="font-size:1.18cqw;margin-top:1.4cqh">Local reference memory keeps onboarding simple and operator evidence visible.</div>
+        <div style="font-size:1.55cqw;font-weight:790;line-height:1.2;color:var(--ink)">
+          Day-One Factory Quality Gate from Normal-Only Parts
+        </div>
+        <div class="def-rule" style="margin:1.4cqh 0"></div>
+        <div style="display:grid;gap:1.2cqh">
+          <div class="card-box" style="padding:1.2cqh 1.2cqw">
+            <b>01 · Takt Time & Cycle Verification</b><br>
+            <span style="font-size:.92cqw;color:var(--muted)">Benchmark forward-pass & coreset search latency directly on plant IPC hardware.</span>
+          </div>
+          <div class="card-box" style="padding:1.2cqh 1.2cqw">
+            <b>02 · Plant-Specific Calibration</b><br>
+            <span style="font-size:.92cqw;color:var(--muted)">Freeze operational decision thresholds on the 15% local normal validation pool.</span>
+          </div>
+          <div class="card-box" style="padding:1.2cqh 1.2cqw">
+            <b>03 · Drift Control Without Retraining</b><br>
+            <span style="font-size:.92cqw;color:var(--muted)">Absorb material and lighting shifts by updating memory banks via QA approval, zero weight retraining.</span>
+          </div>
+        </div>
       </div>
+
       <div>
-        <div class="tiny-label">Before production</div>
-        <div style="display:grid;gap:2.1cqh;margin-top:2cqh;font-size:1.18cqw;line-height:1.35">
-          <div><b>01&nbsp; Takt time</b><br><span class="def-sub" style="font-size:1cqw">Measure latency on the target line hardware.</span></div>
-          <div><b>02&nbsp; Plant calibration</b><br><span class="def-sub" style="font-size:1cqw">Freeze thresholds on accepted local data.</span></div>
-          <div><b>03&nbsp; Drift control</b><br><span class="def-sub" style="font-size:1cqw">Approve memory updates through QA.</span></div>
+        <div class="card-box-dark" style="padding:2.4cqh 1.8cqw">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="tiny-label" style="color:#8dd8c9">Research Horizon</span>
+            <span class="badge" style="background:rgba(141,216,201,.2);color:#8dd8c9;border-color:#8dd8c9">Future Prospects</span>
+          </div>
+          <div style="font-size:1.3cqw;font-weight:780;color:#eef7f6;margin:1.1cqh 0">
+            Self-Supervised Vision Transformers (DINOv2 / DINOv3)
+          </div>
+          <div style="font-size:.95cqw;line-height:1.4;color:#b8ccce">
+            Exploratory tests show foundation models push the representation ceiling:
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1cqw;margin:1.4cqh 0">
+            <div style="background:rgba(255,255,255,.06);border-radius:.8cqw;padding:1cqh .8cqw">
+              <div class="metric-number" style="font-size:2cqw;color:#8dd8c9">0.680</div>
+              <div style="font-size:.85cqw;color:#aec2c7">DINOv3 AUPIMO (+7.7 pts)</div>
+            </div>
+            <div style="background:rgba(255,255,255,.06);border-radius:.8cqw;padding:1cqh .8cqw">
+              <div class="metric-number" style="font-size:2cqw;color:#8dd8c9">0.957</div>
+              <div style="font-size:.85cqw;color:#aec2c7">DINOv3 Image F1</div>
+            </div>
+          </div>
+          <div style="font-size:.9cqw;line-height:1.35;color:#8dd8c9">
+            <b>Status:</b> Future roadmap. Industrial PC hardware memory limits and clean protocol freezing retain ResNet-18 as today's deployment standard.
+          </div>
         </div>
       </div>
     </div>
+    <div class="source">Source: Business Report Section 8 & Appendix A1 · Strategic Recommendations & Future Directions</div>
     """
-    slide_html("Deployment recommendation", body, eyebrow="09 · Decision")
+    slide_html("Deployment Recommendation & Future Horizons", body, eyebrow="11 · Strategic Roadmap")

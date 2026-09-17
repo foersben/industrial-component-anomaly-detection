@@ -29,10 +29,7 @@ def image_uri(path: Path) -> str:
 
 def img(path: Path, alt: str, css_class: str = "") -> str:
     """Build escaped presentation image markup."""
-    return (
-        f'<img class="{html.escape(css_class)}" src="{image_uri(path)}" '
-        f'alt="{html.escape(alt)}">'
-    )
+    return f'<img class="{html.escape(css_class)}" src="{image_uri(path)}" alt="{html.escape(alt)}">'
 
 
 def slide_html(title: str, body: str, *, eyebrow: str, extra_class: str = "") -> None:
@@ -213,6 +210,50 @@ html, body, #root, [data-testid="stApp"], [data-testid="stAppViewContainer"],
     background: #008f88 !important;
     border-color: #008f88 !important;
     color: #ffffff !important;
+}
+.badge {
+  display: inline-block;
+  padding: .35cqh .7cqw;
+  border-radius: 999px;
+  font-size: .82cqw;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: rgba(0,127,122,.12);
+  color: var(--teal);
+  border: 1px solid rgba(0,127,122,.28);
+}
+.badge-coral {
+  background: rgba(240,108,84,.14);
+  color: var(--coral);
+  border-color: rgba(240,108,84,.32);
+}
+.badge-dark {
+  background: rgba(16,33,43,.85);
+  color: #edf6f4;
+  border-color: rgba(255,255,255,.2);
+}
+.card-box {
+  background: rgba(255,255,255,.65);
+  border: 1px solid rgba(16,33,43,.08);
+  border-radius: 1.1cqw;
+  padding: 2.2cqh 1.5cqw;
+  box-shadow: 0 .6cqw 1.8cqw rgba(16,33,43,.04);
+}
+.card-box-dark {
+  background: #0d232c;
+  color: #eef7f6;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 1.1cqw;
+  padding: 2.2cqh 1.5cqw;
+  box-shadow: 0 .8cqw 2.4cqw rgba(0,0,0,.25);
+}
+.slide-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2cqw;
+  height: 100%;
+  min-height: 0;
 }
 @media (max-width: 800px) {
   .st-key-defense_stage { border-radius: 5px; }

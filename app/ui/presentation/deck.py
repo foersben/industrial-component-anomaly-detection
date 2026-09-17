@@ -8,16 +8,18 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 from app.ui.presentation.slides import (
+    cae_model,
     conclusion,
     demo,
     eda,
-    models,
+    eda_screw,
     patchcore,
     problem,
     protocol,
     results,
     thresholds,
     title,
+    transfer_learning,
 )
 from app.ui.presentation.theme import inject_theme
 
@@ -35,15 +37,17 @@ class Slide:
 
 SLIDES = (
     Slide("Industrial Component Anomaly Detection", title.render),
-    Slide("Why the problem is hard", problem.render),
-    Slide("What EDA taught us", eda.render),
-    Slide("Evaluation without leakage", protocol.render),
-    Slide("Model evolution", models.render),
-    Slide("How PatchCore works", patchcore.render),
-    Slide("Why PatchCore won", results.render),
-    Slide("Threshold as a business decision", thresholds.render),
-    Slide("Live inspection", demo.render),
-    Slide("Deployment recommendation", conclusion.render),
+    Slide("The Inspection Challenge & Accuracy Paradox", problem.render),
+    Slide("EDA: Taxonomy & Statistical Heterogeneity", eda.render),
+    Slide("EDA Case Study: The Screw Discovery", eda_screw.render),
+    Slide("Evaluation without Leakage", protocol.render),
+    Slide("The Transfer Learning Catalyst", transfer_learning.render),
+    Slide("Generative Reconstruction: Keras CAE", cae_model.render),
+    Slide("The Production Engine: PatchCore", patchcore.render),
+    Slide("Empirical Benchmark: Why Transfer Learning Won", results.render),
+    Slide("Thresholds as an Economic Decision", thresholds.render),
+    Slide("Live Inspection & Explainability", demo.render),
+    Slide("Deployment Recommendation & Future Horizons", conclusion.render),
 )
 
 
@@ -67,9 +71,7 @@ def render_defense_presentation() -> None:
         SLIDES[index].render()
 
     with st.container(key="defense_navigation"):
-        previous, progress, next_col, dashboard = st.columns(
-            [1, 3.2, 1, 0.4]
-        )
+        previous, progress, next_col, dashboard = st.columns([1, 3.2, 1, 0.4])
         previous.button(
             "◀ Previous",
             disabled=index == 0,
