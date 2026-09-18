@@ -1,0 +1,769 @@
+%=====================================================================
+% Industrial Component Anomaly Detection – Defence Presentation
+% Latex Beamer, 16:9
+%=====================================================================
+\documentclass[aspectratio=169,10pt]{beamer}
+
+% ---- Theme ----
+\usetheme{metropolis}
+\usepackage{appendixnumberbeamer}
+
+% ---- Packages ----
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,calc,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{microtype}
+\usepackage{fontawesome5}
+\usepackage{hyperref}
+\usepackage{multirow}
+\usepackage{adjustbox}
+
+% ---- Colours matching Streamlit deck ----
+\definecolor{teal}{HTML}{007F7A}
+\definecolor{accent}{HTML}{F06C54}
+\definecolor{muted}{HTML}{6B7280}
+\definecolor{lightbg}{HTML}{F7F6F3}
+\definecolor{darkink}{HTML}{1A1A2E}
+\definecolor{goodgreen}{HTML}{007F7A}
+\definecolor{defectred}{HTML}{F06C54}
+
+\setbeamercolor{frametitle}{fg=white, bg=teal}
+\setbeamercolor{progress bar}{fg=accent}
+\setbeamercolor{title separator}{fg=accent}
+\setbeamercolor{alerted text}{fg=accent}
+\setbeamercolor{example text}{fg=teal}
+
+% ---- Figure paths ----
+\graphicspath{
+  {figures/defect_examples/}
+  {figures/charts/}
+  {figures/report_figures/}
+  {figures/business/}
+}
+
+%=====================================================================
+\title{Industrial Component Anomaly Detection}
+\subtitle{Unsupervised defect classification and pixel-level anomaly\\
+  localisation from normal-only manufacturing parts}
+\author{Benjamin~Förster \and Ali~Abul~Hawa \and Mahboubeh~Nadaf \and Karim~Khalifa}
+\date{September 2026}
+\institute{Applied Machine Learning · MVTec AD Benchmark}
+%=====================================================================
+
+\begin{document}
+
+%--------------------------------------------------------------------
+% SLIDE 1 – TITLE
+%--------------------------------------------------------------------
+\newcommand{\pilltag}[1]{%
+  \tikz[baseline=-0.6ex]\node[fill=teal!15, rounded corners=2pt, inner sep=3pt, font=\tiny\bfseries\color{teal}]{#1};%
+}
+\newcommand{\thumb}[3]{% #1=filename, #2=badge-color, #3=badge-text
+  \tikz[baseline=(img.south)]{%
+    \node[inner sep=0] (img) {\includegraphics[width=1.7cm,height=1.7cm,keepaspectratio]{#1}};%
+    \node[fill=#2, text=white, font=\tiny\bfseries, inner sep=1.5pt, anchor=south west] at (img.south west) {#3};%
+  }%
+}
+\newcommand{\goodimg}[1]{\thumb{#1}{goodgreen}{GOOD}}
+\newcommand{\defectimg}[1]{\thumb{#1}{defectred}{DEFECT}}
+
+% --- Slide Frame ---
+\begin{frame}[plain]
+\begin{columns}[T, onlytextwidth]
+
+  % Left column: Title & Context
+  \begin{column}{0.60\textwidth}
+    \vspace*{0.6cm}
+    {\large\bfseries\color{darkink} Industrial Component\\[2pt] Anomaly Detection}\\[4pt]
+    {\small\color{accent} Project Presentation}\\[6pt]
+    \rule{3.2cm}{1.2pt}\\[6pt]
+    {\footnotesize\color{darkink}
+      Unsupervised defect classification and pixel-level anomaly localisation from normal-only manufacturing parts.}\\[8pt]
+    \pilltag{Unsupervised AD} \pilltag{Deep Transfer Learning} \pilltag{Zero-Leakage Protocol}\\[10pt]
+    {\tiny\bfseries\color{muted} TEAM}\\[2pt]
+    {\footnotesize\color{muted}
+      B. Förster $\cdot$ A. Abul Hawa $\cdot$ M. Nadaf $\cdot$ K. Khalifa}
+  \end{column}
+
+  % Right column: Image showcase table
+  \begin{column}{0.42\textwidth}
+    \vspace*{0.3cm}
+    {\tiny\bfseries\color{muted} MVTEC AD 2D Dataset \hfill \color{teal}Selected Examples $\cdot$ Objects \& Textures}\\[4pt]
+    
+    % \resizebox guarantees the table fits the column width exactly
+    \resizebox{1\linewidth}{!}{%
+      \setlength{\tabcolsep}{3pt}%
+      \begin{tabular}{@{} lcc @{}}
+        \tiny\bfseries\color{muted} CATEGORY & \tiny\bfseries\color{muted} CONFORMING & \tiny\bfseries\color{muted} DEFECTIVE \\[3pt]
+        \textbf{Bottle}\newline{\footnotesize\color{muted}$\quad$ Broken rim}    & \goodimg{title_good_bottle.png}  & \defectimg{title_anomaly_bottle.png}  \\[3pt]
+        \textbf{Capsule}\newline{\footnotesize\color{muted}$\quad$ Scratch}      & \goodimg{title_good_capsule.png} & \defectimg{title_anomaly_capsule.png} \\[3pt]
+        \textbf{Leather}\newline{\footnotesize\color{muted}$\quad$ Surface cut}  & \goodimg{title_good_leather.png} & \defectimg{title_anomaly_leather.png} \\[3pt]
+        \textbf{Screw}\newline{\footnotesize\color{muted}$\quad$ Thread defect}  & \goodimg{title_good_screw.png}   & \defectimg{title_anomaly_screw.png}   \\
+      \end{tabular}%
+    }
+  \end{column}
+
+\end{columns}
+\end{frame}
+
+%====================================================================
+%  SECTION: DATA EXPLORATION
+%====================================================================
+\section{Data Exploration}
+
+%--------------------------------------------------------------------
+% SLIDE 2 – MVTec AD Dataset & Class Imbalance
+%--------------------------------------------------------------------
+\begin{frame}{The MVTec AD Dataset -- Class Imbalance}
+\begin{columns}[T]
+  \begin{column}{0.55\textwidth}
+    \textbf{Dataset at a glance}
+    \begin{itemize}\small
+      \item 15 manufacturing categories: 10 objects + 5 textures
+      \item $> 5000$ images,  $\approx 1200$ anomalous images
+      \item Normal-only training; test set has pixel-level anomaly gt
+    \end{itemize}
+    \textbf{\color{accent}Accuracy paradox}
+    \begin{itemize}
+      \item Median anomalous-pixel area: \textbf{1.54\%}
+      \item Predicting \emph{all-normal} yields $>$98.5\% pixel accuracy while catching \emph{zero} defects.
+    \end{itemize}
+    \textbf{Kruskal-Wallis: $H(14)\approx626.5$, $p<0.001$}
+    \begin{itemize}
+      \item 43$\times$ spread in defect size across categories.
+    \end{itemize}
+  \end{column}
+  \begin{column}{0.31\textwidth}
+    \begin{center}
+      {\tiny\bfseries\color{muted} TEST-SET CLASS IMBALANCE (images)}\\[3pt]
+      \includegraphics[width=\textwidth,height=0.68\textheight,keepaspectratio]{imbalance_test_split.png}
+    \end{center}
+    \vspace{-0.5cm}
+    \begin{center}
+      {\tiny\bfseries\color{muted} PIXEL-AREA IMBALANCE (defect region \%)}\\[3pt]
+      \includegraphics[width=\textwidth,height=0.68\textheight,keepaspectratio]{imbalance_pixel_area.png}
+    \end{center}
+  \end{column}
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 3 – Defect Taxonomy & Spatial Distribution
+%--------------------------------------------------------------------
+\begin{frame}{Defect Taxonomy \& Spatial Distribution}
+\begin{columns}[T]
+  \begin{column}{0.55\textwidth}
+    \textbf{Two fundamentally different defect regimes:}\\[6pt]
+    \begin{tikzpicture}[font=\small]
+      \node[draw=teal,rounded corners,fill=teal!8,text width=6.8cm,inner sep=6pt] (obj) {
+        \textbf{\color{teal}Structural Objects} (e.g.\ Screw, Cable)\\[2pt]
+        \textbullet\ Defects cluster at specific locations\\
+        \textbullet\ Strong positional bias (shortcut risk)\\
+        \textbullet\ Foreground/background separation critical
+      };
+      \node[draw=accent,rounded corners,fill=accent!8,text width=6.8cm,inner sep=6pt,below=6pt of obj] (tex) {
+        \textbf{\color{accent}Continuous Textures} (e.g.\ Grid, Leather)\\[2pt]
+        \textbullet\ Defects broadly distributed across surface\\
+        \textbullet\ Rich augmentation needed (rotation, scale)\\
+        \textbullet\ No foreground mask required
+      };
+    \end{tikzpicture}
+    \vspace{6pt}\\
+    \textbf{Covariate shift:} Screw, Leather, Grid show measurable
+    brightness/contrast drift between train and test normal images --
+    motivates photometric augmentation.
+  \end{column}
+  \begin{column}{0.42\textwidth}
+    \begin{center}
+    {\tiny\bfseries\color{teal} OBJECTS -- LOCALISED DEFECTS (contour = defect boundary)}\\[4pt]
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{ccc}
+      \includegraphics[width=1.7cm,keepaspectratio]{slide_03_screw_thread_contour.png} &
+      \includegraphics[width=1.7cm,keepaspectratio]{slide_03_cable_missing_contour.png} &
+      \includegraphics[width=1.7cm,keepaspectratio]{title_anomaly_capsule.png} \\
+      {\tiny\color{muted} Screw thread} &
+      {\tiny\color{muted} Cable missing} &
+      {\tiny\color{muted} Capsule scratch} \\[4pt]
+    \end{tabular}
+    {\tiny\bfseries\color{accent} TEXTURES -- DISTRIBUTED DEFECTS (defect across full surface)}\\[4pt]
+    \begin{tabular}{ccc}
+      \includegraphics[width=1.7cm,keepaspectratio]{slide_03_grid_glue_contour.png} &
+      \includegraphics[width=1.7cm,keepaspectratio]{title_anomaly_leather.png} &
+      \includegraphics[width=1.7cm,keepaspectratio]{problem_capsule_squeeze_mask.png} \\
+      {\tiny\color{muted} Grid glue strip} &
+      {\tiny\color{muted} Leather cut} &
+      {\tiny\color{muted} GT mask example} \\
+    \end{tabular}
+    \end{center}
+  \end{column}
+\end{columns}
+\end{frame}
+
+
+%--------------------------------------------------------------------
+% SLIDE 4 – Metric Selection
+%--------------------------------------------------------------------
+\begin{frame}{Metric Selection: AUPIMO \& F1-Score}
+\begin{columns}[T]
+  \begin{column}{0.50\textwidth}
+    \textbf{\color{accent}The problem with Pixel-AUROC}
+    \begin{itemize}\small
+      \item AUROC relies on False Positive Rate
+      \begin{itemize}\footnotesize
+        \item With $\approx$\,98.5\% normal pixels, TN dominates $\Rightarrow$ FPR barely moves.
+        \item SOTA scores all exceed 99\%, making differences indistinguishable.
+      \end{itemize}
+    \end{itemize}
+    \vspace{6pt}
+    \textbf{\color{teal}Our Evaluation Paradigm}
+    \begin{itemize}\small
+      \item \textbf{AUPIMO:} Pixel-level threshold over the ultra-low FPR window $[10^{-5}, 10^{-4}]$ on normal images.
+      \item \textbf{Dual Thresholds:} We calibrate distinct \emph{image-level} and \emph{pixel-level} anomaly thresholds.
+      \item \textbf{F1-Score Focus:} Additionally, we always evaluate the F1-Score.
+    \end{itemize}
+  \end{column}
+  \begin{column}{0.48\textwidth}
+    \begin{center}
+      \includegraphics[width=1.0\textwidth]{binarization_threshold_aupimo.png}
+    \end{center}
+    {\tiny\color{muted}\centering Binarization threshold curve \& AUPIMO range\par}
+  \end{column}
+\end{columns}
+\end{frame}
+
+%====================================================================
+%  SECTION: MODELS
+%====================================================================
+\section{Models}
+
+%--------------------------------------------------------------------
+% SLIDE 5 – Model Selection & Architecture Overview
+%--------------------------------------------------------------------
+\begin{frame}{Model Selection \& Architecture Overview}
+\vspace*{-0.2cm}
+\begin{columns}[T, onlytextwidth]
+
+  %=========================================
+  % Left Column: Custom Conv-Autoencoders
+  %=========================================
+  \begin{column}{0.48\textwidth}
+    \begin{block}{\small\bfseries 1. Convolutional-Autoencoders}
+      \vspace{2pt}
+      {\tiny\color{muted}\textbf{Paradigm:} Generative Reconstruction $\cdot$ Built from scratch}\\[4pt]
+      
+      \centering
+      \resizebox{0.95\linewidth}{!}{
+        \input{figures/tikz_autoencoder.tex}
+      }
+      \vspace{2pt}
+    \end{block}
+
+    \vspace{4pt}
+    {\small
+    \begin{itemize}\setlength{\itemsep}{2pt}\setlength{\leftskip}{-10pt}
+      \item \textbf{Complete control:} Full freedom over latent bottleneck dimensions, skip connections, and loss constraints.
+      \item \textbf{Intuition:} Trained on normal images; unable to reconstruct defects.
+      \item \textbf{Trade-offs:} Prone to blurriness or identity shortcuts; sensitive to reconstruction thresholds.
+    \end{itemize}
+    }
+  \end{column}
+
+  %=========================================
+  % Right Column: PatchCore + ResNet-18
+  %=========================================
+  \begin{column}{0.48\textwidth}
+    \begin{block}{\small\bfseries 2. PatchCore + ResNet-18 (Anomalib)}
+      \vspace{2pt}
+      {\tiny\color{muted}\textbf{Paradigm:} Deep Feature Memory Bank $\cdot$ High accessibility}\\[4pt]
+      
+      \centering
+      \resizebox{0.88\linewidth}{!}{
+        \input{figures/tikz_patchcore.tex}
+      }
+      \vspace{2pt}
+    \end{block}
+
+    \vspace{-4pt}
+    {\small
+    \begin{itemize}\setlength{\itemsep}{2pt}\setlength{\leftskip}{-10pt}
+      \item \textbf{High accessibility:} Zero model training required; out-of-the-box integration via Intel's \texttt{anomalib}.
+      \item \textbf{ResNet-18 backbone:} Compact ImageNet representations; mid-level layers capture both texture and shape.
+      \item \textbf{Coreset sampling:} Compresses the memory bank by 90\%+ without losing local anomaly detection accuracy.
+    \end{itemize}
+    }
+  \end{column}
+
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 6 – PatchCore: Transfer Learning & Architecture
+%--------------------------------------------------------------------
+\begin{frame}{PatchCore: Transfer Learning \& Architecture}
+\begin{columns}[T]
+  % Left Column: Flowchart
+  \begin{column}{0.38\textwidth}
+    \vspace{0.5cm}
+    \centering
+    \textbf{Transfer Learning Paradigm}\\[8pt]
+    \begin{tikzpicture}[
+      font=\footnotesize,
+      box/.style={draw,rounded corners=4pt,text width=4.5cm,align=center,inner sep=6pt,minimum height=0.8cm},
+      arr/.style={-{Latex[length=2.5mm]},thick,color=teal}
+    ]
+      \node[box,fill=teal!8,draw=teal] (normal) at (0,0) {\textbf{Normal Factory Images}\\(0 defect labels)};
+      \node[box,fill=lightbg,draw=teal,below=0.5cm of normal] (frozen) {\textbf{Frozen Feature Extractor}\\ResNet-18 (ImageNet)};
+      \node[box,fill=teal!20,draw=teal,below=0.5cm of frozen] (memory) {\textbf{Coreset Memory Bank}\\Greedy subsampling ($\sim10\times$)};
+      \node[box,fill=accent!15,draw=accent,below=0.5cm of memory] (infer) {\textbf{Inference (Nearest-Neighbour)}\\$s(p^*)=\min_{m\in\mathcal{M}}\|p^*-m\|_2$};
+
+      \draw[arr] (normal) -- (frozen);
+      \draw[arr] (frozen) -- node[right,font=\tiny\color{muted}]{extract patch features} (memory);
+      \draw[arr] (memory) -- node[right,font=\tiny\color{muted}]{compare test patch $p^*$} (infer);
+    \end{tikzpicture}
+  \end{column}
+
+  % Right Column: Heatmaps & Description
+  \begin{column}{0.6\textwidth}
+    \begin{center}
+      \includegraphics[width=\textwidth]{fig_v2_localization_examples.png}
+    \end{center}
+    \vspace{-0.2cm}
+    {\tiny\color{muted}\centering PatchCore anomaly localisations - defect contours outlining the identified anomaly regions.\par}
+    \vspace{0.3cm}
+    
+    \footnotesize\textbf{Key Features}
+    \begin{itemize}
+      \item \textbf{Cold-start eliminated:} Deployment without defect collection.
+      \item \textbf{IP Protection:} Memory bank contains embeddings, not raw model weights.
+    \end{itemize}
+
+    \textbf{\color{teal}Why it excels}
+    \begin{itemize}
+      \item Mid-level layers capture local textures perfectly.
+      \item No catastrophic forgetting (frozen backbone).
+      \item ResNet-18 guarantees predictable GPU memory bounds.
+    \end{itemize}
+  \end{column}
+\end{columns}
+\end{frame}
+
+
+%--------------------------------------------------------------------
+% SLIDE 7 – Keras CAE Learning Process
+%--------------------------------------------------------------------
+\begin{frame}{Keras CAE -- Autoencoder Learning Process}
+\begin{columns}[T]
+  \begin{column}{0.48\textwidth}
+    {\small
+    \textbf{\color{teal} The Concept}\\[8pt]
+    
+    \textbf{Training Phase:}
+    \begin{itemize}
+      \item Trained \emph{excl.} on defect-free images.
+      \item Learns the structural grammar of "normal" surfaces.
+    \end{itemize}
+    
+    \textbf{Inference Phase:}
+    \begin{itemize}
+      \item On defective images, anomalies are reconstructed as "normal" parts.
+      \item Reconstruction fails at the defect sites $\Rightarrow$ high reconstruction error.
+      \item High reconstruction error $\Rightarrow$ Anomaly Signal.
+    \end{itemize}
+    }
+  \end{column}
+
+  \begin{column}{0.48\textwidth}
+    \textbf{\color{teal}Key Design Decisions}\\[6pt]
+    {\small
+    \begin{itemize}\setlength{\itemsep}{6pt}\setlength{\leftskip}{-10pt}
+      \item \textbf{Masked Image Modelling (MIM):}\\
+            25\% of patches randomly masked before encoding. Forces the model to understand global context, prevents "identity mapping".
+      \item \textbf{SSIM + MSE Loss:}\\
+            $\mathcal{L} = \alpha\,(1-\mathrm{SSIM}) + (1-\alpha)\,\mathrm{MSE}$.\\
+            MSE captures global variance, while SSIM enforces high structural and perceptual fidelity.
+      \item \textbf{Architectural Choices:}\\
+            \textbf{ELU} activations avoid dying neurons.\\
+            \textbf{BatchNorm} stabilizes covariate shifts.\\
+            \textbf{AdamW} enables decoupled weight decay.
+    \end{itemize}
+    }
+  \end{column}
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 8 – Keras CAE Pipeline (End-to-End)
+%--------------------------------------------------------------------
+\begin{frame}{Keras CAE -- End-to-End Pipeline}
+% \vspace*{-0.4cm}
+\begin{center}
+\resizebox{0.75\textwidth}{!}{
+\begin{tikzpicture}[
+  font=\scriptsize,
+  stepbox/.style={draw=teal, fill=teal!5, rounded corners=3pt, text width=3.0cm, align=center, inner sep=4pt, minimum height=0.7cm},
+  arr/.style={-{Latex[length=2.5mm]}, thick, color=teal!80}
+]
+
+  % ROW 1: Data Prep (L -> R)
+  \node[stepbox, text width=2.5cm] (data) at (0, 0) {\textbf{1. MVTec Dataset}};
+  \node[stepbox, text width=1.8cm, fill=accent!5, draw=accent] (cat) at (3.1, 0) {\textbf{2. Category?}};
+  \node[stepbox, text width=2.0cm, fill=teal!15] (tex) at (5.7, 0.6) {\textbf{Texture}\\Rotate+Flip};
+  \node[stepbox, text width=2.0cm, fill=accent!15] (obj) at (5.7, -0.6) {\textbf{Object}\\Colour+Noise};
+  \node[stepbox, text width=2.5cm] (seg) at (8.7, 0) {\textbf{3. Fg. Mask}\\Otsu+Canny};
+
+  % Data to Cat
+  \draw[arr] (data) -- (cat);
+
+  % 1. Branch: Cat -> Tex & Obj (- | ->)
+  \draw[thick, color=teal!80] (cat.east) -- ++(0.1, 0) coordinate (fork);
+  \draw[arr] (fork) |- (tex.west);
+  \draw[arr] (fork) |- (obj.west);
+
+  % 2. Merge: Tex & Obj -> Seg (- | ->)
+  \path (seg.west) ++(-0.35, 0) coordinate (join);
+  \draw[thick, color=teal!80] (tex.east) -| (join);
+  \draw[thick, color=teal!80] (obj.east) -| (join);
+  \draw[arr] (join) -- (seg.west);
+
+  % ROW 2: Model (R -> L)
+  \node[stepbox, text width=3.0cm, fill=teal!10] (build) at (8.7, -2.0) {\textbf{4. Build Keras CAE}\\ELU + BN + AdamW};
+  \node[stepbox, text width=3.0cm, fill=teal!20] (train) at (4.3, -2.0) {\textbf{5. Train Model}\\SSIM+MSE + MIM};
+  \node[stepbox, text width=3.0cm] (score) at (0, -2.0) {\textbf{6. Score Images}\\Top-K Pooling};
+  
+  \draw[arr] (seg) -- (build);
+  \draw[arr] (build) -- (train);
+  \draw[arr] (train) -- (score);
+
+  % ROW 3: Inference (L -> R)
+  \node[stepbox, text width=3.0cm] (thresh) at (0, -3.6) {\textbf{7. Adapt. Threshold}\\Quantile/Mahalanobis};
+  \node[stepbox, text width=3.0cm, fill=accent!10, draw=accent] (eval) at (4.3, -3.6) {\textbf{8. Evaluation}\\AUROC + AUPIMO};
+
+  \draw[arr] (score) -- (thresh);
+  \draw[arr] (thresh) -- (eval);
+
+\end{tikzpicture}
+}
+\end{center}
+\vspace{0.2cm}
+{\textbf{\color{teal}Automated Pipeline \& Optuna Integration}\\
+The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) (e.g., augmentation strategy, latent dimensions) optimized using Optuna targeting \textbf{Pixel AUPIMO}.}
+\end{frame}
+
+%====================================================================
+%  SECTION: EVALUATION
+%====================================================================
+\section{Evaluation Protocol \& Benchmarks}
+
+%--------------------------------------------------------------------
+% SLIDE 10 – Fair Evaluation Split
+%--------------------------------------------------------------------
+\begin{frame}{Zero-Leakage Evaluation Protocol}
+\begin{columns}[T]
+  \begin{column}{0.50\textwidth}
+    \textbf{The Core Principle}\\[8pt]
+    {\small Every evaluation result in this presentation is produced under a
+    deterministic, audit-compliant split that keeps the test set completely
+    unseen until final scoring $\Rightarrow$ \textbf{zero-test-leakage}.}\\[8pt]
+    
+    \vspace{12pt}
+    \textbf{Peak Performance (PatchCore vs CAE)}\\[4pt]
+    \resizebox{0.95\linewidth}{!}{
+      \begin{tabular}{llcc}
+        \toprule
+        \textbf{Category} & \textbf{Metric} & \textbf{PatchCore} & \textbf{Keras CAE} \\
+        \midrule
+        \multirow{2}{*}{Bottle (Object)} 
+        & Image F1 & 0.962 & \textbf{0.992} \\
+        & AUPIMO & \textbf{0.982} & 0.507 \\
+        \midrule
+        \multirow{2}{*}{Macro Average}
+        & Image F1 & \textbf{0.929} & 0.495 \\
+        & AUPIMO & \textbf{0.603} & 0.058 \\
+        \bottomrule
+      \end{tabular}
+    }
+  \end{column}
+  \begin{column}{0.48\textwidth}
+    \textbf{Canonical Evaluation Settings}\\[6pt]
+    \begin{itemize}
+      \item \textbf{Split Size:} 85\% fitting / 15\% validation
+      \item \textbf{Test Set:} \textbf{held out} - normal + anomalies
+      \item \textbf{Resolution:} $256 \times 256$ pixels.
+        \begin{itemize}
+          \item Bilinear interpolation for continuous heatmaps.
+          \item Nearest-neighbor + binarization for GT masks.
+        \end{itemize}
+      \item \textbf{Threshold:} 95th percentile ($\alpha=0.05$ false-alarm budget).
+      \item \textbf{AUPIMO:} Standard bounds $\text{FPR} \in [10^{-5}, 10^{-4}]$, 50k thresholds.
+    \end{itemize}
+  \end{column}
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 11 – Side-by-Side Localisation Results
+%--------------------------------------------------------------------
+\begin{frame}{Qualitative Results - Localisation Comparison}
+  \vspace{0.2cm}
+  \begin{columns}[T]
+    \begin{column}{0.16\textwidth}
+      \centering
+      \textbf{\scriptsize Input}
+    \end{column}
+    \begin{column}{0.16\textwidth}
+      \centering
+      \textbf{\scriptsize GT Mask}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \centering
+      \textbf{\scriptsize \color{teal}PatchCore (Map \textbar{} Mask)}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \centering
+      \textbf{\scriptsize \color{teal}Keras CAE (Map \textbar{} GT Overlay)}
+    \end{column}
+  \end{columns}
+  
+  \vspace{0.1cm}
+  % Row 1: Bottle
+  \begin{columns}[c]
+    \begin{column}{0.16\textwidth}
+      \centering
+      \includegraphics[width=0.9\linewidth]{figures/extracted/bottle/patchcore/original.png}
+    \end{column}
+    \begin{column}{0.16\textwidth}
+      \centering
+      \includegraphics[width=0.9\linewidth]{figures/extracted/bottle/patchcore/gt_mask.png}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \centering
+      \includegraphics[width=0.45\linewidth]{figures/extracted/bottle/patchcore/anomaly_map.png}\hfill
+      \includegraphics[width=0.45\linewidth]{figures/extracted/bottle/patchcore/predicted_mask.png}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \centering
+      \includegraphics[width=0.45\linewidth]{figures/extracted/bottle/keras_cae/anomaly_map.png}\hfill
+      \includegraphics[width=0.45\linewidth]{figures/extracted/bottle/keras_cae/gt_overlay.png}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.1cm}
+  % Row 2: Cable
+  \begin{columns}[c]
+    \begin{column}{0.16\textwidth}
+      \centering
+      \includegraphics[width=0.9\linewidth]{figures/extracted/cable/patchcore/original.png}
+    \end{column}
+    \begin{column}{0.16\textwidth}
+      \centering
+      \includegraphics[width=0.9\linewidth]{figures/extracted/cable/patchcore/gt_mask.png}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \centering
+      \includegraphics[width=0.45\linewidth]{figures/extracted/cable/patchcore/anomaly_map.png}\hfill
+      \includegraphics[width=0.45\linewidth]{figures/extracted/cable/patchcore/predicted_mask.png}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \centering
+      \includegraphics[width=0.45\linewidth]{figures/extracted/cable/keras_cae/anomaly_map.png}\hfill
+      \includegraphics[width=0.45\linewidth]{figures/extracted/cable/keras_cae/gt_overlay.png}
+    \end{column}
+  \end{columns}
+  
+  \vspace{0.2cm}
+  \textbf{Key Observations:}
+  \begin{itemize}
+    \item \small \textbf{PatchCore:} Heatmaps sharply bound the defect, leading to precise predicted masks.
+    \item \small \textbf{Keras CAE:} Reconstruction errors diffuse. While broadly highlighting anomalous regions, they fail at fine-grained pixel localization.
+  \end{itemize}
+\end{frame}
+
+%====================================================================
+%  SECTION: BUSINESS INTERPRETATION
+%====================================================================
+\section{Business Interpretation}
+
+%--------------------------------------------------------------------
+% SLIDE 12 – Economic Error Asymmetry & Cost Model
+%--------------------------------------------------------------------
+\begin{frame}{Economic Error Asymmetry — The Cost Model}
+\begin{columns}[T]
+  \begin{column}{0.45\textwidth}
+    \textbf{Two types of error, very different costs}\\[6pt]
+    \begin{tikzpicture}[font=\small]
+      \node[draw=accent,fill=accent!10,rounded corners,inner sep=6pt,text width=5.5cm] (fp) {
+        \textbf{\color{accent}False Alarm} (FP): good part rejected.\\
+        Cost: line stoppage, lost throughput, scrapped unit\\
+        \textit{e.g.\ Screw: $c_\mathrm{FP} \gg c_\mathrm{FN}$}
+      };
+      \node[draw=teal,fill=teal!10,rounded corners,inner sep=6pt,text width=5.5cm,below=8pt of fp] (fn) {
+        \textbf{\color{teal}Missed Defect} (FN): bad part ships\\
+        Cost: recall, liability, safety incident\\
+        \textit{e.g.\ Pill: $c_\mathrm{FN} \gg c_\mathrm{FP}$}
+      };
+    \end{tikzpicture}
+    $\,$\\[6pt]
+    \textbf{Optimal threshold $t^* = \frac{c_\mathrm{FP}}{c_\mathrm{FP} + c_\mathrm{FN}}$}\\[6pt]
+    {\small High $c_\mathrm{FN}$ (pills) pushes $t^*$ toward zero - catch everything.
+    High $c_\mathrm{FP}$ (screws) pushes $t^*$ toward one - avoid false alarms.}
+  \end{column}
+  \begin{column}{0.53\textwidth}
+    \begin{center}
+      \setlength{\tabcolsep}{4pt}
+      \renewcommand{\arraystretch}{1.2}
+      \begin{tabular}{lcc}
+        \toprule
+        \textbf{Category} & \textbf{Obj.} & \textbf{$t^*$} \\
+        \midrule
+        Fasteners (Screw) & $F_{0.5}$ & $\approx 0.9999$ \\
+        Packaging (Bottle)& $F_1$ & $\approx 0.0003$ \\
+        Automotive (M.~Nut)& $F_1$ & $\approx 4\!\times\!10^{-6}$ \\
+        Life Sci.\ (Pill)  & $F_2$ & $\approx 10^{-8}$ \\
+        \bottomrule
+      \end{tabular}
+    \end{center}
+    \vspace{8pt}
+    {\small\color{muted}
+    Cost profiles are illustrative estimates from composite industry case studies (for the sake of the project - guesses).
+    They demonstrate the spectrum of liability, not precise financial figures.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 13 – Threshold Calibration & Risk Tiers
+%--------------------------------------------------------------------
+\begin{frame}{Threshold Calibration \& Risk-Tiered Operating Profiles}
+\begin{columns}[T]
+  \begin{column}{0.45\textwidth}
+    \textbf{Calibration formula}\\[6pt]
+    $\tau_\alpha = \mathrm{Quantile}_{1-\alpha}\!\left(\{s_i\mid x_i\in\mathcal{D}_\text{val,norm}\}\right)$\\[6pt]
+    {\small $\alpha$: plant's tolerable false-alarm budget.
+    We offer three pre-declared operating profiles:}\\[6pt]
+    \begin{tikzpicture}[font=\small]
+      \node[fill=defectred!20,draw=defectred,rounded corners,inner sep=5pt,
+            text width=6cm] (t1) {
+        \textbf{T1 - Life-Safety} ($\alpha\approx0.10$, $F_2$)\\
+        {\small Recall weighted 4$\times$ over precision.
+        Every borderline part is manually audited.}
+      };
+      \node[fill=teal!20,draw=teal,rounded corners,inner sep=5pt,
+            text width=6cm,below=6pt of t1] (t2) {
+        \textbf{T2 - Prec. Industrial} ($\alpha\approx0.05$, $F_1$)\\
+        {\small Balanced Type I / II errors. Reported benchmark.}
+      };
+      \node[fill=lightbg,draw=muted,rounded corners,inner sep=5pt,
+            text width=6cm,below=6pt of t2] (t3) {
+        \textbf{T3 - High-Throughput} ($\alpha\approx0.01$, $F_{0.5}$)\\
+        {\small Precision weighted 4$\times$; prevents pseudo-scrap.}
+      };
+    \end{tikzpicture}
+  \end{column}
+  \begin{column}{0.53\textwidth}
+    \begin{center}
+      \includegraphics[width=\textwidth]{business_threshold_tiers.png}
+    \end{center}
+    \begin{itemize}
+      \item \textbf{Schematic:} three profiles select different quantiles from the same
+      normal-validation score distribution.
+      \item \textbf{Key:} decoupling feature extraction from threshold calibration
+      makes the decision gate a dynamic, auditable financial parameter.
+    \end{itemize}
+  \end{column}
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 14 – SLA Interpretation & Operational Value
+%--------------------------------------------------------------------
+\begin{frame}{SLA Interpretation \& Operational Value}
+\begin{columns}[T]
+  \begin{column}{0.60\textwidth}
+    \textbf{From academic metric to operational SLA}\\[4pt]
+    \resizebox{\linewidth}{!}{%
+    \begin{tabular}{@{}lp{5.5cm}@{}}
+      \toprule
+      \textbf{Metric} & \textbf{Operational meaning} \\
+      \midrule
+      Image F1 = 0.929 & $<$8\% of decisions are wrong \\
+      Recall = 0.932 & $\leq$6.8\% of real defects missed \\
+      Precision = 0.936 & $\leq$6.4\% of rejected parts are good \\
+      PR-AUC = 0.988 & Model quality across all thresholds \\
+      AUPIMO = 0.603 & Strong pixel-localisation \\
+      \bottomrule
+    \end{tabular}%
+    }
+    $\;$\\[6pt]
+    \textbf{\color{teal}Day-1 Deployment \& Cold-Start SLAs}\\[6pt]
+    {\footnotesize 
+    No defect samples required at commissioning; onboarding uses only normal parts.\\[2pt]
+    \textbf{The $\alpha$ mechanism:} W/o defect data, we cannot optimize F-scores. Day-1 SLA guarantees max false-alarm rate ($\alpha$) on normal parts $\Rightarrow$ reliable proxy for target F-score.}
+  \end{column}
+  \begin{column}{0.38\textwidth}
+    \begin{center}
+      \includegraphics[width=\textwidth,height=0.48\textheight,keepaspectratio]{business_explainability.png}
+    \end{center}
+    \vspace{-4pt}
+    {\tiny\color{muted} Explainability: anomaly heatmaps provide pixel-level attribution $\Rightarrow$ quality engineers can review in seconds, replacing manual inspection.}\\[6pt]
+    \textbf{\color{accent}Data sovereignty}\\
+    {\footnotesize Coreset memory bank stores patterns locally. CAD toolpaths, material formulations never leave the plant.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+%--------------------------------------------------------------------
+% SLIDE 15 – Summary & Future Prospects
+%--------------------------------------------------------------------
+\begin{frame}{Summary \& Future Prospects}
+\begin{columns}[T]
+  \begin{column}{0.50\textwidth}
+    \textbf{\color{teal}Results}
+    \begin{itemize}\small
+      \item Unsupervised anomaly detection on MVTec AD 2D (15 categories)
+      \item Two architectures: Keras CAE (generative) \& PatchCore (transfer learning)
+      \item Zero-leakage protocol; AUPIMO as primary pixel metric
+      \item Business-grade threshold framework
+    \end{itemize}
+    \vspace{4pt}
+    \textbf{\color{teal}Key design principles}
+    \begin{itemize}\small
+      \item Cold-start: normal-only training, no defect labels
+      \item IP protection: local coreset, no cloud upload
+      \item Calibrated decision gate as financial parameter
+    \end{itemize}
+  \end{column}
+  \begin{column}{0.48\textwidth}
+    \textbf{\color{muted}Future Prospects \& Experimental Work}
+    \begin{itemize}\footnotesize
+      \item \textbf{Advanced CAE Architectures}:
+      \begin{itemize}\scriptsize
+        \item \textbf{Targeted MIM}: Masked Image Modeling for object geometry, dual-weight masked loss computation.
+        \item \textbf{Perceptual Loss}: ResNet-18 feature-space penalization.
+        \item \textbf{Multi-scale SSIM}: Enhanced structural defect isolation.
+      \end{itemize}
+      \item \textbf{Self-supervised ViTs (DINOv2/v3)}: Foundation-model dense tokens breaking the convolutional representation ceiling.
+    \end{itemize}
+    \vspace{4pt}
+    \begin{center}
+      \begin{tikzpicture}
+        \node[draw=teal,fill=teal!10,rounded corners=6pt,inner sep=10pt,
+              text width=5cm,align=center,font=\small] {
+          \textbf{\color{teal}Thank you}\\[4pt]
+          Questions welcome\\[2pt]
+          {\footnotesize\color{muted}B. Förster · A. Abul Hawa\\
+          M. Nadaf · K. Khalifa}
+        };
+      \end{tikzpicture}
+    \end{center}
+  \end{column}
+\end{columns}
+\end{frame}
+
+\end{document}

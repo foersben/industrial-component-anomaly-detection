@@ -1,0 +1,51 @@
+%--------------------------------------------------------------------
+% SLIDE 6 – PatchCore: Transfer Learning & Architecture
+%--------------------------------------------------------------------
+\begin{frame}{PatchCore: Transfer Learning \& Architecture}
+\vspace*{-0.2cm}
+\begin{columns}[T]
+  % Left Column: Flowchart
+  \begin{column}{0.48\textwidth}
+    \textbf{Transfer Learning Paradigm}\\[4pt]
+    \centering
+    \begin{tikzpicture}[
+      font=\footnotesize,
+      box/.style={draw,rounded corners=4pt,text width=4.5cm,align=center,inner sep=6pt,minimum height=0.8cm},
+      arr/.style={-{Latex[length=2.5mm]},thick,color=teal}
+    ]
+      \node[box,fill=teal!8,draw=teal] (normal) at (0,0) {\textbf{Normal Factory Images}\\(0 defect labels)};
+      \node[box,fill=lightbg,draw=teal,below=0.5cm of normal] (frozen) {\textbf{Frozen Feature Extractor}\\ResNet-18 (ImageNet)};
+      \node[box,fill=teal!20,draw=teal,below=0.5cm of frozen] (memory) {\textbf{Coreset Memory Bank}\\Greedy subsampling ($\sim10\times$)};
+      \node[box,fill=accent!15,draw=accent,below=0.5cm of memory] (infer) {\textbf{Inference (Nearest-Neighbour)}\\$s(p^*)=\min_{m\in\mathcal{M}}\|p^*-m\|_2$};
+
+      \draw[arr] (normal) -- (frozen);
+      \draw[arr] (frozen) -- node[right,font=\tiny\color{muted}]{extract patch features} (memory);
+      \draw[arr] (memory) -- node[right,font=\tiny\color{muted}]{compare test patch $p^*$} (infer);
+    \end{tikzpicture}
+    
+    \vspace{8pt}
+    \begin{itemize}\scriptsize
+      \item \textbf{Cold-start eliminated:} Day 1 deployment without any defect collection.
+      \item \textbf{IP Protection:} Memory bank contains abstract embeddings, not raw model weights.
+    \end{itemize}
+  \end{column}
+
+  % Right Column: Heatmaps & Description
+  \begin{column}{0.48\textwidth}
+    \vspace*{0.2cm}
+    \begin{center}
+      \includegraphics[width=0.95\textwidth,height=0.65\textheight,keepaspectratio]{fig_heatmaps.png}
+    \end{center}
+    \vspace{-0.2cm}
+    {\tiny\color{muted}\centering PatchCore anomaly heatmaps — high score (red) localises defect regions.\par}
+    
+    \vspace{6pt}
+    \textbf{\color{teal}Why it excels}
+    \begin{itemize}\scriptsize\setlength{\itemsep}{1pt}
+      \item Mid-level layers (2+3) capture local textures perfectly.
+      \item No catastrophic forgetting (frozen backbone).
+      \item ResNet-18 guarantees predictable GPU memory bounds.
+    \end{itemize}
+  \end{column}
+\end{columns}
+\end{frame}

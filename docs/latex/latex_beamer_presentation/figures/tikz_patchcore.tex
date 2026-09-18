@@ -1,0 +1,28 @@
+\begin{tikzpicture}[
+  scale=0.72, every node/.style={scale=0.72},
+  block/.style={draw=darkink!70, fill=white, rounded corners=2pt, minimum height=1.2cm, align=center, font=\tiny},
+  arr/.style={-{Stealth[scale=0.7]}, thick, color=darkink!60}
+]
+  % Input Image
+  \node[block, minimum width=0.6cm, fill=teal!10] (p_in) {$x$};
+  
+  % Backbone
+  \node[draw=darkink!80, fill=black!5, rounded corners=2pt, right=0.35cm of p_in, 
+        minimum width=1.1cm, align=center, font=\tiny\bfseries] (bb) {ResNet-18\\[-2pt]{\tiny\color{muted}(Frozen)}};
+  
+  % Memory Bank / Coreset
+  \node[draw=teal!80, fill=teal!15, rounded corners=2pt, right=0.35cm of bb, 
+        minimum width=0.9cm, align=center, font=\tiny\bfseries\color{teal}] (mem) {Coreset\\[-2pt]{\tiny $\mathcal{M}$ (10\%)}};
+  
+  % k-NN Match
+  \node[draw=defectred, fill=defectred!15, circle, inner sep=1.5pt, right=0.35cm of mem, 
+        font=\tiny\bfseries\color{defectred}] (knn) {$d^*$};
+
+  % Arrows
+  \draw[arr] (p_in) -- (bb);
+  \draw[arr] (bb) -- node[above, font=\tiny] {$\phi(x)$} (mem);
+  \draw[arr] (mem) -- (knn);
+
+  % Bottom note
+  \node[below=0.15cm of bb, font=\tiny\color{muted}, xshift=0.6cm] {Score: $\min_{m \in \mathcal{M}} \|\phi(x) - m\|_2$};
+\end{tikzpicture}
