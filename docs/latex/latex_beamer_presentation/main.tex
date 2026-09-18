@@ -128,7 +128,7 @@
     \begin{itemize}\small
       \item 15 manufacturing categories: 10 objects + 5 textures
       \item $> 5000$ images,  $\approx 1200$ anomalous images
-      \item Normal-only training; test set has pixel-level anomaly gt
+      \item Normal-only training; test set has pixel-level anomaly ground truth
     \end{itemize}
     \textbf{\color{accent}Accuracy paradox}
     \begin{itemize}
@@ -389,7 +389,7 @@
             $\mathcal{L} = \alpha\,(1-\mathrm{SSIM}) + (1-\alpha)\,\mathrm{MSE}$.\\
             MSE captures global variance, while SSIM enforces high structural and perceptual fidelity.
       \item \textbf{Architectural Choices:}\\
-            \textbf{ELU} activations avoid dying neurons.\\
+            \textbf{ELU} no dying neurons + zero-centered mean.\\
             \textbf{BatchNorm} stabilizes covariate shifts.\\
             \textbf{AdamW} enables decoupled weight decay.
     \end{itemize}
@@ -404,6 +404,7 @@
 \begin{frame}{Keras CAE -- End-to-End Pipeline}
 % \vspace*{-0.4cm}
 \begin{center}
+% codespell:disable
 \resizebox{0.75\textwidth}{!}{
 \begin{tikzpicture}[
   font=\scriptsize,
@@ -412,39 +413,41 @@
 ]
 
   % ROW 1: Data Prep (L -> R)
-  \node[stepbox, text width=2.5cm] (data) at (0, 0) {\textbf{1. MVTec Dataset}};
-  \node[stepbox, text width=1.8cm, fill=accent!5, draw=accent] (cat) at (3.1, 0) {\textbf{2. Category?}};
-  \node[stepbox, text width=2.0cm, fill=teal!15] (tex) at (5.7, 0.6) {\textbf{Texture}\\Rotate+Flip};
-  \node[stepbox, text width=2.0cm, fill=accent!15] (obj) at (5.7, -0.6) {\textbf{Object}\\Colour+Noise};
-  \node[stepbox, text width=2.5cm] (seg) at (8.7, 0) {\textbf{3. Fg. Mask}\\Otsu+Canny};
+  \node[stepbox, text width=2.0cm] (data) at (0, 0) {\textbf{1. MVTec Data}};
+  \node[stepbox, text width=2.6cm] (prep) at (3.0, 0) {\textbf{2. Preprocessing}\\Otsu, CLAHE, Blur};
+  \node[stepbox, text width=1.8cm, fill=accent!5, draw=accent] (cat) at (5.9, 0) {\textbf{3. Category?}};
+  \node[stepbox, text width=2.2cm, fill=teal!15] (tex) at (8.7, 0.7) {\textbf{Texture}\\Rotate+Flip};
+  \node[stepbox, text width=2.2cm, fill=accent!15] (obj) at (8.7, -0.7) {\textbf{Object}\\Colour+Noise};
 
-  % Data to Cat
-  \draw[arr] (data) -- (cat);
+  \draw[arr] (data) -- (prep);
+  \draw[arr] (prep) -- (cat);
 
-  % 1. Branch: Cat -> Tex & Obj (- | ->)
-  \draw[thick, color=teal!80] (cat.east) -- ++(0.1, 0) coordinate (fork);
+  % Branching
+  \draw[thick, color=teal!80] (cat.east) -- ++(0.2, 0) coordinate (fork);
   \draw[arr] (fork) |- (tex.west);
   \draw[arr] (fork) |- (obj.west);
 
-  % 2. Merge: Tex & Obj -> Seg (- | ->)
-  \path (seg.west) ++(-0.35, 0) coordinate (join);
-  \draw[thick, color=teal!80] (tex.east) -| (join);
-  \draw[thick, color=teal!80] (obj.east) -| (join);
-  \draw[arr] (join) -- (seg.west);
-
   % ROW 2: Model (R -> L)
-  \node[stepbox, text width=3.0cm, fill=teal!10] (build) at (8.7, -2.0) {\textbf{4. Build Keras CAE}\\ELU + BN + AdamW};
-  \node[stepbox, text width=3.0cm, fill=teal!20] (train) at (4.3, -2.0) {\textbf{5. Train Model}\\SSIM+MSE + MIM};
-  \node[stepbox, text width=3.0cm] (score) at (0, -2.0) {\textbf{6. Score Images}\\Top-K Pooling};
-  
-  \draw[arr] (seg) -- (build);
+  \node[stepbox, text width=2.4cm, fill=teal!5] (mim) at (8.7, -2.4) {\textbf{4. Masking}\\MIM Input Drop};
+  \node[stepbox, text width=2.4cm, fill=teal!10] (build) at (4.35, -2.4) {\textbf{5. Build CAE}\\ELU+BN+AdamW};
+  \node[stepbox, text width=2.4cm, fill=teal!20] (train) at (0, -2.4) {\textbf{6. Train Model}\\Loss: SSIM+MSE};
+
+  % Merge into MIM
+  \draw[thick, color=teal!80] (tex.east) -- ++(0.3, 0) coordinate (tE); % codespell:ignore
+  \draw[thick, color=teal!80] (obj.east) -- (tE |- obj.east) coordinate (oE); % codespell:ignore
+  \draw[thick, color=teal!80] (tE) -- (oE); % codespell:ignore
+  \draw[thick, color=teal!80] (oE) -- (tE |- mim.east) coordinate (mE); % codespell:ignore
+  \draw[arr] (mE) -- (mim.east);
+
+  \draw[arr] (mim) -- (build);
   \draw[arr] (build) -- (train);
-  \draw[arr] (train) -- (score);
 
   % ROW 3: Inference (L -> R)
-  \node[stepbox, text width=3.0cm] (thresh) at (0, -3.6) {\textbf{7. Adapt. Threshold}\\Quantile/Mahalanobis};
-  \node[stepbox, text width=3.0cm, fill=accent!10, draw=accent] (eval) at (4.3, -3.6) {\textbf{8. Evaluation}\\AUROC + AUPIMO};
+  \node[stepbox, text width=2.4cm] (score) at (0, -4.2) {\textbf{7. Score Images}\\Top-K Pooling};
+  \node[stepbox, text width=2.4cm] (thresh) at (4.35, -4.2) {\textbf{8. Adapt. Thresh}\\Quantile/Mahal.};
+  \node[stepbox, text width=2.4cm, fill=accent!10, draw=accent] (eval) at (8.7, -4.2) {\textbf{9. Evaluation}\\AUROC+AUPIMO};
 
+  \draw[arr] (train) -- (score);
   \draw[arr] (score) -- (thresh);
   \draw[arr] (thresh) -- (eval);
 
