@@ -218,9 +218,8 @@
 % SLIDE 4 – Metric Selection
 %--------------------------------------------------------------------
 \begin{frame}{Metric Selection: AUPIMO \& F1-Score}
-\vspace*{-0.2cm}
 \begin{columns}[T]
-  \begin{column}{0.48\textwidth}
+  \begin{column}{0.58\textwidth}
     \textbf{\color{accent}The Problem with Pixel-AUROC}
     \begin{itemize}\small
       \item AUROC relies on False Positive Rate (FPR):
@@ -237,11 +236,11 @@
       \item \textbf{F1-Score / PR Curve:} Directly measures defect capture vs false alarms without TN dilution.
     \end{itemize}
   \end{column}
-  \begin{column}{0.50\textwidth}
+  \begin{column}{0.40\textwidth}
     \centering
-    \includegraphics[width=0.95\textwidth,height=0.34\textheight,keepaspectratio]{binarization_threshold_aupimo.png}\\[-2pt]
+    \includegraphics[width=\textwidth]{binarization_threshold_aupimo.png}\\[-6pt]
     {\tiny\color{muted} Threshold tradeoff curve \& AUPIMO range}\\[3pt]
-    \includegraphics[width=0.95\textwidth,height=0.34\textheight,keepaspectratio]{pr_curve_aupimo.png}\\[-2pt]
+    \includegraphics[width=\textwidth]{pr_curve_aupimo.png}\\[-6pt]
     {\tiny\color{muted} Precision-Recall curve with marked AUPIMO operating range}\par
   \end{column}
 \end{columns}
@@ -311,6 +310,11 @@
 
 \end{columns}
 \note{\scriptsize
+  \textbf{Notation on PatchCore diagram ($\phi(x)$ and $m \in \mathcal{M}$):}\\[1pt]
+  $\phi(x)$ is the \emph{patch feature representation} extracted from frozen ResNet-18 (concatenated mid-level layers 2+3).
+  $\mathcal{M}$ is the \emph{coreset memory bank} of normal reference vectors, and $m \in \mathcal{M}$ is an individual stored normal patch prototype.
+  $\min_{m \in \mathcal{M}} \|\phi(x) - m\|_2$ is the nearest-neighbour $L_2$ distance: an anomaly is detected when a query patch vector has no close normal counterpart in memory.\\[3pt]
+
   \textbf{Q: Why two such different paradigms rather than one?}\\[1pt]
   They fail in completely different ways. A CAE can fail silently on textures it has never seen,
   while PatchCore fails when the memory bank has coverage gaps. Running both gives orthogonal error signals.
@@ -387,6 +391,11 @@
   \end{column}
 \end{columns}
 \note{\scriptsize
+  \textbf{Inference formula ($s(p^*) = \min_{m \in \mathcal{M}} \|p^* - m\|_2$):}\\[1pt]
+  $p^* \equiv \phi(x)_i$ is the query patch feature vector extracted by frozen ResNet-18 $\phi(x)$.
+  $\mathcal{M}$ is the coreset-reduced memory bank of normal training vectors, and $m \in \mathcal{M}$ is the nearest normal reference vector.
+  Scoring is non-parametric nearest-neighbour distance: if a query patch has no close match in $\mathcal{M}$, its distance is large $\Rightarrow$ anomalous.\\[3pt]
+
   \textbf{Q: Why not fine-tune ResNet on the normal images?}\\[1pt]
   Without defect labels you can only do self-supervised fine-tuning. But this risks
   \emph{destroying} the mid-level texture representations that make PatchCore work
@@ -831,7 +840,7 @@ The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) 
       \includegraphics[width=\textwidth,height=0.48\textheight,keepaspectratio]{business_explainability.png}
     \end{center}
     \vspace{-4pt}
-    {\tiny\color{muted} Explainability: anomaly heatmaps provide pixel-level attribution $\Rightarrow$ quality engineers can review in seconds, replacing manual inspection.}\\[6pt]
+    {\tiny\color{muted} Explainability: anomaly heatmaps provide pixel-level attribution\\[-0.2cm]$\Rightarrow$ quality engineers review in seconds, replacing manual inspection.}\\[6pt]
     \textbf{\color{accent}Data sovereignty}\\
     {\footnotesize Coreset memory bank stores patterns locally. CAD toolpaths, material formulations never leave the plant.}
   \end{column}
