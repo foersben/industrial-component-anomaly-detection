@@ -1,0 +1,38 @@
+<script>
+(() => {
+  // Streamlit can rerun this script; keep only one wheel listener.
+  window.__defenseWheelCleanup?.();
+  const state = window.__defenseWheelState ?? { lastEvent: 0, accumulated: 0, navigated: false };
+  window.__defenseWheelState = state;
+
+  function onWheel(event) {
+    const stage = document.querySelector(".st-key-defense_stage");
+    if (!stage || stage.querySelector(".demo-marker") || event.ctrlKey || event.metaKey) return;
+    if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+
+    event.preventDefault();
+    const now = performance.now();
+    if (now - state.lastEvent > 350) {
+      state.accumulated = 0;
+      state.navigated = false;
+    }
+    state.lastEvent = now;
+    if (state.navigated) return;
+
+    const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1);
+    state.accumulated += pixels;
+    if (Math.abs(state.accumulated) < 45) return;
+
+    const selector = state.accumulated > 0
+      ? ".st-key-defense_next button"
+      : ".st-key-defense_previous button";
+    const button = document.querySelector(selector);
+    state.navigated = true;
+    state.accumulated = 0;
+    if (button && !button.disabled) button.click();
+  }
+
+  document.addEventListener("wheel", onWheel, { passive: false });
+  window.__defenseWheelCleanup = () => document.removeEventListener("wheel", onWheel);
+})();
+</script>

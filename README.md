@@ -85,7 +85,7 @@ This launches a **Monolithic Streamlit** application on port 8501.
 just run
 ```
 
-The defense presentation displays pages from `docs/latex/latex_beamer_presentation/main.pdf` inside Streamlit. Its Previous/Next controls and live demo remain in the app. After editing `main.tex`, rebuild the PDF and refresh Streamlit:
+The defense presentation displays pages from `docs/latex/latex_beamer_presentation/main.pdf` inside Streamlit. Use the Previous/Next buttons or scroll the mouse wheel to change slides; the live demo remains in the app. After editing `main.tex`, rebuild the PDF and refresh Streamlit:
 
 ```bash
 make -C docs/latex/latex_beamer_presentation pdf
