@@ -218,29 +218,31 @@
 % SLIDE 4 – Metric Selection
 %--------------------------------------------------------------------
 \begin{frame}{Metric Selection: AUPIMO \& F1-Score}
+\vspace*{-0.2cm}
 \begin{columns}[T]
-  \begin{column}{0.50\textwidth}
-    \textbf{\color{accent}The problem with Pixel-AUROC}
+  \begin{column}{0.48\textwidth}
+    \textbf{\color{accent}The Problem with Pixel-AUROC}
     \begin{itemize}\small
-      \item AUROC relies on False Positive Rate
+      \item AUROC relies on False Positive Rate (FPR):
       \begin{itemize}\footnotesize
         \item With $\approx$\,98.5\% normal pixels, TN dominates $\Rightarrow$ FPR barely moves.
         \item SOTA scores all exceed 99\%, making differences indistinguishable.
       \end{itemize}
     \end{itemize}
-    \vspace{6pt}
-    \textbf{\color{teal}Our Evaluation Paradigm}
+    \vspace{3pt}
+    \textbf{\color{teal}Metric Solution}
     \begin{itemize}\small
-      \item \textbf{AUPIMO:} Pixel-level threshold over the ultra-low FPR window $[10^{-5}, 10^{-4}]$ on normal images.
+      \item \textbf{AUPIMO:} Integrates localization over the operational ultra-low FPR window $[10^{-5}, 10^{-4}]$ on normal images.
       \item \textbf{Dual Thresholds:} We calibrate distinct \emph{image-level} and \emph{pixel-level} anomaly thresholds.
-      \item \textbf{F1-Score Focus:} Additionally, we always evaluate the F1-Score.
+      \item \textbf{F1-Score / PR Curve:} Directly measures defect capture vs false alarms without TN dilution.
     \end{itemize}
   \end{column}
-  \begin{column}{0.48\textwidth}
-    \begin{center}
-      \includegraphics[width=1.0\textwidth]{binarization_threshold_aupimo.png}
-    \end{center}
-    {\tiny\color{muted}\centering Binarization threshold curve \& AUPIMO range\par}
+  \begin{column}{0.50\textwidth}
+    \centering
+    \includegraphics[width=0.95\textwidth,height=0.34\textheight,keepaspectratio]{binarization_threshold_aupimo.png}\\[-2pt]
+    {\tiny\color{muted} Threshold tradeoff curve \& AUPIMO range}\\[3pt]
+    \includegraphics[width=0.95\textwidth,height=0.34\textheight,keepaspectratio]{pr_curve_aupimo.png}\\[-2pt]
+    {\tiny\color{muted} Precision-Recall curve with marked AUPIMO operating range}\par
   \end{column}
 \end{columns}
 \end{frame}
