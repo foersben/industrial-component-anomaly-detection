@@ -15,6 +15,7 @@ description = "Anomaly Detection in Industrial Components"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "latex2mathml>=3.81.1,<4",
     "fastapi[standard]>=0.115.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
