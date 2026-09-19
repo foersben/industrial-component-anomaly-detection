@@ -20,7 +20,7 @@ def _select_category(category: str) -> None:
 def render() -> None:
     """Render a bounded, interactive inspection surface inside the slide stage."""
     st.markdown(
-        '<div class="demo-marker"><div class="def-eyebrow">10 · Live Demo</div>'
+        '<div class="demo-marker"><div class="def-eyebrow">Live Demo</div>'
         '<div style="font:790 3.2cqw/.98 Inter,sans-serif;letter-spacing:-.045em">Live Inspection & Explainability</div></div>',
         unsafe_allow_html=True,
     )
