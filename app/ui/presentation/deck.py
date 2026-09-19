@@ -45,7 +45,7 @@ def render_defense_presentation() -> None:
         if demo_open:
             demo.render()
         else:
-            render_pdf_page(index + 1)
+            render_pdf_page(index + 1, slide_count)
 
     with st.container(key="defense_navigation"):
         previous, progress, next_col, live_demo, dashboard = st.columns([1, 2.7, 1, 0.8, 0.4])
