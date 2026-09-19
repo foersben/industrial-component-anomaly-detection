@@ -115,8 +115,8 @@ def test_precache_schedules_missing_pages_once(monkeypatch: pytest.MonkeyPatch, 
     assert scheduled == [("deck.pdf", "version", 3), ("deck.pdf", "version", 1), ("deck.pdf", "version", 4)]
 
 
-def test_pdf_page_is_embedded_in_slide_stage(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The current PDF page should become one full-stage image."""
+def test_pdf_page_uses_static_image_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The browser fetches the cached image without sending PNG bytes through Streamlit."""
     pdf = tmp_path / "main.pdf"
     pdf.write_bytes(b"%PDF-test")
     markup: list[str] = []
@@ -127,6 +127,8 @@ def test_pdf_page_is_embedded_in_slide_stage(monkeypatch: pytest.MonkeyPatch, tm
     pdf_pages.render_pdf_page(5)
 
     assert len(markup) == 1
-    assert 'src="data:image/png;base64,cG5n"' in markup[0]
+    version = pdf_pages._pdf_version()
+    assert f'src="app/static/presentation_pages/{version}-3840/page-005.png"' in markup[0]
+    assert 'data-page-number="5"' in markup[0]
     assert 'alt="Presentation slide 5"' in markup[0]
     assert "object-fit:contain" in markup[0]

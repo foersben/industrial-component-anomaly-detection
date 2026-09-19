@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import subprocess
 import tempfile
@@ -14,7 +13,7 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[3]
 PDF_PATH = ROOT / "docs" / "latex" / "latex_beamer_presentation" / "main.pdf"
-CACHE_ROOT = ROOT / ".cache" / "presentation_pages"
+CACHE_ROOT = ROOT / "app" / "ui" / "static" / "presentation_pages"
 RENDER_WIDTH = 3840
 _PREFETCH_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="slide-prefetch")
 _PREFETCH_LOCK = Lock()
@@ -52,6 +51,10 @@ def pdf_page_count(path: str, version: str) -> int:
 
 def _cache_path(version: str, page_number: int) -> Path:
     return CACHE_ROOT / f"{version}-{RENDER_WIDTH}" / f"page-{page_number:03d}.png"
+
+
+def _page_url(version: str, page_number: int) -> str:
+    return f"app/static/presentation_pages/{version}-{RENDER_WIDTH}/page-{page_number:03d}.png"
 
 
 def pdf_page_png(path: str, version: str, page_number: int) -> bytes:
@@ -116,15 +119,16 @@ def render_pdf_page(page_number: int, page_count: int | None = None) -> None:
     try:
         version = _pdf_version()
         path = str(PDF_PATH)
-        png = pdf_page_png(path, version, page_number)
+        pdf_page_png(path, version, page_number)
     except (OSError, RuntimeError) as exc:
         st.error(str(exc))
         return
 
-    source = base64.b64encode(png).decode("ascii")
     st.markdown(
         '<div style="width:100%;height:100%;overflow:hidden">'
-        f'<img src="data:image/png;base64,{source}" alt="Presentation slide {page_number}" '
+        f'<img src="{_page_url(version, page_number)}" alt="Presentation slide {page_number}" '
+        f'data-page-number="{page_number}" data-page-count="{page_count or page_number}" '
+        f'data-pdf-version="{version}" '
         'style="display:block;width:100%;height:100%;object-fit:contain">'
         "</div>",
         unsafe_allow_html=True,

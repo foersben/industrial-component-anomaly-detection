@@ -92,7 +92,7 @@ make -C docs/latex/latex_beamer_presentation pdf
 ```
 
 PDF slide rendering requires Poppler's `pdfinfo` and `pdftoppm` commands (`poppler-utils` on Ubuntu). Navigation reads the PDF's page count automatically, so adding or removing slides in LaTeX requires no Streamlit slide-list update.
-Rendered 3840-pixel slides are cached under `.cache/presentation_pages/`. The app renders the current page first and fills the rest of the deck in the background. The cache key includes a hash of `main.pdf`, so rebuilding the PDF automatically creates fresh page images while unchanged slides are reused across app restarts.
+Rendered 3840-pixel slides are cached under `app/ui/static/presentation_pages/`. The app renders the current page first and fills the rest of the deck in the background. The cache key includes a hash of `main.pdf`, so rebuilding the PDF automatically creates fresh page images while unchanged slides are reused across app restarts. Browser-side navigation loads these images directly, avoiding a Streamlit rerun for each slide change.
 
 ### Supported Pipelines & Unified Caching
 
