@@ -7,6 +7,13 @@
 % ---- Theme ----
 \usetheme{metropolis}
 \usepackage{appendixnumberbeamer}
+\usepackage{pgfpages}
+
+% ---- Notes mode: compile with -jobname=notes to get presenter notes ----
+% Activated externally by notes.tex via \def\NOTESMODE{1}
+\ifdefined\NOTESMODE
+  \setbeameroption{show only notes}
+\fi
 
 % ---- Packages ----
 \usepackage{graphicx}
@@ -301,10 +308,32 @@
   \end{column}
 
 \end{columns}
+\note{\scriptsize
+  \textbf{Q: Why two such different paradigms rather than one?}\\[1pt]
+  They fail in completely different ways. A CAE can fail silently on textures it has never seen,
+  while PatchCore fails when the memory bank has coverage gaps. Running both gives orthogonal error signals.
+  PatchCore is also a natural upper-bound baseline: if PatchCore cannot detect a defect with frozen
+  ImageNet features, the defect has near-zero visual contrast — no learned model will either.\\[3pt]
+
+  \textbf{Q: Couldn't you just use a classifier with defect labels?}\\[1pt]
+  Hard no in industrial production: defect labels require defective parts to exist,
+  which means letting defective parts accumulate before deployment. The whole value proposition
+  is Day-1 deployment with zero defect data. Any supervised approach also fails on
+  \emph{novel} defect types not seen during training.\\[3pt]
+
+  \textbf{Conceptual trap: PatchCore ``trains'' vs.~``fits''.}\\[1pt]
+  PatchCore has no gradient updates. The ``fitting'' step is just a forward pass through
+  ResNet-18 + writing vectors to memory. The distinction matters: there is no overfitting risk,
+  no learning rate to tune, no epochs. It is closer to database indexing than training.\\[3pt]
+
+  \textbf{Connection between models:} Both ultimately compute a per-patch distance to normality
+  — CAE in pixel reconstruction space, PatchCore in feature embedding space.
+  The difference is \emph{where} normal is represented: CAE encodes it in weights, PatchCore in vectors.
+}
 \end{frame}
 
 %--------------------------------------------------------------------
-% SLIDE 6 – PatchCore: Transfer Learning & Architecture
+% SLIDE 6 – PatchCore: Transfer Learning \& Architecture
 %--------------------------------------------------------------------
 \begin{frame}{PatchCore: Transfer Learning \& Architecture}
 \begin{columns}[T]
@@ -352,6 +381,31 @@
     \end{itemize}
   \end{column}
 \end{columns}
+\note{\scriptsize
+  \textbf{Q: Why not fine-tune ResNet on the normal images?}\\[1pt]
+  Without defect labels you can only do self-supervised fine-tuning. But this risks
+  \emph{destroying} the mid-level texture representations that make PatchCore work
+  — fine-tuning on a narrow distribution (one factory category) collapses the embedding
+  space to only what it has seen, killing generalisation to subtle defects.
+  The frozen features generalise better precisely because they were trained on 1M diverse images.\\[3pt]
+
+  \textbf{Q: Why layer2+layer3 of ResNet-18 and not the final layer?}\\[1pt]
+  The final layer encodes ImageNet class identity (cat, truck, etc.) — totally irrelevant
+  to surface defects. Layer2/3 encode mid-level statistics: edges, frequency responses,
+  local texture gradients. These are universal and transfer well to any visual texture domain.\\[3pt]
+
+  \textbf{Q: How does coreset subsampling work without losing coverage?}\\[1pt]
+  Greedy farthest-point sampling: iteratively pick the point in feature space that is
+  farthest from all already-selected points. This guarantees maximum coverage of the
+  feature space manifold with the fewest points. It is \emph{not} random subsampling.
+  Random subsampling at 10\% would cluster around dense regions, leaving sparse regions
+  (rare but valid normal appearances) uncovered — producing false positives.\\[3pt]
+
+  \textbf{Failure mode to know:} PatchCore cannot detect defects that are \emph{globally}
+  anomalous but locally normal. Example: a correct screw thread in the wrong location.
+  Every individual patch looks fine; only the global arrangement is wrong.
+  CAE is actually better here because it reconstructs the whole image.
+}
 \end{frame}
 
 
@@ -396,6 +450,33 @@
     }
   \end{column}
 \end{columns}
+\note{\scriptsize
+  \textbf{Q: Isn't the loss the anomaly score? (Classic confusion)}\\[1pt]
+  No. The loss is a global image scalar used only during training for weight updates.
+  The anomaly score is a \emph{per-pixel} error map aggregated via Top-K pooling, computed only
+  at inference with frozen weights. They share the MSE signal but serve completely different purposes.
+  The loss cannot localise defects; the pixel error map can.\\[3pt]
+
+  \textbf{Q: Why does a decoder trained on normals fail on defects? It still has all its weights.}\\[1pt]
+  The bottleneck is a learned \emph{normal manifold}. A defective image gets projected
+  onto the closest point on that manifold, which is a normal surface. The decoder then
+  faithfully decodes \emph{that projection}, not the original defective input.
+  Think of it as a lossy codec trained only on one class: it always outputs something class-like.\\[3pt]
+
+  \textbf{Q: Why SSIM and not just MSE?}\\[1pt]
+  MSE optimises average pixel intensity independently — a blurry reconstruction can have
+  low MSE. SSIM penalises structural differences: contrast, luminance, and local co-movement
+  of pixels. A blur that preserves colour but destroys edges is heavily penalised by SSIM,
+  not by MSE. The combination forces the reconstruction to be both globally correct (MSE)
+  and structurally faithful (SSIM), which matters for texture surfaces like leather or wood.\\[3pt]
+
+  \textbf{Q: Why not skip connections like a U-Net?}\\[1pt]
+  Skip connections let the encoder pass high-frequency detail directly to the decoder,
+  bypassing the bottleneck. This makes it \emph{trivially easy} to reconstruct any input,
+  including defects. The bottleneck \emph{must} be the information bottleneck.
+  MIM reinforces this: if you mask 25\% of the input, skip connections cannot carry
+  the masked content, forcing the bottleneck to infer it from context.
+}
 \end{frame}
 
 %--------------------------------------------------------------------
@@ -457,6 +538,37 @@
 \vspace{0.2cm}
 {\textbf{\color{teal}Automated Pipeline \& Optuna Integration}\\
 The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) (e.g., augmentation strategy, latent dimensions) optimized using Optuna targeting \textbf{Pixel AUPIMO}.}
+\note{\scriptsize
+  \textbf{Q: Why optimise Optuna against AUPIMO and not AUROC?}\\[1pt]
+  AUROC is threshold-free and integrates over the entire FPR range $[0,1]$.
+  In industrial settings, operating at FPR $> 10^{-4}$ is practically useless
+  (too many false alarms). AUPIMO evaluates \emph{only} the operationally relevant
+  region and at pixel level, making it a far tighter proxy for real-world utility.
+  Optimising AUROC could improve the broad curve while degrading the narrow
+  high-stakes region that actually matters.\\[3pt]
+
+  \textbf{Q: Why does Optuna target the validation split, not the test set?}\\[1pt]
+  Any hyperparameter search against the test set is test leakage \emph{by design}.
+  The 15\% normal validation partition (never anomalous, never test) is the only
+  legal signal available for tuning. The test set is locked until final scoring.
+  This is the ``zero-leakage'' guarantee \emph{within} the training process, not just
+  a one-time split.\\[3pt]
+
+  \textbf{Q: What does Optuna actually tune and how?}\\[1pt]
+  Bayesian optimisation (Tree-structured Parzen Estimator) over the joint space of:
+  crop size/stride, mask ratio, latent dimension, CLAHE clip limit, augmentation choice.
+  It builds a probabilistic model of which configurations lead to high AUPIMO and
+  samples the next trial from the most promising region. Far more efficient than
+  grid/random search in high-dimensional spaces.\\[3pt]
+
+  \textbf{Q: Why does the threshold calibration use the 95th percentile?}\\[1pt]
+  It is a 5\% false-alarm budget on normal parts ($\alpha = 0.05$).
+  This is the T2 ``Precision Industrial'' profile. 95\% of normal parts score below
+  this threshold; 5\% are false positives. Setting $\alpha$ is the only
+  available lever to control the false-alarm rate without defect labels.
+  The key insight: this is a \emph{day-1 deployable SLA guarantee} on the false-alarm
+  rate, even with zero knowledge of what defects look like.
+}
 \end{frame}
 
 %====================================================================
