@@ -357,7 +357,7 @@ html, body, #root, [data-testid="stApp"], [data-testid="stAppViewContainer"],
 .pdf-slide.balanced .pdf-frame-body { display: flex; align-items: center; }
 .pdf-slide.balanced .pdf-frame-body > .pdf-grid-2 { width: 100%; height: auto; }
 .pdf-pipeline-layout { display: grid; grid-template-rows: minmax(0,1fr) auto; gap: 2.1cqh; height: 100%; min-height: 0; }
-.pdf-pipeline-map { position: relative; box-sizing: border-box; width: 79cqw; height: 59cqh; margin: 0 auto; }
+.pdf-pipeline-map { position: relative; box-sizing: border-box; width: 87cqw; height: 59cqh; margin: 0 auto; }
 .pdf-pipeline-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; }
 .pdf-pipeline-lines > path { stroke: #258f90; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .pdf-pipeline-lines > path.arrow { marker-end: url(#pdf-pipeline-arrow); }

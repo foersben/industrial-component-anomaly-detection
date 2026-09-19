@@ -20,7 +20,7 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usepackage{microtype}
-\usepackage{fontawesome5}
+
 \usepackage{hyperref}
 \usepackage{multirow}
 \usepackage{adjustbox}
@@ -402,22 +402,22 @@
 % SLIDE 8 – Keras CAE Pipeline (End-to-End)
 %--------------------------------------------------------------------
 \begin{frame}{Keras CAE -- End-to-End Pipeline}
-% \vspace*{-0.4cm}
+\vspace*{-0.3cm}
 \begin{center}
 % codespell:disable
-\resizebox{0.75\textwidth}{!}{
+\resizebox{0.95\textwidth}{!}{
 \begin{tikzpicture}[
   font=\scriptsize,
   stepbox/.style={draw=teal, fill=teal!5, rounded corners=3pt, text width=3.0cm, align=center, inner sep=4pt, minimum height=0.7cm},
-  arr/.style={-{Latex[length=2.5mm]}, thick, color=teal!80}
+  arr/.style={-{Latex[length=2mm,width=1.2mm]}, thick, color=teal!80}
 ]
 
   % ROW 1: Data Prep (L -> R)
   \node[stepbox, text width=2.0cm] (data) at (0, 0) {\textbf{1. MVTec Data}};
   \node[stepbox, text width=2.6cm] (prep) at (3.0, 0) {\textbf{2. Preprocessing}\\Otsu, CLAHE, Blur};
   \node[stepbox, text width=1.8cm, fill=accent!5, draw=accent] (cat) at (5.9, 0) {\textbf{3. Category?}};
-  \node[stepbox, text width=2.2cm, fill=teal!15] (tex) at (8.7, 0.7) {\textbf{Texture}\\Rotate+Flip};
-  \node[stepbox, text width=2.2cm, fill=accent!15] (obj) at (8.7, -0.7) {\textbf{Object}\\Colour+Noise};
+  \node[stepbox, text width=2.2cm, fill=teal!15] (tex) at (8.7, 0.6) {\textbf{Texture}\\Rotate+Flip};
+  \node[stepbox, text width=2.2cm, fill=accent!15] (obj) at (8.7, -0.6) {\textbf{Object}\\Colour+Noise};
 
   \draw[arr] (data) -- (prep);
   \draw[arr] (prep) -- (cat);
@@ -428,9 +428,9 @@
   \draw[arr] (fork) |- (obj.west);
 
   % ROW 2: Model (R -> L)
-  \node[stepbox, text width=2.4cm, fill=teal!5] (mim) at (8.7, -2.4) {\textbf{4. Masking}\\MIM Input Drop};
-  \node[stepbox, text width=2.4cm, fill=teal!10] (build) at (4.35, -2.4) {\textbf{5. Build CAE}\\ELU+BN+AdamW};
-  \node[stepbox, text width=2.4cm, fill=teal!20] (train) at (0, -2.4) {\textbf{6. Train Model}\\Loss: SSIM+MSE};
+  \node[stepbox, text width=2.4cm, fill=teal!5] (mim) at (8.5, -1.85) {\textbf{4. Masking}\\MIM Input Drop};
+  \node[stepbox, text width=2.4cm, fill=teal!10] (build) at (4.35, -1.85) {\textbf{5. Build CAE}\\ELU+BN+AdamW};
+  \node[stepbox, text width=2.4cm, fill=teal!20] (train) at (0, -1.85) {\textbf{6. Train Model}\\Loss: SSIM+MSE};
 
   % Merge into MIM
   \draw[thick, color=teal!80] (tex.east) -- ++(0.3, 0) coordinate (tE); % codespell:ignore
@@ -443,9 +443,9 @@
   \draw[arr] (build) -- (train);
 
   % ROW 3: Inference (L -> R)
-  \node[stepbox, text width=2.4cm] (score) at (0, -4.2) {\textbf{7. Score Images}\\Top-K Pooling};
-  \node[stepbox, text width=2.4cm] (thresh) at (4.35, -4.2) {\textbf{8. Adapt. Thresh}\\Quantile/Mahal.};
-  \node[stepbox, text width=2.4cm, fill=accent!10, draw=accent] (eval) at (8.7, -4.2) {\textbf{9. Evaluation}\\AUROC+AUPIMO};
+  \node[stepbox, text width=2.4cm] (score) at (0, -3.05) {\textbf{7. Score Images}\\Top-K Pooling};
+  \node[stepbox, text width=2.4cm] (thresh) at (4.35, -3.05) {\textbf{8. Adapt. Thresh}\\Quantile/Mahal.};
+  \node[stepbox, text width=2.4cm, fill=accent!10, draw=accent] (eval) at (8.7, -3.05) {\textbf{9. Evaluation}\\AUROC+AUPIMO};
 
   \draw[arr] (train) -- (score);
   \draw[arr] (score) -- (thresh);
@@ -454,7 +454,7 @@
 \end{tikzpicture}
 }
 \end{center}
-\vspace{0.2cm}
+\vspace{0.1cm}
 {\textbf{\color{teal}Automated Pipeline \& Optuna Integration}\\
 The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) (e.g., augmentation strategy, latent dimensions) optimized using Optuna targeting \textbf{Pixel AUPIMO}.}
 \end{frame}

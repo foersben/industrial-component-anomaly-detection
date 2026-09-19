@@ -186,13 +186,13 @@ def render_cae_pipeline() -> None:
     body = """
     <div class="pdf-pipeline-layout">
       <div class="pdf-pipeline-map" role="img" aria-label="Nine-step CAE pipeline: data, preprocessing, category-dependent augmentation, masking, model construction, training, scoring, thresholding, evaluation">
-        <svg class="pdf-pipeline-lines" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
-          <defs><marker id="pdf-pipeline-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" /></marker></defs>
-          <path class="arrow" d="M210 235 H250" /><path class="arrow" d="M480 235 H520" />
-          <path class="arrow" d="M690 235 H710 V85 H730" /><path class="arrow" d="M710 235 V375 H730" />
-          <path d="M960 85 H985 V615 M960 375 H985" /><path class="arrow" d="M985 615 H960" />
-          <path class="arrow" d="M730 615 H610" /><path class="arrow" d="M370 615 H250" />
-          <path class="arrow" d="M135 700 V820" /><path class="arrow" d="M250 905 H370" /><path class="arrow" d="M610 905 H730" />
+        <svg class="pdf-pipeline-lines" viewBox="0 0 1000 381.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <defs><marker id="pdf-pipeline-arrow" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" /></marker></defs>
+          <path class="arrow" d="M210 89.65 H250" /><path class="arrow" d="M480 89.65 H520" />
+          <path class="arrow" d="M690 89.65 H710 V32.43 H730" /><path class="arrow" d="M710 89.65 V143.06 H730" />
+          <path d="M960 32.43 H985 V234.62 M960 143.06 H985" /><path class="arrow" d="M985 234.62 H960" />
+          <path class="arrow" d="M730 234.62 H610" /><path class="arrow" d="M370 234.62 H250" />
+          <path class="arrow" d="M135 267.05 V312.83" /><path class="arrow" d="M250 345.26 H370" /><path class="arrow" d="M610 345.26 H730" />
         </svg>
         <div class="pdf-pipeline-node data"><strong>1. MVTec Data</strong></div>
         <div class="pdf-pipeline-node prep"><strong>2. Preprocessing</strong><span>Otsu, CLAHE, Blur</span></div>
