@@ -594,182 +594,119 @@ The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) 
 %====================================================================
 %  SECTION: BUSINESS INTERPRETATION
 %====================================================================
-\section{Business Interpretation}
+\section{Business Interpretation \& Deployment Strategy}
 
 %--------------------------------------------------------------------
-% SLIDE 12 – Economic Error Asymmetry & Cost Model
+% SLIDE 12 – Economic Error Asymmetry
 %--------------------------------------------------------------------
-\begin{frame}{Economic Error Asymmetry — The Cost Model}
-\begin{columns}[T]
-  \begin{column}{0.45\textwidth}
-    \textbf{Two types of error, very different costs}\\[6pt]
-    \begin{tikzpicture}[font=\small]
-      \node[draw=accent,fill=accent!10,rounded corners,inner sep=6pt,text width=5.5cm] (fp) {
-        \textbf{\color{accent}False Alarm} (FP): good part rejected.\\
-        Cost: line stoppage, lost throughput, scrapped unit\\
-        \textit{e.g.\ Screw: $c_\mathrm{FP} \gg c_\mathrm{FN}$}
-      };
-      \node[draw=teal,fill=teal!10,rounded corners,inner sep=6pt,text width=5.5cm,below=8pt of fp] (fn) {
-        \textbf{\color{teal}Missed Defect} (FN): bad part ships\\
-        Cost: recall, liability, safety incident\\
-        \textit{e.g.\ Pill: $c_\mathrm{FN} \gg c_\mathrm{FP}$}
-      };
-    \end{tikzpicture}
-    $\,$\\[6pt]
-    \textbf{Optimal threshold $t^* = \frac{c_\mathrm{FP}}{c_\mathrm{FP} + c_\mathrm{FN}}$}\\[6pt]
-    {\small High $c_\mathrm{FN}$ (pills) pushes $t^*$ toward zero - catch everything.
-    High $c_\mathrm{FP}$ (screws) pushes $t^*$ toward one - avoid false alarms.}
-  \end{column}
-  \begin{column}{0.53\textwidth}
-    \begin{center}
-      \setlength{\tabcolsep}{4pt}
-      \renewcommand{\arraystretch}{1.2}
-      \begin{tabular}{lcc}
-        \toprule
-        \textbf{Category} & \textbf{Obj.} & \textbf{$t^*$} \\
-        \midrule
-        Fasteners (Screw) & $F_{0.5}$ & $\approx 0.9999$ \\
-        Packaging (Bottle)& $F_1$ & $\approx 0.0003$ \\
-        Automotive (M.~Nut)& $F_1$ & $\approx 4\!\times\!10^{-6}$ \\
-        Life Sci.\ (Pill)  & $F_2$ & $\approx 10^{-8}$ \\
-        \bottomrule
-      \end{tabular}
-    \end{center}
-    \vspace{8pt}
-    {\small\color{muted}
-    Cost profiles are illustrative estimates from composite industry case studies (for the sake of the project - guesses).
-    They demonstrate the spectrum of liability, not precise financial figures.}
-  \end{column}
-\end{columns}
+\begin{frame}{Economic Error Asymmetry}
+  \textbf{A false alarm and a missed defect have different consequences.}\\[10pt]
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      {\color{accent}\textbf{False alarm}}\\[4pt]
+      A conforming part is flagged. Operators may need to inspect it again,
+      slowing the line or creating scrap.\\[5pt]
+      {\small\color{muted}Throughput-sensitive lines may put greater weight on this cost.}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      {\color{teal}\textbf{Missed defect}}\\[4pt]
+      A defective part passes inspection. Downstream rework, warranty claims,
+      recalls or safety risks may follow.\\[5pt]
+      {\small\color{muted}High-consequence applications may put greater weight on this cost.}
+    \end{column}
+  \end{columns}
+  \vspace{16pt}
+  \begin{center}
+    $C(\tau)=c_{\mathrm{FP}}\,\mathrm{FP}(\tau)+c_{\mathrm{FN}}\,\mathrm{FN}(\tau)$\\[6pt]
+    {\small\color{muted}A decision framework: plant-specific costs and error counts must be measured before choosing a gate.}
+  \end{center}
 \end{frame}
 
 %--------------------------------------------------------------------
 % SLIDE 13 – Threshold Calibration & Risk Tiers
 %--------------------------------------------------------------------
-\begin{frame}{Threshold Calibration \& Risk-Tiered Operating Profiles}
-\begin{columns}[T]
-  \begin{column}{0.45\textwidth}
-    \textbf{Calibration formula}\\[6pt]
-    $\tau_\alpha = \mathrm{Quantile}_{1-\alpha}\!\left(\{s_i\mid x_i\in\mathcal{D}_\text{val,norm}\}\right)$\\[6pt]
-    {\small $\alpha$: plant's tolerable false-alarm budget.
-    We offer three pre-declared operating profiles:}\\[6pt]
-    \begin{tikzpicture}[font=\small]
-      \node[fill=defectred!20,draw=defectred,rounded corners,inner sep=5pt,
-            text width=6cm] (t1) {
-        \textbf{T1 - Life-Safety} ($\alpha\approx0.10$, $F_2$)\\
-        {\small Recall weighted 4$\times$ over precision.
-        Every borderline part is manually audited.}
-      };
-      \node[fill=teal!20,draw=teal,rounded corners,inner sep=5pt,
-            text width=6cm,below=6pt of t1] (t2) {
-        \textbf{T2 - Prec. Industrial} ($\alpha\approx0.05$, $F_1$)\\
-        {\small Balanced Type I / II errors. Reported benchmark.}
-      };
-      \node[fill=lightbg,draw=muted,rounded corners,inner sep=5pt,
-            text width=6cm,below=6pt of t2] (t3) {
-        \textbf{T3 - High-Throughput} ($\alpha\approx0.01$, $F_{0.5}$)\\
-        {\small Precision weighted 4$\times$; prevents pseudo-scrap.}
-      };
-    \end{tikzpicture}
-  \end{column}
-  \begin{column}{0.53\textwidth}
-    \begin{center}
-      \includegraphics[width=\textwidth]{business_threshold_tiers.png}
-    \end{center}
-    \begin{itemize}
-      \item \textbf{Schematic:} three profiles select different quantiles from the same
-      normal-validation score distribution.
-      \item \textbf{Key:} decoupling feature extraction from threshold calibration
-      makes the decision gate a dynamic, auditable financial parameter.
-    \end{itemize}
-  \end{column}
-\end{columns}
+\begin{frame}{Threshold Calibration \& Operating Priorities}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      \textbf{Normal-validation calibration}\\[6pt]
+      {\small\mbox{$\tau_\alpha = \operatorname{Quantile}_{1-\alpha}
+      \left(\mathrm{AnomalyScores}_{\mathrm{normal,val}}\right)$}}\\[8pt]
+      {\small $\alpha$ is a proposed false-alarm budget on held-out normal examples,
+      not a guaranteed production rate.}\\[9pt]
+      {\small\textbf{Proposed priorities}}\\[3pt]
+      {\small\color{accent}Recall priority} ($\alpha\approx0.10$): lower gate, more review.\\[3pt]
+      {\small\color{teal}Balanced starting point} ($\alpha=0.05$): reported benchmark setting.\\[3pt]
+      {\small\color{muted}Throughput priority} ($\alpha\approx0.01$): higher gate, fewer flags on normal validation data.
+    \end{column}
+    \begin{column}{0.51\textwidth}
+      \includegraphics[width=\textwidth]{business_threshold_tiers.png}\\[5pt]
+      {\footnotesize\color{muted}Schematic only. Defect recall and real-line false alarms
+      must be checked with plant data for each proposed setting.}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 %--------------------------------------------------------------------
-% SLIDE 14 – SLA Interpretation & Operational Value
+% SLIDE 14 – Operator Evidence
 %--------------------------------------------------------------------
-\begin{frame}{SLA Interpretation \& Operational Value}
-\begin{columns}[T]
-  \begin{column}{0.60\textwidth}
-    \textbf{From academic metric to operational SLA}\\[4pt]
-    \resizebox{\linewidth}{!}{%
-    \begin{tabular}{@{}lp{5.5cm}@{}}
-      \toprule
-      \textbf{Metric} & \textbf{Operational meaning} \\
-      \midrule
-      Image F1 = 0.929 & $<$8\% of decisions are wrong \\
-      Recall = 0.932 & $\leq$6.8\% of real defects missed \\
-      Precision = 0.936 & $\leq$6.4\% of rejected parts are good \\
-      PR-AUC = 0.988 & Model quality across all thresholds \\
-      AUPIMO = 0.603 & Strong pixel-localisation \\
-      \bottomrule
-    \end{tabular}%
-    }
-    $\;$\\[6pt]
-    \textbf{\color{teal}Day-1 Deployment \& Cold-Start SLAs}\\[6pt]
-    {\footnotesize 
-    No defect samples required at commissioning; onboarding uses only normal parts.\\[2pt]
-    \textbf{The $\alpha$ mechanism:} W/o defect data, we cannot optimize F-scores. Day-1 SLA guarantees max false-alarm rate ($\alpha$) on normal parts $\Rightarrow$ reliable proxy for target F-score.}
-  \end{column}
-  \begin{column}{0.38\textwidth}
-    \begin{center}
-      \includegraphics[width=\textwidth,height=0.48\textheight,keepaspectratio]{business_explainability.png}
-    \end{center}
-    \vspace{-4pt}
-    {\tiny\color{muted} Explainability: anomaly heatmaps provide pixel-level attribution $\Rightarrow$ quality engineers can review in seconds, replacing manual inspection.}\\[6pt]
-    \textbf{\color{accent}Data sovereignty}\\
-    {\footnotesize Coreset memory bank stores patterns locally. CAD toolpaths, material formulations never leave the plant.}
-  \end{column}
-\end{columns}
+\begin{frame}{Operator Evidence for Review}
+  \textbf{A flagged image needs visible evidence and a human decision path.}\\[8pt]
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.31\textwidth}
+      \centering\includegraphics[viewport=0bp 0bp 256bp 256bp,clip,width=0.70\linewidth]{figures/business/pill_patchcore_003.png}\\[3pt]
+      {\small Input image}
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \centering\includegraphics[viewport=512bp 0bp 768bp 256bp,clip,width=0.70\linewidth]{figures/business/pill_patchcore_003.png}\\[3pt]
+      {\small Anomaly map}
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \centering\includegraphics[viewport=768bp 0bp 1024bp 256bp,clip,width=0.70\linewidth]{figures/business/pill_patchcore_003.png}\\[3pt]
+      {\small Predicted contour}
+    \end{column}
+  \end{columns}
+  \vspace{4pt}
+  {\footnotesize\color{muted}PatchCore highlights suspected defect regions; the heatmap does not establish the cause.}\\[5pt]
+  {\small Borderline flags should go to quality engineers for review during a controlled pilot.
+  Review time and operator agreement still need measurement.}
 \end{frame}
 
 %--------------------------------------------------------------------
-% SLIDE 15 – Summary & Future Prospects
+% SLIDE 15 – Team Conclusion
 %--------------------------------------------------------------------
-\begin{frame}{Summary \& Future Prospects}
-\begin{columns}[T]
-  \begin{column}{0.50\textwidth}
-    \textbf{\color{teal}Results}
-    \begin{itemize}\small
-      \item Unsupervised anomaly detection on MVTec AD 2D (15 categories)
-      \item Two architectures: Keras CAE (generative) \& PatchCore (transfer learning)
-      \item Zero-leakage protocol; AUPIMO as primary pixel metric
-      \item Business-grade threshold framework
-    \end{itemize}
-    \vspace{4pt}
-    \textbf{\color{teal}Key design principles}
-    \begin{itemize}\small
-      \item Cold-start: normal-only training, no defect labels
-      \item IP protection: local coreset, no cloud upload
-      \item Calibrated decision gate as financial parameter
-    \end{itemize}
-  \end{column}
-  \begin{column}{0.48\textwidth}
-    \textbf{\color{muted}Future Prospects \& Experimental Work}
-    \begin{itemize}\footnotesize
-      \item \textbf{Advanced CAE Architectures}:
-      \begin{itemize}\scriptsize
-        \item \textbf{Targeted MIM}: Masked Image Modeling for object geometry, dual-weight masked loss computation.
-        \item \textbf{Perceptual Loss}: ResNet-18 feature-space penalization.
-        \item \textbf{Multi-scale SSIM}: Enhanced structural defect isolation.
+\begin{frame}{Conclusion \& Next Steps}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      \textbf{\color{teal}What We Demonstrated}
+      \begin{itemize}\small
+        \setlength{\itemsep}{7pt}
+        \item EDA revealed the limitations of conventional evaluation metrics.
+        \item Developed and compared convolutional autoencoders and PatchCore.
+        \item Established a consistent evaluation and threshold-calibration framework.
       \end{itemize}
-      \item \textbf{Self-supervised ViTs (DINOv2/v3)}: Foundation-model dense tokens breaking the convolutional representation ceiling.
-    \end{itemize}
-    \vspace{4pt}
-    \begin{center}
-      \begin{tikzpicture}
-        \node[draw=teal,fill=teal!10,rounded corners=6pt,inner sep=10pt,
-              text width=5cm,align=center,font=\small] {
-          \textbf{\color{teal}Thank you}\\[4pt]
-          Questions welcome\\[2pt]
-          {\footnotesize\color{muted}B. Förster · A. Abul Hawa\\
-          M. Nadaf · K. Khalifa}
-        };
-      \end{tikzpicture}
-    \end{center}
-  \end{column}
-\end{columns}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \textbf{\color{teal}What Comes Next}
+      \begin{itemize}\small
+        \setlength{\itemsep}{7pt}
+        \item Validate on representative production data.
+        \item Calibrate thresholds against plant-specific risks.
+        \item Run a controlled industrial pilot before deployment.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{4pt}
+  {\small\centering From understanding defects to building a model, and from model performance to industrial decisions.\par}
+  \vspace{2pt}
+  \begin{center}
+    \fcolorbox{teal}{teal!8}{%
+      \parbox{0.48\textwidth}{\centering\vspace{2pt}
+        {\large\bfseries\color{teal}Thank you}\\[1pt]
+        {\small Questions \& Discussion}\\[2pt]
+        {\footnotesize\color{muted}B.~Förster $\cdot$ A.~Abul~Hawa\\
+        M.~Nadaf $\cdot$ K.~Khalifa}\vspace{2pt}}
+    }
+  \end{center}
 \end{frame}
 
 \end{document}
