@@ -1,0 +1,293 @@
+% =============================================================================
+%  SPEECH NOTES – Models Section (Slides 5–8)
+%  Industrial Component Anomaly Detection – Project Presentation
+%  Purpose: Precise speaker guide; what to say, in order, per slide.
+% =============================================================================
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.0cm, top=1.5cm, bottom=2.5cm]{geometry}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{mdframed}
+\usepackage{parskip}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+
+% --- Colour palette -----------------------------------------------------------
+\definecolor{teal}{RGB}{0,128,128}
+\definecolor{accent}{RGB}{180,60,60}
+\definecolor{muted}{RGB}{110,110,110}
+\definecolor{notegreen}{RGB}{34,139,34}
+\definecolor{warnorange}{RGB}{200,100,0}
+
+% --- Section styling ----------------------------------------------------------
+\titleformat{\section}[block]
+  {\large\bfseries\color{teal}}{\thesection.}{0.5em}{}[\vspace{-0.3em}\rule{\linewidth}{1.2pt}]
+\titleformat{\subsection}[block]
+  {\normalsize\bfseries\color{accent}}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}[runin]
+  {\small\bfseries\color{muted}}{}{0em}{}[\ ---\ ]
+
+% --- Box styles ---------------------------------------------------------------
+\mdfdefinestyle{saybox}{
+  backgroundcolor=teal!5, linecolor=teal, linewidth=1.2pt,
+  innerleftmargin=8pt, innerrightmargin=8pt,
+  innertopmargin=6pt, innerbottommargin=6pt,
+  skipabove=6pt, skipbelow=4pt,
+}
+\mdfdefinestyle{warnbox}{
+  backgroundcolor=warnorange!8, linecolor=warnorange, linewidth=1.2pt,
+  innerleftmargin=8pt, innerrightmargin=8pt,
+  innertopmargin=5pt, innerbottommargin=5pt,
+  skipabove=6pt, skipbelow=4pt,
+}
+\mdfdefinestyle{notebox}{
+  backgroundcolor=notegreen!5, linecolor=notegreen, linewidth=1pt,
+  innerleftmargin=8pt, innerrightmargin=8pt,
+  innertopmargin=5pt, innerbottommargin=5pt,
+  skipabove=4pt, skipbelow=4pt,
+}
+
+% --- Header / Footer ----------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{muted}\textbf{Speech Notes} -- Models Section}
+\fancyhead[R]{\small\color{muted}Industrial Component Anomaly Detection}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% --- Custom commands ----------------------------------------------------------
+\newcommand{\say}[1]{%
+  \begin{mdframed}[style=saybox]
+  \itshape ``#1''
+  \end{mdframed}
+}
+\newcommand{\warn}[1]{%
+  \begin{mdframed}[style=warnbox]
+  \textbf{\color{warnorange}$\blacktriangleright$ Watch out:}\ #1
+  \end{mdframed}
+}
+\newcommand{\aside}[1]{%
+  \begin{mdframed}[style=notebox]
+  \textbf{\color{notegreen}Note to self:}\ #1
+  \end{mdframed}
+}
+\newcommand{\timing}[1]{\hfill{\small\color{muted}[\,\textbf{#1}\,]}}
+\newcommand{\pointer}[1]{\noindent\textbf{\color{teal}$\rightarrow$ Point at:} \textit{#1}\\[2pt]}
+\newcommand{\transition}[1]{\vspace{4pt}\noindent\textbf{\color{accent}Transition:} \textit{``#1''}\vspace{4pt}}
+
+% =============================================================================
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries Speech Notes: Models Section}\\[4pt]
+  {\normalsize\color{muted} Slides 5--8 $\cdot$ Target: $\approx$6 min total $\cdot$ $\sim$1.5 min/slide average}\\[6pt]
+  \begin{tabular}{@{}llr@{}}
+    \toprule
+    Slide & Title & Target \\
+    \midrule
+    5 & Model Selection \& Architecture Overview & \textbf{$\approx$2 min} \\
+    6 & PatchCore: Transfer Learning \& Architecture & \textbf{$\approx$1.5 min} \\
+    7 & Keras CAE -- Autoencoder Learning Process & \textbf{$\approx$1.5 min} \\
+    8 & Keras CAE -- End-to-End Pipeline & \textbf{$\approx$1 min} \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+\rule{\linewidth}{1.5pt}
+
+% =============================================================================
+\section{Slide 5 --- Model Selection \& Architecture Overview \timing{$\approx$2 min}}
+% =============================================================================
+
+\subsection{Opening: Entering the Models section}
+
+\say{Now let's talk about the models. Given the task -- unsupervised anomaly detection with zero defect data -- we deliberately chose two architecturally very different approaches, and I want to walk you through why.}
+
+\aside{You just came off the Metrics slide. The audience has AUPIMO in mind. These two models are what AUPIMO will later score.}
+
+% --- LEFT: CAE ---------------------------------------------------------------
+\subsection{Left column: Convolutional Autoencoder}
+
+\pointer{the CAE diagram: $x \to$ Encoder $\to z \to$ Decoder $\to \hat{x} \to \Delta$}
+
+\say{The first model is a Convolutional Autoencoder, built completely from scratch. The idea is simple: you take an input image $x$, compress it through a narrow bottleneck $z$, and reconstruct it back as $\hat{x}$. We train exclusively on defect-free images. The model learns to encode what normal looks like. When a defective image arrives at inference, the anomaly gets projected onto the nearest normal point the decoder knows -- and it reconstructs a normal version. The mismatch between input and reconstruction is our anomaly signal.}
+
+\pointer{the score formula below the diagram}
+
+\say{We aggregate that mismatch via Top-K pooling over the per-pixel error map:
+\[
+  s = \mathrm{TopK}_{0.2\%}\!\bigl(0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MAE}\bigr)
+\]
+Top-K at 0.2\% means we take the average of the worst 0.2\% of pixels -- those are your defect candidates. I will come back to the SSIM and MAE choice when we get to the training slide.}
+
+\pointer{the three bullet points: complete control, intuition, trade-offs}
+
+\say{We built this from scratch precisely for the control it gives us: full freedom over the bottleneck dimensions, the loss, the augmentation strategy. The trade-off is a real one -- autoencoders are prone to blurriness or, worse, to learning identity shortcuts if we are not careful.}
+
+% --- RIGHT: PatchCore -------------------------------------------------------
+\subsection{Right column: PatchCore + ResNet-18}
+
+\pointer{the PatchCore diagram: $x \to$ ResNet-18 (frozen) $\to \phi(x) \to \mathcal{M} \to d^*$}
+
+\say{The second model is PatchCore, from Intel's Anomalib library. Completely different paradigm: no gradient updates, no training in the traditional sense. Instead, you pass every normal training image through a frozen ResNet-18 backbone, extract mid-level patch feature vectors -- that is $\phi(x)$ -- and store a compressed subset in a memory bank $\mathcal{M}$.}
+
+\say{At inference, the anomaly score for a test patch is just the nearest-neighbour L2 distance to the closest stored normal prototype:
+\[
+  s(p^*) = \min_{m \in \mathcal{M}} \|\phi(p^*) - m\|_2
+\]
+If a patch has no close match in memory, it is anomalous. This is closer to database indexing than machine learning.}
+
+\pointer{coreset bullet: ``Compresses the memory bank by 90\%+''}
+
+\say{Anomalib handles coreset subsampling via greedy farthest-point sampling -- the 10\% of vectors that cover the whole feature space best. Our contribution was integrating this into our evaluation protocol and cross-validating it against the CAE.}
+
+\subsection{Why two such different paradigms?}
+
+\say{These two models fail in completely different ways -- and that is precisely why we chose both. A CAE can fail silently on unseen texture distributions. PatchCore fails when memory bank coverage has gaps. Running both gives us orthogonal error signals, and PatchCore also acts as a natural upper-bound baseline: if frozen ImageNet features cannot detect a defect, no learned model will.}
+
+\transition{Let me go into PatchCore first, since it was actually our starting point.}
+
+\vspace{1em}
+
+% =============================================================================
+\section{Slide 6 --- PatchCore: Transfer Learning \& Architecture \timing{$\approx$1.5 min}}
+% =============================================================================
+
+\subsection{Opening: Why PatchCore was first}
+
+\say{PatchCore was our first model, and the reason is straightforward: it was the most intuitive entry point into anomaly detection without any defect data. Anomalib gave us a fully working pipeline out of the box -- we could evaluate it on day one, before writing a single line of custom model code. That made it an invaluable baseline and an anchor point for everything that followed.}
+
+% --- Left column: Flowchart -------------------------------------------------
+\subsection{Left column: Transfer Learning flowchart}
+
+\pointer{the four-step vertical flowchart}
+
+\say{Walk through top to bottom.
+
+\textbf{Normal Factory Images:} zero defect labels needed, Day-1 deployable.
+
+\textbf{Frozen Feature Extractor:} ResNet-18, pre-trained on ImageNet, weights fully locked. We use layers 2 and 3 specifically -- not the final classification layer which encodes \textit{cat vs truck} semantics, but the mid-level layers that encode edges, textures, and local structures. Those transfer perfectly to surface defect domains.
+
+\textbf{Coreset Memory Bank:} greedy farthest-point sampling compresses all patch vectors down to $\sim$10\%, keeping maximum coverage of the feature space manifold.
+
+\textbf{Inference:} nearest-neighbour distance to $\mathcal{M}$. Large distance means anomalous.}
+
+% --- Right column: Results + bullets ----------------------------------------
+\subsection{Right column: Results and key properties}
+
+\pointer{the four heatmap images: wood, zipper, transistor, toothbrush}
+
+\say{These are PatchCore's heatmaps across four MVTec categories. White overlay is the ground truth; green is the predicted mask at the 99th percentile threshold. The match is strong even for visually challenging defects like the liquid contamination on wood.}
+
+\pointer{Key Features and ``Why it excels'' bullet lists}
+
+\say{Two properties I want to highlight. First, cold-start eliminated -- no defect data collection before deployment. Second, IP protection: the memory bank stores embeddings, not raw images -- it is not reversible.
+
+On why it excels: the frozen backbone is critical. If you fine-tuned ResNet on normal images only, you would collapse the embedding space to the factory distribution and lose exactly the generalisation that makes PatchCore sensitive to subtle defects.}
+
+\transition{Now let us look at our custom model -- the Keras CAE -- and how we built it up from scratch, failure mode by failure mode.}
+
+\vspace{1em}
+
+% =============================================================================
+\section{Slide 7 --- Keras CAE: Autoencoder Learning Process \timing{$\approx$1.5 min}}
+% =============================================================================
+
+\subsection{Opening: A story of incremental decisions}
+
+\say{This slide tells the development story of the CAE. We did not arrive at the final architecture on the first try. Every design decision here was motivated by a concrete problem we ran into.}
+
+% --- Left column: Concept ---------------------------------------------------
+\subsection{Left column: The core concept}
+
+\pointer{Training Phase / Inference Phase bullets}
+
+\say{The concept is simple: train on normals, fail to reconstruct defects at inference. But the \textit{how} is what matters -- and that is the right column.}
+
+% --- Right column: Design evolution -----------------------------------------
+\subsection{Right column: Key design decisions}
+
+\subsubsection{Activation: ReLU $\to$ (LeakyReLU) $\to$ ELU}
+
+\say{We started with ReLU. The dying neuron problem hit us fast: neurons in the bottleneck locked to zero and stopped contributing gradients entirely. We tried Leaky ReLU -- it fixes dying neurons, but it has a kink at zero, a non-smooth gradient, which introduced noise in the fine-grained reconstruction. ELU is smooth everywhere, saturates for large negative inputs, and has a zero-mean activation property that acts like internal normalisation. That is the final choice.}
+
+\subsubsection{BatchNorm and bias}
+
+\say{Early on we used bias terms and no BatchNorm. Once we added BatchNormalisation, we removed the bias. This is by design: BatchNorm already shifts activations through its own learnable parameter $\beta$. A separate bias is redundant -- it is absorbed into $\beta$ -- so \texttt{use\_bias=False} keeps the model clean. BatchNorm also stabilises training by reducing internal covariate shift, which on small datasets like MVTec is very valuable.}
+
+\subsubsection{Optimizer: Adam $\to$ AdamW}
+
+\say{Standard Adam couples weight decay with the adaptive learning rate, which under-regularises on small datasets. AdamW decouples them: the gradient step and the weight decay apply independently. With only a few hundred normal training images per category, that stronger regularisation matters.}
+
+\subsubsection{MIM: preventing the identity shortcut}
+
+\pointer{``Masked Image Modelling: 25\% of patches randomly masked'' bullet}
+
+\say{Finally, Masked Image Modelling: we randomly zero 25\% of input patches before the encoder sees them. Without this, the model can learn a trivial identity map and reconstruct anomalies just as well as normals -- total failure. MIM forces it to infer missing content from context and build a genuine structural model of what normal looks like.}
+
+\subsubsection{Training loss vs. inference score -- the important distinction}
+
+\say{Here is an important point. During training the loss is SSIM plus MSE:
+\[
+  \mathcal{L}_\text{train} = 0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MSE}
+\]
+MSE is differentiable and stable for gradient-based weight updates.
+
+At inference, we switch to SSIM plus MAE for the per-pixel error map:
+\[
+  \text{Score} = \mathrm{TopK}_{0.2\%}\!\bigl(0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MAE}\bigr)
+\]
+This is intentional. MAE is less sensitive to isolated large-error outlier pixels than MSE, which makes the spatial heatmap more interpretable and better calibrated for localisation. MSE at inference would produce noisier, less spatially clean heatmaps.}
+
+\warn{If asked whether SSIM+L2 for the loss and SSIM+MAE for the score is a mistake: it is not. Training uses MSE -- differentiable, stable. Inference uses MAE -- robust, spatially interpretable. Two different contexts, two different objectives. Confirm this is correct and deliberate.}
+
+\transition{Let me now show you how all these pieces come together in the full automated pipeline.}
+
+\vspace{1em}
+
+% =============================================================================
+\section{Slide 8 --- Keras CAE: End-to-End Pipeline \timing{$\approx$1 min}}
+% =============================================================================
+
+\subsection{Step-by-step walkthrough}
+
+\pointer{the 9-step TikZ pipeline diagram -- three rows}
+
+\say{The pipeline runs left to right across three rows. Let me go through it quickly.}
+
+\vspace{4pt}
+\noindent\textbf{Row 1 -- Data Preparation (Steps 1--3):}
+
+\say{Raw MVTec data goes through preprocessing -- Otsu, CLAHE, blur -- then branches on category type. Textures get rotation and flip augmentations; objects get colour jitter and noise. This category-aware branching matters because texture datasets are rotationally invariant while object datasets are not.}
+
+\vspace{4pt}
+\noindent\textbf{Row 2 -- Model Building and Training (Steps 4--6):}
+
+\say{Step 4 applies Masked Image Modelling -- 25\% of patches zeroed. Step 5 builds the CAE with ELU, BatchNorm, AdamW. Step 6 trains with the \textbf{SSIM+MSE loss} -- this is the training loss, not the anomaly score.}
+
+\vspace{4pt}
+\noindent\textbf{Row 3 -- Inference and Evaluation (Steps 7--9):}
+
+\say{Step 7 scores images: frozen weights, per-pixel \textbf{SSIM+MAE error map}, Top-K pooling to a single image-level score. Step 8 applies the adaptive threshold -- calibrated on the 15\% normal validation partition using quantile or Mahalanobis distance. This gives a Day-1 deployable false-alarm-rate guarantee with zero defect knowledge. Step 9 evaluates on the locked test set: AUROC and AUPIMO.}
+
+\pointer{the Optuna caption at the bottom}
+
+\say{The whole pipeline is orchestrated by Optuna -- Bayesian optimisation over augmentation strategy, latent dimensions, crop size -- targeting Pixel AUPIMO as the objective. We target AUPIMO rather than AUROC because AUPIMO evaluates only the operationally relevant region below false-alarm rate $10^{-4}$. Optimising AUROC could improve the broad curve while degrading exactly the narrow region that matters in a real factory.}
+
+\subsection{Closing the Models section}
+
+\say{So to summarise the Models section: PatchCore is our high-accessibility no-training baseline that operationalises frozen ImageNet features. The Keras CAE is our from-scratch model where every decision -- ELU, BatchNorm, MIM, AdamW, and the loss-versus-score distinction -- was driven by a concrete failure mode we needed to address. In the next section I will show you how we evaluated both under the same zero-leakage protocol.}
+
+\vspace{2em}
+\rule{\linewidth}{0.8pt}
+{\small\color{muted}\textit{End of Models section speech notes.}}
+
+\end{document}
