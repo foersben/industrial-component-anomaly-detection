@@ -233,21 +233,26 @@ On why it excels: the frozen backbone is critical. If you fine-tuned ResNet on n
 
 \say{Finally, Masked Image Modelling: we randomly zero 25\% of input patches before the encoder sees them. Without this, the model can learn a trivial identity map and reconstruct anomalies just as well as normals -- total failure. MIM forces it to infer missing content from context and build a genuine structural model of what normal looks like.}
 
-\subsubsection{Training loss vs. inference score -- the important distinction}
+\subsubsection{Training loss vs. inference score -- Literature vs. Implementation}
 
-\say{Here is an important point. During training the loss is SSIM plus MSE:
-\[
-  \mathcal{L}_\text{train} = 0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MSE}
-\]
-MSE is differentiable and stable for gradient-based weight updates.
+\say{Here is a technical nuance worth clarifying regarding literature versus implementation. In the seminal paper by Bergmann et al.\ (2019, VISAPP), they evaluated SSIM with both $L_1$ and $L_2$, and specifically recommended $\text{SSIM} + L_1$ (MAE) for both training and evaluation.
 
-At inference, we switch to SSIM plus MAE for the per-pixel error map:
-\[
-  \text{Score} = \mathrm{TopK}_{0.2\%}\!\bigl(0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MAE}\bigr)
-\]
-This is intentional. MAE is less sensitive to isolated large-error outlier pixels than MSE, which makes the spatial heatmap more interpretable and better calibrated for localisation. MSE at inference would produce noisier, less spatially clean heatmaps.}
+In our project:
+\begin{itemize}[topsep=2pt,itemsep=2pt]
+  \item During \textbf{training}, we implemented $\text{SSIM} + \text{MSE}$ ($L_2$):
+  \[
+    \mathcal{L}_\text{train} = 0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MSE}
+  \]
+  MSE provided smooth, stable gradient convergence in our Keras pipeline.
+  \item At \textbf{inference}, our pixel anomaly map strictly aligns with Bergmann's formula, using $\text{SSIM} + \text{MAE}$ ($L_1$):
+  \[
+    \text{Score} = \mathrm{TopK}_{0.2\%}\!\bigl(0.84\,(1-\mathrm{SSIM}) + 0.16\,\mathrm{MAE}\bigr)
+  \]
+  Why use MAE for inference? Because squaring errors with $L_2$ at test time penalises large errors quadratically, blowing out bright spots and distorting localization heatmaps. Linear $L_1$ error preserves the true proportional contrast of defects.
+\end{itemize}}
 
-\warn{If asked whether SSIM+L2 for the loss and SSIM+MAE for the score is a mistake: it is not. Training uses MSE -- differentiable, stable. Inference uses MAE -- robust, spatially interpretable. Two different contexts, two different objectives. Confirm this is correct and deliberate.}
+\warn{If an examiner asks: \textit{``Didn't Bergmann recommend SSIM + L1 for both?''} \\
+\textbf{Answer:} \textit{``Yes, absolutely! Bergmann et al.\ (2019) found SSIM + $L_1$ best overall. In our Keras training implementation, we coupled SSIM with MSE ($L_2$) because it offered smooth gradient convergence during training, but for inference and error map generation, we stayed true to Bergmann's linear $L_1$ formulation so the pixel error map isn't distorted quadratically by squared errors.''}}
 
 \transition{Let me now show you how all these pieces come together in the full automated pipeline.}
 
