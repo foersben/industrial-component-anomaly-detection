@@ -217,7 +217,7 @@ On why it excels: the frozen backbone is critical. If you fine-tuned ResNet on n
 
 \subsubsection{Activation: ReLU $\to$ (LeakyReLU) $\to$ ELU}
 
-\say{We started with ReLU. The dying neuron problem hit us fast: neurons in the bottleneck locked to zero and stopped contributing gradients entirely. We tried Leaky ReLU -- it fixes dying neurons, but it has a kink at zero, a non-smooth gradient, which introduced noise in the fine-grained reconstruction. ELU is smooth everywhere, saturates for large negative inputs, and has a zero-mean activation property that acts like internal normalisation. That is the final choice.}
+\say{We started with ReLU. The dying neuron problem hit us fast: neurons in the bottleneck locked to hard zero and stopped contributing gradients entirely. On our relatively limited dataset -- only 200 to 300 normal images per category -- we cannot afford to lose representation capacity. With ReLU, any negative input is hard zeroed out. With ELU, the chance of hitting exact zero is virtually zero: for negative inputs, it smoothly follows $\alpha(e^x - 1)$, ensuring continuous, non-zero gradient flow so every parameter keeps learning even across small batches. We also tested Leaky ReLU, but its sharp kink at zero introduced noise into fine-grained reconstruction gradients. ELU is continuously differentiable, saturates gracefully for large negative inputs, and naturally pushes mean activations toward zero. That made it the optimal choice for our small-data regime.}
 
 \subsubsection{BatchNorm and bias}
 
