@@ -1,6 +1,5 @@
 """Tests for the PDF-backed defense presentation."""
 
-from concurrent.futures import Future
 from pathlib import Path
 
 import pytest
@@ -29,39 +28,36 @@ def test_go_to_slide_uses_dynamic_page_count(monkeypatch: pytest.MonkeyPatch) ->
 def test_pdf_page_count_reads_pdfinfo(monkeypatch: pytest.MonkeyPatch) -> None:
     """The compiled PDF is the source for navigation length."""
     monkeypatch.setattr(pdf_pages, "_run_poppler", lambda _command: b"Title: Demo\nPages: 18\n")
-    assert pdf_pages.pdf_page_count.__wrapped__("deck.pdf", "version") == 18
+    assert pdf_pages.pdf_page_count.__wrapped__("deck.pdf", 1, 42) == 18
 
 
 def test_get_pdf_page_count_uses_current_pdf(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The page-count cache uses the current PDF contents."""
+    """Metadata passed to the cache changes after a PDF rebuild."""
     pdf = tmp_path / "main.pdf"
     pdf.write_bytes(b"%PDF-test")
-    arguments: list[tuple[str, str]] = []
+    arguments: list[tuple[str, int, int]] = []
 
-    def fake_count(path: str, version: str) -> int:
-        arguments.append((path, version))
+    def fake_count(path: str, modified_ns: int, size: int) -> int:
+        arguments.append((path, modified_ns, size))
         return 19
 
     monkeypatch.setattr(pdf_pages, "PDF_PATH", pdf)
     monkeypatch.setattr(pdf_pages, "pdf_page_count", fake_count)
 
     assert pdf_pages.get_pdf_page_count() == 19
-    assert arguments == [(str(pdf), pdf_pages._pdf_version())]
+    assert arguments == [(str(pdf), pdf.stat().st_mtime_ns, pdf.stat().st_size)]
 
 
-def test_pdf_page_png_is_cached_on_disk(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A page is rasterized once and read from disk on later calls."""
+def test_pdf_page_png_renders_only_requested_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app should not rasterize the entire deck on every navigation step."""
     commands: list[list[str]] = []
 
     def fake_run(command: list[str]) -> bytes:
         commands.append(command)
         return b"png"
 
-    monkeypatch.setattr(pdf_pages, "CACHE_ROOT", tmp_path)
     monkeypatch.setattr(pdf_pages, "_run_poppler", fake_run)
-    assert pdf_pages.pdf_page_png("deck.pdf", "version", 5) == b"png"
-    assert pdf_pages.pdf_page_png("deck.pdf", "version", 5) == b"png"
-    assert pdf_pages._cache_path("version", 5).read_bytes() == b"png"
+    assert pdf_pages.pdf_page_png.__wrapped__("deck.pdf", 1, 42, 5) == b"png"
     assert commands == [
         [
             "pdftoppm",
@@ -80,43 +76,8 @@ def test_pdf_page_png_is_cached_on_disk(monkeypatch: pytest.MonkeyPatch, tmp_pat
     ]
 
 
-def test_pdf_change_uses_new_cache_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Even a same-size PDF edit must select a fresh page cache."""
-    pdf = tmp_path / "main.pdf"
-    monkeypatch.setattr(pdf_pages, "PDF_PATH", pdf)
-    monkeypatch.setattr(pdf_pages, "CACHE_ROOT", tmp_path / "pages")
-    pdf.write_bytes(b"version A")
-    original = pdf_pages._cache_path(pdf_pages._pdf_version(), 1)
-    pdf.write_bytes(b"version B")
-    updated = pdf_pages._cache_path(pdf_pages._pdf_version(), 1)
-    assert original != updated
-
-
-def test_precache_schedules_missing_pages_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Render all missing pages in the background, prioritizing nearby ones."""
-    scheduled: list[tuple[str, str, int]] = []
-
-    class ImmediatePool:
-        def submit(self, _function, *args):
-            scheduled.append(args)
-            job: Future[bytes] = Future()
-            job.set_result(b"png")
-            return job
-
-    monkeypatch.setattr(pdf_pages, "_PREFETCH_POOL", ImmediatePool())
-    monkeypatch.setattr(pdf_pages, "_PREFETCH_JOBS", {})
-    monkeypatch.setattr(pdf_pages, "CACHE_ROOT", tmp_path)
-
-    pdf_pages._cache_path("version", 2).parent.mkdir(parents=True)
-    pdf_pages._cache_path("version", 2).write_bytes(b"png")
-    pdf_pages._precache_deck("deck.pdf", "version", 2, 4)
-    pdf_pages._precache_deck("deck.pdf", "version", 2, 4)
-
-    assert scheduled == [("deck.pdf", "version", 3), ("deck.pdf", "version", 1), ("deck.pdf", "version", 4)]
-
-
-def test_pdf_page_uses_static_image_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """The browser fetches the cached image without sending PNG bytes through Streamlit."""
+def test_pdf_page_is_embedded_in_slide_stage(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The current PDF page should become one full-stage image."""
     pdf = tmp_path / "main.pdf"
     pdf.write_bytes(b"%PDF-test")
     markup: list[str] = []
@@ -127,8 +88,6 @@ def test_pdf_page_uses_static_image_url(monkeypatch: pytest.MonkeyPatch, tmp_pat
     pdf_pages.render_pdf_page(5)
 
     assert len(markup) == 1
-    version = pdf_pages._pdf_version()
-    assert f'src="app/static/presentation_pages/{version}-3840/page-005.png"' in markup[0]
-    assert 'data-page-number="5"' in markup[0]
+    assert 'src="data:image/png;base64,cG5n"' in markup[0]
     assert 'alt="Presentation slide 5"' in markup[0]
     assert "object-fit:contain" in markup[0]

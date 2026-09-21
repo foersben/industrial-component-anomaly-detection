@@ -85,14 +85,13 @@ This launches a **Monolithic Streamlit** application on port 8501.
 just run
 ```
 
-The defense presentation displays pages from `docs/latex/latex_beamer_presentation/main.pdf` inside Streamlit. Use the Previous/Next buttons or scroll the mouse wheel to change slides; the live demo remains in the app. After editing `main.tex`, rebuild the PDF and refresh Streamlit:
+The defense presentation displays pages from `docs/latex/latex_beamer_presentation/main.pdf` inside Streamlit. Its Previous/Next controls and live demo remain in the app. After editing `main.tex`, rebuild the PDF and refresh Streamlit:
 
 ```bash
 make -C docs/latex/latex_beamer_presentation pdf
 ```
 
 PDF slide rendering requires Poppler's `pdfinfo` and `pdftoppm` commands (`poppler-utils` on Ubuntu). Navigation reads the PDF's page count automatically, so adding or removing slides in LaTeX requires no Streamlit slide-list update.
-Rendered 3840-pixel slides are cached under `app/ui/static/presentation_pages/`. The app renders the current page first and fills the rest of the deck in the background. The cache key includes a hash of `main.pdf`, so rebuilding the PDF automatically creates fresh page images while unchanged slides are reused across app restarts. Browser-side navigation loads these images directly, avoiding a Streamlit rerun for each slide change.
 
 ### Supported Pipelines & Unified Caching
 
