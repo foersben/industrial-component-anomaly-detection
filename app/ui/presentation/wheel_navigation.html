@@ -1,0 +1,173 @@
+<script>
+(() => {
+  window.__defenseNavigationCleanup?.();
+  const state = window.__defenseNavigationState ?? {
+    index: 0, pendingIndex: null, pageCount: 0, version: "",
+    lastWheelEvent: 0, wheelDelta: 0, wheelNavigated: false, requestId: 0,
+  };
+  window.__defenseNavigationState = state;
+  state.preloaded ??= new Map();
+  state.loadingNeighbors ??= new Set();
+  const storageKey = "defense-slide-position";
+
+  const stageImage = () => document.querySelector(".st-key-defense_stage img[data-pdf-version]");
+  const pageUrl = (page) => new URL(
+    `app/static/presentation_pages/${state.version}-3840/page-${String(page).padStart(3, "0")}.png`,
+    document.baseURI,
+  ).href;
+
+  function updateNavigation(index) {
+    const progress = document.querySelector(".def-progress");
+    const label = `${index + 1} / ${state.pageCount}`;
+    if (progress && progress.textContent !== label) progress.textContent = label;
+    const previous = document.querySelector(".st-key-defense_previous button");
+    const next = document.querySelector(".st-key-defense_next button");
+    if (previous && previous.disabled !== (index === 0)) previous.disabled = index === 0;
+    if (next && next.disabled !== (index === state.pageCount - 1)) next.disabled = index === state.pageCount - 1;
+  }
+
+  function preloadNeighbors(index) {
+    for (const neighbor of [index + 1, index - 1]) {
+      if (neighbor < 0 || neighbor >= state.pageCount) continue;
+      if (state.preloaded.has(neighbor) || state.loadingNeighbors.has(neighbor)) continue;
+      state.loadingNeighbors.add(neighbor);
+      const preload = new Image();
+      preload.onload = () => {
+        state.loadingNeighbors.delete(neighbor);
+        state.preloaded.set(neighbor, preload);
+      };
+      preload.onerror = () => state.loadingNeighbors.delete(neighbor);
+      preload.src = pageUrl(neighbor + 1);
+    }
+  }
+
+  function loadPage(index, persist = true) {
+    const image = stageImage();
+    if (!image || index < 0 || index >= state.pageCount) return;
+    state.pendingIndex = index;
+    updateNavigation(index);
+    const requestId = ++state.requestId;
+    const url = pageUrl(index + 1);
+    let retries = 0;
+
+    function show(src) {
+      if (requestId !== state.requestId || stageImage() !== image) return;
+      image.src = src;
+      image.alt = `Presentation slide ${index + 1}`;
+      image.dataset.pageNumber = String(index + 1);
+      state.index = index;
+      state.pendingIndex = null;
+      updateNavigation(index);
+      if (persist) sessionStorage.setItem(storageKey, JSON.stringify({ version: state.version, index }));
+      preloadNeighbors(index);
+    }
+    const ready = state.preloaded.get(index);
+    if (ready?.complete && ready.naturalWidth) {
+      show(ready.src);
+      return;
+    }
+
+    function attempt() {
+      if (requestId !== state.requestId) return;
+      const preload = new Image();
+      preload.onload = () => {
+        state.preloaded.set(index, preload);
+        show(preload.src);
+      };
+      preload.onerror = () => {
+        if (requestId !== state.requestId) return;
+        if (++retries <= 25) {
+          setTimeout(attempt, 200);
+        } else {
+          state.pendingIndex = null;
+          updateNavigation(state.index);
+        }
+      };
+      preload.src = retries ? `${url}?retry=${retries}` : url;
+    }
+    attempt();
+  }
+
+  function syncFromStreamlit() {
+    const image = stageImage();
+    if (!image) {
+      state.boundImage = null;
+      if (document.querySelector(".st-key-defense_stage .demo-marker")) {
+        const previous = document.querySelector(".st-key-defense_previous button");
+        const next = document.querySelector(".st-key-defense_next button");
+        if (previous) previous.disabled = true;
+        if (next) next.disabled = true;
+      }
+      return;
+    }
+    if (image === state.boundImage) {
+      updateNavigation(state.pendingIndex ?? state.index);
+      return;
+    }
+    state.boundImage = image;
+    if (state.version !== image.dataset.pdfVersion) {
+      state.preloaded.clear();
+      state.loadingNeighbors.clear();
+    }
+    state.version = image.dataset.pdfVersion;
+    state.pageCount = Number(image.dataset.pageCount);
+    state.index = Number(image.dataset.pageNumber) - 1;
+    state.pendingIndex = null;
+    ++state.requestId;
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch { /* Ignore stale storage. */ }
+    const restored = saved?.version === state.version ? Number(saved.index) : state.index;
+    if (Number.isInteger(restored) && restored >= 0 && restored < state.pageCount && restored !== state.index) {
+      loadPage(restored, false);
+    } else {
+      updateNavigation(state.index);
+      preloadNeighbors(state.index);
+    }
+  }
+
+  function navigate(step) {
+    if (!stageImage()) return;
+    const current = state.pendingIndex ?? state.index;
+    const target = Math.max(0, Math.min(current + step, state.pageCount - 1));
+    if (target !== current) loadPage(target);
+  }
+
+  function onClick(event) {
+    if (!(event.target instanceof Element) || !stageImage()) return;
+    const button = event.target.closest(".st-key-defense_previous button, .st-key-defense_next button");
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    navigate(button.closest(".st-key-defense_next") ? 1 : -1);
+  }
+
+  function onWheel(event) {
+    if (!stageImage() || event.ctrlKey || event.metaKey) return;
+    if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (now - state.lastWheelEvent > 350) {
+      state.wheelDelta = 0;
+      state.wheelNavigated = false;
+    }
+    state.lastWheelEvent = now;
+    if (state.wheelNavigated) return;
+    state.wheelDelta += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1);
+    if (Math.abs(state.wheelDelta) < 45) return;
+    state.wheelNavigated = true;
+    navigate(state.wheelDelta > 0 ? 1 : -1);
+    state.wheelDelta = 0;
+  }
+
+  document.addEventListener("click", onClick, true);
+  document.addEventListener("wheel", onWheel, { passive: false });
+  const observer = new MutationObserver(syncFromStreamlit);
+  observer.observe(document.body, { childList: true, subtree: true });
+  window.__defenseNavigationCleanup = () => {
+    document.removeEventListener("click", onClick, true);
+    document.removeEventListener("wheel", onWheel);
+    observer.disconnect();
+  };
+  syncFromStreamlit();
+})();
+</script>
