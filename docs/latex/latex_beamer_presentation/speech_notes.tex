@@ -271,7 +271,7 @@ In our project:
 \vspace{4pt}
 \noindent\textbf{Row 1 -- Data Preparation (Steps 1--3):}
 
-\say{Raw MVTec data goes through preprocessing -- Otsu, CLAHE, blur -- then branches on category type. Textures get rotation and flip augmentations; objects get colour jitter and noise. This category-aware branching matters because texture datasets are rotationally invariant while object datasets are not.}
+\say{Raw MVTec data goes through preprocessing -- Otsu plus Canny edge detection for foreground masking, CLAHE contrast enhancement, and blur -- then branches on category type. Textures get rotation and flip augmentations; objects get colour jitter and noise. This category-aware branching matters because texture datasets are rotationally invariant while object datasets are not.}
 
 \vspace{4pt}
 \noindent\textbf{Row 2 -- Model Building and Training (Steps 4--6):}

@@ -541,7 +541,7 @@
 
   % ROW 1: Data Prep (L -> R)
   \node[stepbox, text width=2.0cm] (data) at (0, 0) {\textbf{1. MVTec Data}};
-  \node[stepbox, text width=2.6cm] (prep) at (3.0, 0) {\textbf{2. Preprocessing}\\Otsu, CLAHE, Blur};
+  \node[stepbox, text width=2.6cm] (prep) at (3.0, 0) {\textbf{2. Preprocessing}\\Otsu+Canny\\CLAHE, Blur};
   \node[stepbox, text width=1.8cm, fill=accent!5, draw=accent] (cat) at (5.9, 0) {\textbf{3. Category?}};
   \node[stepbox, text width=2.2cm, fill=teal!15] (tex) at (8.7, 0.6) {\textbf{Texture}\\Rotate+Flip};
   \node[stepbox, text width=2.2cm, fill=accent!15] (obj) at (8.7, -0.6) {\textbf{Object}\\Colour+Noise};
