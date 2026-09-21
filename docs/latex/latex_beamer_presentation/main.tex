@@ -752,63 +752,43 @@ The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) 
 \section{Business Interpretation}
 
 %--------------------------------------------------------------------
-% SLIDE 12 – Economic Error Asymmetry & Cost Model
+% SLIDE 11 – Economic Error Asymmetry
 %--------------------------------------------------------------------
-\begin{frame}{Economic Error Asymmetry — The Cost Model}
-\begin{columns}[T]
-  \begin{column}{0.45\textwidth}
-    \textbf{Two types of error, very different costs}\\[6pt]
-    \begin{tikzpicture}[font=\small]
-      \node[draw=accent,fill=accent!10,rounded corners,inner sep=6pt,text width=5.5cm] (fp) {
-        \textbf{\color{accent}False Alarm} (FP): good part rejected.\\
-        Cost: line stoppage, lost throughput, scrapped unit\\
-        \textit{e.g.\ Screw: $c_\mathrm{FP} \gg c_\mathrm{FN}$}
-      };
-      \node[draw=teal,fill=teal!10,rounded corners,inner sep=6pt,text width=5.5cm,below=8pt of fp] (fn) {
-        \textbf{\color{teal}Missed Defect} (FN): bad part ships\\
-        Cost: recall, liability, safety incident\\
-        \textit{e.g.\ Pill: $c_\mathrm{FN} \gg c_\mathrm{FP}$}
-      };
-    \end{tikzpicture}
-    $\,$\\[6pt]
-    \textbf{Optimal threshold $t^* = \frac{c_\mathrm{FP}}{c_\mathrm{FP} + c_\mathrm{FN}}$}\\[6pt]
-    {\small High $c_\mathrm{FN}$ (pills) pushes $t^*$ toward zero - catch everything.
-    High $c_\mathrm{FP}$ (screws) pushes $t^*$ toward one - avoid false alarms.}
-  \end{column}
-  \begin{column}{0.53\textwidth}
-    \begin{center}
-      \setlength{\tabcolsep}{4pt}
-      \renewcommand{\arraystretch}{1.2}
-      \begin{tabular}{lcc}
-        \toprule
-        \textbf{Category} & \textbf{Obj.} & \textbf{$t^*$} \\
-        \midrule
-        Fasteners (Screw) & $F_{0.5}$ & $\approx 0.9999$ \\
-        Packaging (Bottle)& $F_1$ & $\approx 0.0003$ \\
-        Automotive (M.~Nut)& $F_1$ & $\approx 4\!\times\!10^{-6}$ \\
-        Life Sci.\ (Pill)  & $F_2$ & $\approx 10^{-8}$ \\
-        \bottomrule
-      \end{tabular}
-    \end{center}
-    \vspace{8pt}
-    {\small\color{muted}
-    Cost profiles are illustrative estimates from composite industry case studies (for the sake of the project - guesses).
-    They demonstrate the spectrum of liability, not precise financial figures.}
-  \end{column}
-\end{columns}
+\begin{frame}{Economic Error Asymmetry}
+  \textbf{A false alarm and a missed defect have different consequences.}\\[10pt]
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      {\color{accent}\textbf{False alarm}}\\[4pt]
+      A conforming part is flagged. Operators may need to inspect it again,
+      slowing the line or creating scrap.\\[5pt]
+      {\small\color{muted}Throughput-sensitive lines may put greater weight on this cost.}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      {\color{teal}\textbf{Missed defect}}\\[4pt]
+      A defective part passes inspection. Downstream rework, warranty claims,
+      recalls or safety risks may follow.\\[5pt]
+      {\small\color{muted}High-consequence applications may put greater weight on this cost.}
+    \end{column}
+  \end{columns}
+  \vspace{16pt}
+  \begin{center}
+    $C(\tau)=c_{\mathrm{FP}}\,\mathrm{FP}(\tau)+c_{\mathrm{FN}}\,\mathrm{FN}(\tau)$\\[6pt]
+    {\small\color{muted}A decision framework: plant-specific costs and error counts must be measured before choosing a gate.}
+  \end{center}
 \end{frame}
 
 %--------------------------------------------------------------------
-% SLIDE 13 – Threshold Calibration & Risk Tiers
+% SLIDE 12 – Threshold Calibration & Risk Tiers
 %--------------------------------------------------------------------
 \begin{frame}{Threshold Calibration \& Operating Priorities}
   \begin{columns}[T,onlytextwidth]
     \begin{column}{0.47\textwidth}
-      \textbf{Normal-validation calibration}\\[6pt]
+      \textbf{Normal-validation calibration}\\[4pt]
+      {\footnotesize Cost priorities guide the choice of $\alpha$; normal scores turn it into $\tau_\alpha$.}\\[6pt]
       {\small\mbox{$\tau_\alpha = \operatorname{Quantile}_{1-\alpha}
-      \left(\mathrm{AnomalyScores}_{\mathrm{normal,val}}\right)$}}\\[8pt]
-      {\small $\alpha$ is a proposed false-alarm budget on held-out normal examples,
-      not a guaranteed production rate.}\\[9pt]
+      \left(\mathrm{AnomalyScores}_{\mathrm{normal,val}}\right)$}}\\[6pt]
+      {\small $\alpha$ is a budget on held-out normal data,
+      not a production guarantee.}\\[6pt]
       {\small\textbf{Proposed priorities}}\\[3pt]
       {\small\color{accent}Recall priority} ($\alpha\approx0.10$): lower gate, more review.\\[3pt]
       {\small\color{teal}Balanced starting point} ($\alpha=0.05$): reported benchmark setting.\\[3pt]
@@ -823,7 +803,7 @@ The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) 
 \end{frame}
 
 %--------------------------------------------------------------------
-% SLIDE 14 – Operator Evidence
+% SLIDE 13 – Operator Evidence
 %--------------------------------------------------------------------
 \begin{frame}{Operator Evidence for Review}
   \textbf{A flagged image needs visible evidence and a human decision path.}\\[8pt]
@@ -848,7 +828,7 @@ The pipeline is dynamically orchestrated. Hyperparameters (Preprocessing/Model) 
 \end{frame}
 
 %--------------------------------------------------------------------
-% SLIDE 15 – Team Conclusion
+% SLIDE 14 – Team Conclusion
 %--------------------------------------------------------------------
 \begin{frame}{Conclusion \& Next Steps}
   \begin{columns}[T,onlytextwidth]
