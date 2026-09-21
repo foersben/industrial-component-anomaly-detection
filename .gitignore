@@ -217,6 +217,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+/app/ui/static/presentation_pages/
 # pixi environments
 .pixi/*
 !.pixi/config.toml

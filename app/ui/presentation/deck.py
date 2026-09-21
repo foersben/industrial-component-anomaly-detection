@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from app.ui.presentation.pdf_pages import get_pdf_page_count, render_pdf_page
@@ -45,12 +47,13 @@ def render_defense_presentation() -> None:
         if demo_open:
             demo.render()
         else:
-            render_pdf_page(index + 1)
+            render_pdf_page(index + 1, slide_count)
 
     with st.container(key="defense_navigation"):
         previous, progress, next_col, live_demo, dashboard = st.columns([1, 2.7, 1, 0.8, 0.4])
         previous.button(
             "◀ Previous",
+            key="defense_previous",
             disabled=index == 0 or demo_open,
             width="stretch",
             on_click=_go_to_slide,
@@ -62,6 +65,7 @@ def render_defense_presentation() -> None:
         )
         next_col.button(
             "Next ▶",
+            key="defense_next",
             type="primary",
             disabled=index == slide_count - 1 or demo_open,
             width="stretch",
@@ -80,3 +84,5 @@ def render_defense_presentation() -> None:
             on_click=demo._open_dashboard,
             width="stretch",
         )
+
+    st.html(Path(__file__).with_name("wheel_navigation.html"), unsafe_allow_javascript=True)
