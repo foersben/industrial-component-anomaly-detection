@@ -16,6 +16,7 @@ from app.pipelines.modelling.keras_cae import (
     run_keras_cae_pipeline,
 )
 from app.pipelines.modelling.keras_cae.cae_keras import build_cae
+from app.pipelines.modelling.keras_cae.cae_pipeline import _load_cached_cae_result
 
 
 def test_keras_cae_save_and_load_numerical_consistency(tmp_path: Path) -> None:
@@ -121,6 +122,25 @@ def test_keras_cae_pipeline_cached_evaluation(
     )
 
     model_hash = res1["model_hash"]
+    model_dir = Path(res1["image_level"]["metrics_path"]).parent
+    assert (model_dir / "evaluation_results.json").is_file()
+    assert res1["metadata"]["evaluation_results_version"] == 1
+
+    def fail_if_load_runs_expensive_work(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("cached result loading must not initialize TensorFlow or load images")
+
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._require_tf",
+        fail_if_load_runs_expensive_work,
+    )
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._load_images_as_numpy",
+        fail_if_load_runs_expensive_work,
+    )
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._train_and_save_cae_model",
+        fail_if_load_runs_expensive_work,
+    )
 
     # 2. Reload via cache
     res2 = run_keras_cae_pipeline(
@@ -143,6 +163,47 @@ def test_keras_cae_pipeline_cached_evaluation(
     assert np.isclose(res1["threshold"], res2["threshold"], atol=1e-5)
     assert np.isclose(res1["image_level"]["auroc"], res2["image_level"]["auroc"], atol=1e-5)
     assert np.allclose(res1["scores"], res2["scores"], atol=1e-5)
+
+
+def test_load_cached_cae_result_rejects_legacy_cache_without_snapshot(tmp_path: Path) -> None:
+    """A load-only action must never recompute a legacy cache or silently train."""
+    model_dir = tmp_path / "legacy_model"
+    model_dir.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="Re-evaluate & Cache Results"):
+        _load_cached_cae_result(model_dir, {"hash": "legacy_model", "category": "pill"})
+
+
+def test_explicit_cae_cache_rejection_never_falls_back_to_training(
+    mock_mvtec_dataset: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An incompatible exact-hash request must fail closed before any training begins."""
+    model_dir = tmp_path / "selected_model"
+    model_dir.mkdir()
+    selected_meta = {"hash": "selected_model", "category": "bottle"}
+    lookup_results = iter([(model_dir, selected_meta), None])
+
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline.find_cached_model",
+        lambda **_kwargs: next(lookup_results),
+    )
+
+    def fail_if_training_runs(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("an explicit Load action must never train")
+
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._train_and_save_cae_model",
+        fail_if_training_runs,
+    )
+
+    with pytest.raises(FileNotFoundError, match="Refusing to train from a Load action"):
+        run_keras_cae_pipeline(
+            data_root=mock_mvtec_dataset,
+            category="pill",
+            model_hash="selected_model",
+        )
 
 
 def test_delete_and_restore_cached_model(tmp_path: Path) -> None:
