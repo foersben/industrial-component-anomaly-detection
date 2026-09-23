@@ -219,6 +219,36 @@ def run_patchcore_pipeline(
     """
     if not np.isclose(fpr_limit, AUPIMO_FPR_BOUNDS[1]):
         raise ValueError(f"fair-eval-v1 requires fpr_limit={AUPIMO_FPR_BOUNDS[1]}")
+    if model_hash and force_retrain:
+        raise ValueError("An explicit cached model cannot be combined with force_retrain=True")
+
+    # An exact-hash Load action only needs the archived metrics. Dataset path
+    # fingerprints are machine-specific and are checked for new evaluations
+    # below, where the dataset is actually used.
+    if model_hash:
+        selected = find_cached_patchcore_model(
+            category=category,
+            target_hash=model_hash,
+            registry_base=registry_base,
+            expected_split_evidence=None,
+        )
+        if selected is None:
+            raise FileNotFoundError(f"Cached PatchCore run {model_hash} does not exist")
+        cached_dir, meta = selected
+        cached_category = meta.get("category")
+        if not isinstance(cached_category, str) or not cached_category:
+            raise ValueError(f"Cached PatchCore run {model_hash} has no valid category metadata")
+        return _load_cached_patchcore_result(
+            cached_dir=cached_dir,
+            meta=meta,
+            category=cached_category,
+            backbone=backbone,
+            feature_layers=feature_layers,
+            coreset_sampling_ratio=coreset_sampling_ratio,
+            num_neighbors=num_neighbors,
+            fpr_limit=fpr_limit,
+            raw_prep_list=meta.get("preprocessing_steps", []),
+        )
 
     if isinstance(pipeline, PreprocessingPipeline):
         proc_pipeline = pipeline

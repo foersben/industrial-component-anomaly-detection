@@ -57,6 +57,7 @@ logger = logging.getLogger(__name__)
 CAE_EVALUATION_RESULTS_FILENAME = "evaluation_results.json"
 CAE_EVALUATION_RESULTS_VERSION = 1
 CAE_HEATMAP_OVERLAYS_FILENAME = "heatmap_overlays.npz"
+CAE_FOUR_PANEL_DIRNAME = "four_panel_images"
 
 
 def _json_default(value: Any) -> Any:
@@ -225,6 +226,7 @@ def _resolve_cae_cache_and_config(
     force_retrain: bool,
     model_hash: str | None,
     cache_evidence: dict[str, Any],
+    registry_base: str | Path,
 ) -> tuple[tuple[Path, dict[str, Any]] | None, dict[str, Any], PreprocessingPipeline, list[dict[str, Any]]]:
     """Resolve model cache or compute unique hash identifiers and parameters for Keras CAE.
 
@@ -244,6 +246,7 @@ def _resolve_cae_cache_and_config(
         force_retrain: If True, bypass cache.
         model_hash: Specific target hash.
         cache_evidence: Fair evaluation split and protocol evidence dict.
+        registry_base: Directory containing Keras CAE model caches.
 
     Returns:
         Tuple of (cached_tuple_or_None, resolved_config_dict, proc_pipeline, norm_prep).
@@ -262,6 +265,7 @@ def _resolve_cae_cache_and_config(
             pipeline=pipeline,
             target_hash=model_hash,
             expected_split_evidence=cache_evidence,
+            registry_base=registry_base,
         )
         if not force_retrain
         else None
@@ -323,7 +327,7 @@ def _resolve_cae_cache_and_config(
             f"{AUPIMO_FPR_BOUNDS}_{AUPIMO_NUM_THRESHOLDS}_{PIXEL_METRICS_VERSION}"
         )
         computed_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
-        reg_dir = Path("data/models/keras_cae") / computed_hash
+        reg_dir = Path(registry_base) / computed_hash
         cfg.update(
             {
                 "model_hash": computed_hash,
@@ -443,6 +447,46 @@ def _compute_cae_heatmaps(
             logger.warning("Error Heatmap failed for image %d: %s", idx, exc)
 
     return heatmap_overlays
+
+
+def _save_cae_four_panel_images(
+    registry_dir: Path,
+    test_images: np.ndarray,
+    test_reconstructed: np.ndarray,
+    heatmap_overlays: dict[int, dict[str, list[Any]]],
+    anomalous_indices: list[int],
+) -> Path | None:
+    """Save input, reconstruction, anomaly, and ground-truth panels for CAE results."""
+    from app.pipelines.modelling.anomalib.visualization import add_panel_headers
+
+    panel_dir = registry_dir / CAE_FOUR_PANEL_DIRNAME
+    saved = 0
+    for index in anomalous_indices:
+        overlay = heatmap_overlays.get(index)
+        if not overlay or "heatmap" not in overlay or "gt_and_heatmap" not in overlay:
+            continue
+
+        input_image = np.clip(test_images[index] * 255.0, 0, 255).astype(np.uint8)
+        reconstruction = np.clip(test_reconstructed[index] * 255.0, 0, 255).astype(np.uint8)
+        anomaly_overlay = np.asarray(overlay["heatmap"], dtype=np.uint8)
+        ground_truth_overlay = np.asarray(overlay["gt_and_heatmap"], dtype=np.uint8)
+        panels = [input_image, reconstruction, anomaly_overlay, ground_truth_overlay]
+        panel_height, panel_width = input_image.shape[:2]
+        if any(panel.shape[:2] != (panel_height, panel_width) for panel in panels):
+            logger.warning("Skipping mismatched CAE four-panel image %d", index)
+            continue
+
+        panel_dir.mkdir(parents=True, exist_ok=True)
+        grid = Image.fromarray(np.concatenate(panels, axis=1), mode="RGB")
+        labelled = add_panel_headers(
+            grid,
+            ["Input", "Reconstruction", "Anomaly Map", "Ground Truth Overlay"],
+            panel_width=panel_width,
+        )
+        labelled.save(panel_dir / f"{index:04d}.png", optimize=True)
+        saved += 1
+
+    return panel_dir if saved else None
 
 
 def _build_cae_result_dict(
@@ -577,6 +621,7 @@ def run_keras_cae_pipeline(
     model_hash: str | None = None,
     reevaluate_cached: bool = False,
     trial: Any | None = None,
+    registry_base: str | Path = "data/models/keras_cae",
 ) -> dict[str, Any]:
     """Run the complete Keras CAE anomaly detection pipeline for one MVTec category.
 
@@ -610,13 +655,31 @@ def run_keras_cae_pipeline(
         model_hash: Optional specific model hash to load directly from registry.
         reevaluate_cached: If True, explicitly rerun evaluation for a cached model and replace its result snapshot.
         trial: Optional Optuna trial for hyperparameter optimization and pruning.
+        registry_base: Directory containing Keras CAE model caches. Tests can
+            override this to avoid writing into the application's registry.
 
     Returns:
         Dictionary with all results (metrics, scores, heatmap, optional anomaly heatmaps).
     """
-    manifest = build_mvtec_manifest(data_root)
     if model_hash and force_retrain:
         raise ValueError("An explicit cached model cannot be combined with force_retrain=True")
+
+    # Loading an archived evaluation only reads its saved snapshot. The original
+    # split evidence contains machine-specific paths, so requiring a local
+    # dataset here would reject a valid cache restored on another computer.
+    if model_hash and not reevaluate_cached:
+        requested = find_cached_model(
+            category=category,
+            img_size=img_size,
+            target_hash=model_hash,
+            expected_split_evidence=None,
+            registry_base=registry_base,
+        )
+        if requested is None:
+            raise FileNotFoundError(f"Cached CAE model {model_hash} does not exist or is missing model.keras")
+        return _load_cached_cae_result(*requested)
+
+    manifest = build_mvtec_manifest(data_root)
 
     # Resolve an exact model's category from metadata. Stale UI widget state must
     # not validate a selected model against a different category's split.
@@ -626,6 +689,7 @@ def run_keras_cae_pipeline(
             img_size=img_size,
             target_hash=model_hash,
             expected_split_evidence=None,
+            registry_base=registry_base,
         )
         if requested is None:
             raise FileNotFoundError(f"Cached CAE model {model_hash} does not exist or is missing model.keras")
@@ -654,6 +718,7 @@ def run_keras_cae_pipeline(
         force_retrain=force_retrain,
         model_hash=model_hash,
         cache_evidence=cache_evidence,
+        registry_base=registry_base,
     )
 
     if model_hash and cached is None:
@@ -796,6 +861,15 @@ def run_keras_cae_pipeline(
             gt_masks=gt_masks,
             anomalous_indices=results["anomalous_indices"],
         )
+        four_panel_dir = _save_cae_four_panel_images(
+            registry_dir=cfg["registry_dir"],
+            test_images=test_images,
+            test_reconstructed=test_reconstructed,
+            heatmap_overlays=results["heatmap_overlays"],
+            anomalous_indices=results["anomalous_indices"],
+        )
+        if four_panel_dir is not None:
+            active_meta["four_panel_images_path"] = four_panel_dir.name
 
     _persist_cae_evaluation_snapshot(results, cfg["registry_dir"], active_meta)
 

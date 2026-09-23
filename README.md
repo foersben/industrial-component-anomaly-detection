@@ -55,34 +55,44 @@ code .
 
 ### 3. Bootstrap the Environment
 
-Run the unified setup command to synchronize dependencies, configure Git hooks, and install extensions:
+Install the development environment:
 
 ```bash
-pixi run setup
-# Or if 'just' is in your system path:
-just setup
+pixi install -e dev
 ```
 
-### 4. Fetching the Data & Benchmarks
+### 4. Restore Saved Evaluations and Images
 
-We host the ~5 GB MVTec AD dataset on Hugging Face to prevent Git LFS bloat. We also pull the pre-computed anomaly score baseline matrices. Run:
+The public [model archive](https://huggingface.co/abulhawa/industrial-component-anomaly-detection-models) contains the saved metrics, heatmaps, and four-panel galleries. Download it into the registry expected by Streamlit:
 
 ```bash
-just fetch-data
+pixi run --frozen -e dev hf download \
+  abulhawa/industrial-component-anomaly-detection-models \
+  --repo-type model --local-dir data/models
 ```
 
-*(This downloads the image arrays to `data/raw/` and the benchmark metadata to `data/external/aupimo_benchmarks/`)*.
+The PatchCore and Keras CAE **Load Saved Results** actions read these snapshots without the raw dataset. See the [model artifact storage guide](docs/guides/model_artifact_storage.md) for details.
+
+### 5. Download MVTec AD for New Evaluations
+
+Training or re-evaluating models requires the MVTec AD dataset. Download it separately:
+
+```bash
+pixi run --frozen -e dev just download-data
+```
+
+The dataset is not included in the model archive. DINO baseline runners also need the dataset to reproduce their evaluations.
 
 ---
 
 ## 🖥️ Interactive Application (Streamlit)
 
-Once the environment is setup and data is fetched, you can launch the interactive web application to evaluate models and analyze anomaly heatmaps.
+Once the environment and model archive are installed, you can launch the interactive web application to browse saved evaluations and anomaly heatmaps. Download the dataset before training or re-evaluating.
 
 This launches a **Monolithic Streamlit** application on port 8501.
 
 ```bash
-just run
+pixi run --frozen -e dev ui
 ```
 
 The defense presentation displays pages from `docs/latex/latex_beamer_presentation/main.pdf` inside Streamlit. Use the Previous/Next buttons or scroll the mouse wheel to change slides; the live demo remains in the app. After editing `main.tex`, rebuild the PDF and refresh Streamlit:

@@ -9,38 +9,44 @@ tags: [models, huggingface, storage, guide]
 
 Trained artifacts under `data/models/` are generated files and are intentionally excluded from Git. Archive them in a dedicated Hugging Face **model** repository instead of deleting them when local disk space is needed.
 
-## One-time setup
+## Restore the public archive
 
-1. Create a model repository on Hugging Face, for example `foersben/industrial-component-anomaly-detection-models`.
-2. Prefer a **private** repository unless every artifact and its upstream weights may legally be redistributed.
-3. Authenticate with a write token:
+From a fresh clone of the [application repository](https://github.com/foersben/industrial-component-anomaly-detection/), install the Pixi environment and restore the model registry:
 
-   ```bash
-   just hf-login
-   ```
+```bash
+pixi install -e dev
+pixi run --frozen -e dev hf download \
+  abulhawa/industrial-component-anomaly-detection-models \
+  --repo-type model --local-dir data/models
+pixi run --frozen -e dev ui
+```
 
-## Upload
+The archive is public, so downloading does not require a Hugging Face login. Its `four_panel_images/` directories and metadata retain paths relative to each model cache. PatchCore and Keras CAE **Load Saved Results** use the archived snapshots without loading model weights or requiring the raw dataset. The DINO archives contain evaluation outputs, but the DINO pipelines are exposed through the CLI and API rather than the Streamlit tabs.
+
+To train or re-evaluate, download [MVTec AD](dataset_setup.md) separately with `pixi run --frozen -e dev just download-data`. The dataset is needed for protocol validation and inference. The archive does not contain pretrained DINO encoders or fitted PatchCore memory banks.
+
+The historical evaluation fingerprints include the original machine's dataset paths. **Load Saved Results** works after a restore, but re-evaluating one of those historical caches on a different filesystem may be rejected. Run a new evaluation when you need fresh metrics on that machine.
+
+An equivalent restore recipe is `pixi run --frozen -e dev just download-models`. Existing local files at matching paths may be replaced, so use an empty `data/models/` directory when comparing archives.
+
+## Upload updates
+
+Uploading requires a Hugging Face account with write access to the model repository. Authenticate first:
+
+```bash
+pixi run --frozen -e dev just hf-login
+```
 
 Upload the complete active model registry:
 
 ```bash
-just upload-models foersben/industrial-component-anomaly-detection-models
+pixi run --frozen -e dev just upload-models abulhawa/industrial-component-anomaly-detection-models
 ```
 
 The upload preserves paths below `data/models/` and leaves every local file in place. Soft-deleted models in `.trash/` and legacy migration backups are excluded. To upload a different artifact directory, pass it as the second argument:
 
 ```bash
-just upload-models foersben/industrial-component-anomaly-detection-models models
+pixi run --frozen -e dev just upload-models abulhawa/industrial-component-anomaly-detection-models models
 ```
 
 Only remove local artifacts after the command succeeds and the files are visible in the Hub repository. DINOv3 and other third-party-derived artifacts may carry upstream license or access restrictions; review those terms before making the repository public.
-
-## Restore
-
-Restore the registry into its standard location:
-
-```bash
-just download-models foersben/industrial-component-anomaly-detection-models
-```
-
-An alternate destination can be passed as the second argument. Existing local files with the same paths may be replaced by the downloaded snapshot, so use an empty destination when comparing archives.

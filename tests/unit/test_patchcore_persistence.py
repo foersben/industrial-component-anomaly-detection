@@ -432,6 +432,16 @@ def test_run_patchcore_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
     assert result["heatmap_overlays"] == {}
     assert result["metadata"]["heatmap_overlays_path"] == "heatmap_overlays.npz"
 
+    # A restored saved-result load must not need the original dataset root.
+    restored = run_patchcore_pipeline(
+        data_root=tmp_path / "dataset-not-installed",
+        category="bottle",
+        model_hash="cached_run",
+        registry_base=tmp_path,
+    )
+    assert restored["model_hash"] == "cached_run"
+    assert restored["image_level"]["f1_score"] == 0.95
+
 
 def test_fair_evaluation_rejects_legacy_patchcore_cache(tmp_path: Path) -> None:
     """A legacy cache without protocol evidence cannot satisfy a fair-evaluation lookup."""

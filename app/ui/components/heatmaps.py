@@ -144,7 +144,10 @@ def _render_four_panel_gallery(images: list[Path], cols_per_row: int = 2) -> Non
         cols_per_row: Number of columns in the grid layout.
     """
     st.subheader("Four-Panel Prediction Comparison")
-    st.caption("Each image shows: input, ground-truth mask, anomaly-map overlay, and thresholded prediction mask.")
+    st.caption(
+        "Panels are tailored to the selected model. CAE results show the input, reconstruction, anomaly-map overlay, "
+        "and ground-truth overlay; feature-based models show their corresponding localization comparison."
+    )
     for row_start in range(0, len(images), cols_per_row):
         row_images = images[row_start : row_start + cols_per_row]
         columns = st.columns(len(row_images))
