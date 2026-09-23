@@ -170,9 +170,9 @@ def test_patchcore_aupimo_receives_full_maps(
     assert [item.shape for item in captured["masks"]] == [(256, 256), (256, 256)]
     assert captured["bounds"] == (1e-5, 1e-4)
     assert np.allclose(result[6:10], (0.42, 0.0, 0.7, 0.7))
-    with np.load(tmp_path / "pixel_metrics.npz") as pixel_metrics:
-        assert float(pixel_metrics["aupimo"]) == 0.42
-        assert np.array_equal(pixel_metrics["aupimo_fpr_bounds"], np.array([1e-5, 1e-4]))
+    pixel_metrics = json.loads((tmp_path / "pixel_metrics.json").read_text(encoding="utf-8"))
+    assert float(pixel_metrics["aupimo"]) == 0.42
+    assert np.array_equal(pixel_metrics["aupimo_fpr_bounds"], np.array([1e-5, 1e-4]))
 
 
 def test_patchcore_threshold_depends_only_on_validation_scores(tmp_path: Path, monkeypatch: Any) -> None:
@@ -245,7 +245,7 @@ def test_find_cached_patchcore_model_resolution(tmp_path: Path) -> None:
     model_dir = tmp_path / "patch_123"
     model_dir.mkdir(parents=True, exist_ok=True)
     np.savez(model_dir / "image_metrics.npz", auroc=0.98)
-    np.savez(model_dir / "pixel_metrics.npz", aupimo=0.85, t_aupimo_min=0.4)
+    (model_dir / "pixel_metrics.json").write_text(json.dumps({"aupimo": 0.85}), encoding="utf-8")
 
     meta = {
         "hash": "patch_123",
@@ -345,7 +345,7 @@ def test_run_patchcore_cached_loading(tmp_path: Path, monkeypatch: Any) -> None:
     model_dir = tmp_path / "cached_run"
     model_dir.mkdir(parents=True, exist_ok=True)
     np.savez(model_dir / "image_metrics.npz", auroc=0.99)
-    np.savez(model_dir / "pixel_metrics.npz", aupimo=0.92, t_aupimo_min=0.35)
+    (model_dir / "pixel_metrics.json").write_text(json.dumps({"aupimo": 0.92}), encoding="utf-8")
     overlays = {3: {"heatmap": np.zeros((2, 2, 3), dtype=np.uint8).tolist()}}
     _save_heatmap_overlays(overlays, model_dir / "heatmap_overlays.npz")
 
@@ -438,7 +438,7 @@ def test_fair_evaluation_rejects_legacy_patchcore_cache(tmp_path: Path) -> None:
     model_dir = tmp_path / "legacy_run"
     model_dir.mkdir(parents=True, exist_ok=True)
     np.savez(model_dir / "image_metrics.npz", auroc=0.99)
-    np.savez(model_dir / "pixel_metrics.npz", aupimo=0.92)
+    (model_dir / "pixel_metrics.json").write_text(json.dumps({"aupimo": 0.92}), encoding="utf-8")
     legacy_overlays = {"3": {"heatmap": np.zeros((2, 2, 3), dtype=np.uint8).tolist()}}
     metadata = {
         "hash": "legacy_run",

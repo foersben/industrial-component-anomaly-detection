@@ -319,7 +319,7 @@ To retrieve the dataset, we host the ~5 GB high-resolution images on Hugging Fac
 just download-data
 ```
 
-For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md).
+For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md). Trained artifacts can be archived separately by following the [Model Artifact Storage Guide](./docs/guides/model_artifact_storage.md).
 
 ### 5. Extract Dataset (Optional)
 
@@ -362,6 +362,8 @@ Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`,
 | `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally (if downloaded manually). |
 | `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
 | `just upload-data` | Uploads a local directory back to the Hugging Face Hub dataset repository. |
+| `just upload-models REPO_ID` | Archives active `data/models/` artifacts in a Hugging Face model repository without deleting local files. |
+| `just download-models REPO_ID` | Restores an archived Hugging Face model repository into `data/models/`. |
 | `just lint` | Sequentially auto-fixes lint errors, enforces layout formatting, evaluates strict types via Mypy, and runs the OKF compliance Python script. |
 | `just test` | Runs the asynchronous test suite via Pytest with code coverage matrix evaluation. |
 | `just format` | Safely forces code blocks to match global stylistic spacing layout parameters. |

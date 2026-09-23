@@ -90,19 +90,20 @@ def _load_cached_patchcore_result(
         Structured BaselineResult matching fair-eval-v1 protocol.
 
     Raises:
-        FileNotFoundError: If metric npz files are absent.
+        FileNotFoundError: If cached metric artifacts are absent.
         ValueError: If genuine AUPIMO or required metrics are missing.
     """
     logger.info("Found cached Patchcore model in %s. Loading evaluation metrics...", cached_dir)
-    pixel_file = cached_dir / "pixel_metrics.npz"
+    pixel_file = cached_dir / "pixel_metrics.json"
     image_file = cached_dir / "image_metrics.npz"
 
     if not pixel_file.exists() or not image_file.exists():
         raise FileNotFoundError("Fair PatchCore cache is missing required metric artifacts")
-    with np.load(pixel_file, allow_pickle=False) as pixel_data:
-        if "aupimo" not in pixel_data:
-            raise ValueError("Fair PatchCore pixel metrics are missing genuine AUPIMO")
-        aupimo = float(pixel_data["aupimo"])
+    with open(pixel_file, encoding="utf-8") as metrics_file:
+        pixel_data = json.load(metrics_file)
+    if "aupimo" not in pixel_data:
+        raise ValueError("Fair PatchCore pixel metrics are missing genuine AUPIMO")
+    aupimo = float(pixel_data["aupimo"])
 
     required_metric_keys = {
         "image_auroc",

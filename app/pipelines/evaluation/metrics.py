@@ -1,12 +1,14 @@
 """Precision-recall metric calculation and persistence functions."""
 
+import json
 import logging
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import cv2
 import numpy as np
-from sklearn.metrics import confusion_matrix, precision_recall_curve, roc_auc_score
+from sklearn.metrics import auc, confusion_matrix, precision_recall_curve, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,109 @@ CANONICAL_MAP_SIZE = (256, 256)
 AUPIMO_FPR_BOUNDS = (1e-5, 1e-4)
 AUPIMO_NUM_THRESHOLDS = 50_000
 PIXEL_METRICS_VERSION = "shared-pixel-metrics-v1"
+MAX_PERSISTED_PIXEL_CURVE_POINTS = 5_000
+
+
+def _prepare_pr_curve(
+    precisions: Any, recalls: Any, thresholds: Any
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
+    """Align a PR curve and calculate exact summary values before sampling."""
+    precision = np.asarray(precisions)
+    recall = np.asarray(recalls)
+    threshold = np.asarray(thresholds)
+    if len(precision) == len(threshold) + 1:
+        precision = precision[:-1]
+        recall = recall[:-1]
+    if not len(threshold) or len(precision) != len(threshold) or len(recall) != len(threshold):
+        raise ValueError("Precision, recall, and threshold arrays must be non-empty and aligned")
+
+    crossover_index = int(np.argmin(np.abs(precision - recall)))
+    t_crossover = float(threshold[crossover_index])
+    integrated_recall = recall
+    integrated_precision = precision
+    if integrated_recall[-1] > 0.0:
+        integrated_recall = np.append(integrated_recall, 0.0)
+        integrated_precision = np.append(integrated_precision, integrated_precision[-1])
+    integrated_aupr = float(auc(integrated_recall, integrated_precision))
+    return precision, recall, threshold, t_crossover, integrated_aupr
+
+
+def _sample_aligned_curve(
+    precision: np.ndarray, recall: np.ndarray, thresholds: np.ndarray, max_points: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Take a deterministic, endpoint-preserving sample of aligned curve arrays."""
+    if len(thresholds) <= max_points:
+        return precision, recall, thresholds
+    indices = np.linspace(0, len(thresholds) - 1, num=max_points, dtype=np.int64)
+    return precision[indices], recall[indices], thresholds[indices]
+
+
+def _write_npz_atomic(path: Path, values: dict[str, Any]) -> None:
+    """Write a compressed NumPy archive without exposing a partial cache file."""
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(dir=path.parent, prefix=f".{path.stem}-", suffix=".npz", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            np.savez_compressed(temporary, **values)
+        temporary_path.replace(path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _json_compatible(value: Any) -> Any:
+    """Convert a NumPy scalar or array into a JSON-compatible value."""
+    array = np.asarray(value)
+    return array.item() if array.ndim == 0 else array.tolist()
+
+
+def migrate_pixel_metrics_archive(path: str | Path) -> tuple[Path, int, int]:
+    """Replace a full pixel NPZ archive with a compact JSON curve artifact."""
+    archive_path = Path(path)
+    original_size = archive_path.stat().st_size
+    with np.load(archive_path, allow_pickle=False) as archive:
+        values = {key: archive[key] for key in archive.files}
+    precision, recall, thresholds, t_crossover, integrated_aupr = _prepare_pr_curve(
+        values["precision"], values["recall"], values["thresholds"]
+    )
+    precision, recall, thresholds = _sample_aligned_curve(
+        precision, recall, thresholds, MAX_PERSISTED_PIXEL_CURVE_POINTS
+    )
+    json_values = {
+        key: _json_compatible(value)
+        for key, value in values.items()
+        if key not in {"precision", "recall", "thresholds"}
+    }
+    json_values.update(
+        precision=precision.tolist(),
+        recall=recall.tolist(),
+        thresholds=thresholds.tolist(),
+        t_crossover=t_crossover,
+        integrated_aupr=integrated_aupr,
+        curve_points_full=len(np.asarray(values["thresholds"])),
+        curve_compacted=True,
+    )
+    json_path = archive_path.with_suffix(".json")
+    _write_json_atomic(json_path, json_values)
+    archive_path.unlink()
+    return json_path, original_size, json_path.stat().st_size
+
+
+def _write_json_atomic(path: Path, values: dict[str, Any]) -> None:
+    """Write JSON atomically so readers never observe a partial cache artifact."""
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.stem}-", suffix=".json", delete=False
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(values, temporary, separators=(",", ":"))
+        temporary_path.replace(path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def compute_image_auroc(scores: np.ndarray, binary_labels: np.ndarray) -> float:
@@ -318,10 +423,10 @@ def save_evaluation_metrics(
     fpr_bounds: tuple[float, float] | None = None,
     level: str = "pixel",
 ) -> Path:
-    """Save precision, recall, and threshold arrays to an ``.npz`` file.
+    """Save precision, recall, and threshold data to a compact cache artifact.
 
     Args:
-        output_path: Target filepath (e.g. 'results/Patchcore/bottle/pixel_metrics.npz').
+        output_path: Target ``.npz`` or compact ``.json`` filepath.
         precisions: Precision values array.
         recalls: Recall values array.
         thresholds: Binarization thresholds array.
@@ -334,17 +439,31 @@ def save_evaluation_metrics(
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    precision, recall, threshold, t_crossover, integrated_aupr = _prepare_pr_curve(precisions, recalls, thresholds)
+    curve_points_full = len(threshold)
+    if level == "pixel":
+        precision, recall, threshold = _sample_aligned_curve(
+            precision, recall, threshold, MAX_PERSISTED_PIXEL_CURVE_POINTS
+        )
     values = {
-        "precision": precisions,
-        "recall": recalls,
-        "thresholds": thresholds,
+        "precision": precision,
+        "recall": recall,
+        "thresholds": threshold,
         "level": level,
+        "t_crossover": t_crossover,
+        "integrated_aupr": integrated_aupr,
+        "curve_points_full": curve_points_full,
+        "curve_compacted": level == "pixel" and curve_points_full > len(threshold),
     }
     if aupimo is not None:
         values["aupimo"] = aupimo
     if fpr_bounds is not None:
         values["aupimo_fpr_bounds"] = np.asarray(fpr_bounds, dtype=np.float64)
-    np.savez(path, **values)
+    if path.suffix == ".json":
+        json_values = {key: _json_compatible(value) for key, value in values.items()}
+        _write_json_atomic(path, json_values)
+    else:
+        _write_npz_atomic(path, values)
     return path
 
 
@@ -361,7 +480,7 @@ def compute_and_save_pr_metrics(
     Args:
         y_true: 1D array of ground truth binary labels (0 or 1).
         y_score: 1D array of predicted anomaly scores.
-        output_path: Destination .npz file path.
+        output_path: Destination metrics cache path.
         level: Evaluation level ('pixel' for localization, 'image' for classification).
         aupimo: Genuine full-map AUPIMO score computed separately from 2D maps.
         fpr_bounds: FPR integration bounds used for AUPIMO.

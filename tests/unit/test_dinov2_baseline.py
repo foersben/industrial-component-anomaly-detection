@@ -1,5 +1,6 @@
 """Tests for the fair frozen-DINOv2 nearest-neighbour baseline."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -187,7 +188,7 @@ def test_dinov2_runner_uses_shared_partitions_and_raw_evaluator(
             recall=np.array([1.0, 0.5, 0.0]),
             thresholds=np.array([0.2, 0.8]),
         )
-        np.savez(base_dir / "pixel_metrics.npz", aupimo=0.4)
+        (base_dir / "pixel_metrics.json").write_text(json.dumps({"aupimo": 0.4}), encoding="utf-8")
         return (
             0.7,
             0.3,

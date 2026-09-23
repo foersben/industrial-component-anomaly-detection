@@ -118,7 +118,7 @@ def _load_cached_cae_result(cached_dir: Path, meta: dict[str, Any]) -> dict[str,
     results["model_hash"] = expected_hash
     results["category"] = str(meta.get("category", results.get("category", "unknown")))
     results["image_level"]["metrics_path"] = str(cached_dir / "image_metrics.npz")
-    results["pixel_level"]["metrics_path"] = str(cached_dir / "pixel_metrics.npz")
+    results["pixel_level"]["metrics_path"] = str(cached_dir / "pixel_metrics.json")
     # Heatmaps are loaded page-by-page by the UI from the compressed archive.
     results["heatmap_overlays"] = {}
     logger.info("Loaded cached CAE evaluation snapshot from %s", result_path)
@@ -473,7 +473,7 @@ def _build_cae_result_dict(
         Standardized baseline result dictionary.
     """
     registry_dir: Path = cfg["registry_dir"]
-    pixel_file = registry_dir / "pixel_metrics.npz"
+    pixel_file = registry_dir / "pixel_metrics.json"
     results["image_level"] = {
         "auroc": results.get("auroc", 0.0),
         "f1_score": results.get("f1_score", 0.0),

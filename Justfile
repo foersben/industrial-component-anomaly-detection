@@ -121,6 +121,18 @@ hf-login:
 upload-data local_dir='data/raw/mvtec_ad':
         pixi run --frozen -e dev hf upload foersben/mvtec-ad {{local_dir}} . --repo-type dataset
 
+# Archive trained model artifacts on Hugging Face Hub without deleting local files.
+# The model repository must already exist; private repositories are recommended.
+# Example: just upload-models foersben/industrial-component-anomaly-detection-models
+upload-models repo_id local_dir='data/models':
+	test -d "{{local_dir}}"
+	pixi run --frozen -e dev hf upload "{{repo_id}}" "{{local_dir}}" . --repo-type model --exclude '*/.trash/**' --exclude '.legacy_migration_backups/**'
+
+# Restore a model registry snapshot from Hugging Face Hub.
+# Example: just download-models foersben/industrial-component-anomaly-detection-models
+download-models repo_id local_dir='data/models':
+	pixi run --frozen -e dev python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='{{repo_id}}', repo_type='model', local_dir='{{local_dir}}')"
+
 # Clean Jupyter notebook checkpoint caches under the notebooks directory
 clean-notebooks:
 	find notebooks/ -type d -name ".ipynb_checkpoints" -exec rm -rf {} +

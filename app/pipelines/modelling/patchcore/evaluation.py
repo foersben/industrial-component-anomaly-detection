@@ -323,7 +323,7 @@ def _compute_and_persist_metrics(
     _process_and_save_level(
         [canonical_maps.reshape(-1)],
         [canonical_masks.reshape(-1)],
-        base_dir / "pixel_metrics.npz",
+        base_dir / "pixel_metrics.json",
         level="pixel",
         aupimo=pixel_aupimo,
         fpr_bounds=fpr_bounds,
@@ -552,7 +552,7 @@ def format_results(
             "anomaly_map_min": anomaly_map_min,
             "anomaly_map_max": anomaly_map_max,
             "anomaly_map_range": anomaly_map_range,
-            "metrics_path": str(base_dir / "pixel_metrics.npz"),
+            "metrics_path": str(base_dir / "pixel_metrics.json"),
         },
         "raw_results": {k: _to_float(v) for k, v in res_dict.items()},
         "heatmap_overlays": heatmap_overlays or {},
