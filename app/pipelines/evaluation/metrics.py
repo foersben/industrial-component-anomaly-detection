@@ -110,7 +110,12 @@ def _write_json_atomic(path: Path, values: dict[str, Any]) -> None:
     temporary_path: Path | None = None
     try:
         with NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.stem}-", suffix=".json", delete=False
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.stem}-",
+            suffix=".json",
+            delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)
             json.dump(values, temporary, separators=(",", ":"))
