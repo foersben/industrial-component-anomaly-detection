@@ -114,7 +114,7 @@ data/models/patchcore/
 ├── <12_char_hex_hash>/
 │   ├── metadata.json       # Hyperparameters, preprocessing steps, dataset split & metrics
 │   ├── image_metrics.npz   # Precision-Recall arrays, thresholds, AUROC
-│   └── pixel_metrics.npz   # Pixel-level AUPIMO, thresholds, FPR curves
+│   └── pixel_metrics.json  # Pixel-level scalars and a downsampled PR curve
 └── .trash/                 # Soft-deleted models for reversible recovery
 ```
 

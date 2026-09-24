@@ -4,6 +4,7 @@ This module validates image-level classification metrics, pixel-level localizati
 error heatmap synthesis from autoencoder residual deviations, and blended contour overlays.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -52,10 +53,10 @@ def test_evaluate_cae_perfect_separation(mock_keras_cae: Any, tmp_path: Path, mo
     assert "recall" in eval_res
     assert "f1_score" in eval_res
     assert isinstance(eval_res["auroc"], float)
-    with np.load(tmp_path / "pixel_metrics.npz") as pixel_metrics:
-        assert float(pixel_metrics["aupimo"]) == 0.5
-        assert np.array_equal(pixel_metrics["aupimo_fpr_bounds"], np.array([1e-5, 1e-4]))
-        assert "t_aupimo_min" not in pixel_metrics
+    pixel_metrics = json.loads((tmp_path / "pixel_metrics.json").read_text(encoding="utf-8"))
+    assert float(pixel_metrics["aupimo"]) == 0.5
+    assert np.array_equal(pixel_metrics["aupimo_fpr_bounds"], np.array([1e-5, 1e-4]))
+    assert "t_aupimo_min" not in pixel_metrics
 
 
 def test_compute_image_auroc() -> None:

@@ -53,7 +53,7 @@ def load_completed_category_result(
         Reconstituted BaselineResult if complete artifacts exist, or None.
     """
     metadata_path = base_dir / "metadata.json"
-    required_artifacts = (base_dir / "image_metrics.npz", base_dir / "pixel_metrics.npz")
+    required_artifacts = (base_dir / "image_metrics.npz", base_dir / "pixel_metrics.json")
     if not metadata_path.is_file() or not all(path.is_file() for path in required_artifacts):
         return None
 

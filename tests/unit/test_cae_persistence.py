@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import tensorflow as tf
+from PIL import Image
 
 from app.pipelines.modelling.keras_cae import (
     delete_cached_model,
@@ -16,6 +17,7 @@ from app.pipelines.modelling.keras_cae import (
     run_keras_cae_pipeline,
 )
 from app.pipelines.modelling.keras_cae.cae_keras import build_cae
+from app.pipelines.modelling.keras_cae.cae_pipeline import _load_cached_cae_result, _save_cae_four_panel_images
 
 
 def test_keras_cae_save_and_load_numerical_consistency(tmp_path: Path) -> None:
@@ -93,12 +95,14 @@ def test_find_cached_model_resolution(tmp_path: Path) -> None:
 def test_keras_cae_pipeline_cached_evaluation(
     mock_mvtec_dataset: str,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Run pipeline to train and save a model on mock data, then reload and verify exact match.
 
     Args:
         mock_mvtec_dataset: Path to the temporary mock MVTec dataset root.
         monkeypatch: Pytest fixture used to isolate persistence from AUPIMO resolution limits.
+        tmp_path: Temporary directory used as an isolated model registry.
     """
     # The tiny synthetic maps cannot represent an FPR of 1e-5. Persistence is
     # tested with a fixed metric value, while dedicated tests cover AUPIMO itself.
@@ -118,13 +122,33 @@ def test_keras_cae_pipeline_cached_evaluation(
         pipeline=[],
         run_heatmap=False,
         force_retrain=True,
+        registry_base=tmp_path / "keras_cae",
     )
 
     model_hash = res1["model_hash"]
+    model_dir = Path(res1["image_level"]["metrics_path"]).parent
+    assert (model_dir / "evaluation_results.json").is_file()
+    assert res1["metadata"]["evaluation_results_version"] == 1
+
+    def fail_if_load_runs_expensive_work(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("cached result loading must not initialize TensorFlow or load images")
+
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._require_tf",
+        fail_if_load_runs_expensive_work,
+    )
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._load_images_as_numpy",
+        fail_if_load_runs_expensive_work,
+    )
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._train_and_save_cae_model",
+        fail_if_load_runs_expensive_work,
+    )
 
     # 2. Reload via cache
     res2 = run_keras_cae_pipeline(
-        data_root=mock_mvtec_dataset,
+        data_root=str(tmp_path / "dataset-not-installed"),
         category="bottle",
         img_size=32,
         crop_size=16,
@@ -137,12 +161,71 @@ def test_keras_cae_pipeline_cached_evaluation(
         run_heatmap=False,
         force_retrain=False,
         model_hash=model_hash,
+        registry_base=tmp_path / "keras_cae",
     )
 
     # 3. Assert predictions and metrics are identical
     assert np.isclose(res1["threshold"], res2["threshold"], atol=1e-5)
     assert np.isclose(res1["image_level"]["auroc"], res2["image_level"]["auroc"], atol=1e-5)
     assert np.allclose(res1["scores"], res2["scores"], atol=1e-5)
+
+
+def test_load_cached_cae_result_rejects_legacy_cache_without_snapshot(tmp_path: Path) -> None:
+    """A load-only action must never recompute a legacy cache or silently train."""
+    model_dir = tmp_path / "legacy_model"
+    model_dir.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="Re-evaluate & Cache Results"):
+        _load_cached_cae_result(model_dir, {"hash": "legacy_model", "category": "pill"})
+
+
+def test_cae_four_panel_images_are_persisted(tmp_path: Path) -> None:
+    """CAE visualizations should persist a labelled four-panel PNG per anomaly."""
+    test_images = np.zeros((2, 32, 32, 3), dtype=np.float32)
+    reconstructions = np.full_like(test_images, 0.5)
+    overlays = {
+        1: {
+            "heatmap": np.full((32, 32, 3), 64, dtype=np.uint8).tolist(),
+            "gt_and_heatmap": np.full((32, 32, 3), 192, dtype=np.uint8).tolist(),
+        }
+    }
+
+    panel_dir = _save_cae_four_panel_images(tmp_path, test_images, reconstructions, overlays, [1])
+
+    assert panel_dir == tmp_path / "four_panel_images"
+    image_path = panel_dir / "0001.png"
+    assert image_path.is_file()
+    with Image.open(image_path) as image:
+        assert image.size == (128, 66)
+
+
+def test_explicit_cae_load_without_snapshot_never_falls_back_to_training(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A saved-result load with no snapshot fails without touching the dataset or training."""
+    model_dir = tmp_path / "selected_model"
+    model_dir.mkdir()
+    selected_meta = {"hash": "selected_model", "category": "bottle"}
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline.find_cached_model",
+        lambda **_kwargs: (model_dir, selected_meta),
+    )
+
+    def fail_if_training_runs(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("an explicit Load action must never train")
+
+    monkeypatch.setattr(
+        "app.pipelines.modelling.keras_cae.cae_pipeline._train_and_save_cae_model",
+        fail_if_training_runs,
+    )
+
+    with pytest.raises(FileNotFoundError, match="Re-evaluate & Cache Results"):
+        run_keras_cae_pipeline(
+            data_root=str(tmp_path / "dataset-not-installed"),
+            category="pill",
+            model_hash="selected_model",
+        )
 
 
 def test_delete_and_restore_cached_model(tmp_path: Path) -> None:

@@ -207,7 +207,7 @@ def evaluate_cae(
         compute_and_save_pr_metrics(
             y_true_pixel,
             y_score_pixel,
-            output_dir / "pixel_metrics.npz",
+            output_dir / "pixel_metrics.json",
             level="pixel",
             aupimo=aupimo,
             fpr_bounds=AUPIMO_FPR_BOUNDS,

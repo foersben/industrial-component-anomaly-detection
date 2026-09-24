@@ -54,6 +54,105 @@ os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 
 logger = logging.getLogger(__name__)
 
+CAE_EVALUATION_RESULTS_FILENAME = "evaluation_results.json"
+CAE_EVALUATION_RESULTS_VERSION = 1
+CAE_HEATMAP_OVERLAYS_FILENAME = "heatmap_overlays.npz"
+CAE_FOUR_PANEL_DIRNAME = "four_panel_images"
+
+
+def _json_default(value: Any) -> Any:
+    """Convert NumPy scalar and array values into JSON-compatible objects."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _save_cae_heatmap_overlays(
+    overlays: dict[int, dict[str, list[Any]]],
+    output_path: Path,
+) -> Path | None:
+    """Persist CAE heatmap images in the lazy-loading archive schema used by the UI."""
+    arrays: dict[str, np.ndarray[Any, Any]] = {}
+    for index, overlay in overlays.items():
+        if "heatmap" in overlay:
+            arrays[f"prediction__{index}"] = np.asarray(overlay["heatmap"], dtype=np.uint8)
+        if "gt_and_heatmap" in overlay:
+            arrays[f"ground_truth__{index}"] = np.asarray(overlay["gt_and_heatmap"], dtype=np.uint8)
+    if not arrays:
+        return None
+    np.savez_compressed(output_path, **arrays)  # type: ignore[arg-type]
+    return output_path
+
+
+def _load_cached_cae_result(cached_dir: Path, meta: dict[str, Any]) -> dict[str, Any]:
+    """Load a complete CAE evaluation snapshot without model or dataset inference.
+
+    Raises:
+        FileNotFoundError: If this is a legacy cache without a result snapshot.
+        ValueError: If the saved snapshot is malformed.
+    """
+    raw_result_path = meta.get("evaluation_results_path", CAE_EVALUATION_RESULTS_FILENAME)
+    result_path = cached_dir / Path(str(raw_result_path)).name
+    if not result_path.is_file():
+        raise FileNotFoundError(
+            f"Cached CAE model {cached_dir.name} has no saved evaluation snapshot. "
+            "Use 'Re-evaluate & Cache Results' once; loading will be instant after that."
+        )
+
+    try:
+        with open(result_path, encoding="utf-8") as result_file:
+            results = json.load(result_file)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cached CAE evaluation snapshot is unreadable: {result_path}") from exc
+
+    if not isinstance(results, dict) or not {"image_level", "pixel_level", "model_hash"}.issubset(results):
+        raise ValueError(f"Cached CAE evaluation snapshot is incomplete: {result_path}")
+    if meta.get("evaluation_results_version") != CAE_EVALUATION_RESULTS_VERSION:
+        raise ValueError(f"Cached CAE evaluation snapshot has an unsupported version: {result_path}")
+    expected_hash = str(meta.get("hash", cached_dir.name))
+    if str(results["model_hash"]) != expected_hash:
+        raise ValueError(f"Cached CAE evaluation snapshot belongs to a different model: {result_path}")
+
+    results["metadata"] = meta
+    results["model_hash"] = expected_hash
+    results["category"] = str(meta.get("category", results.get("category", "unknown")))
+    results["image_level"]["metrics_path"] = str(cached_dir / "image_metrics.npz")
+    results["pixel_level"]["metrics_path"] = str(cached_dir / "pixel_metrics.json")
+    # Heatmaps are loaded page-by-page by the UI from the compressed archive.
+    results["heatmap_overlays"] = {}
+    logger.info("Loaded cached CAE evaluation snapshot from %s", result_path)
+    return results
+
+
+def _persist_cae_evaluation_snapshot(
+    results: dict[str, Any],
+    registry_dir: Path,
+    active_meta: dict[str, Any],
+) -> None:
+    """Persist a display-ready CAE result and optional lazy-loaded heatmap archive."""
+    overlays = results.get("heatmap_overlays", {})
+    if isinstance(overlays, dict) and overlays:
+        heatmap_path = registry_dir / CAE_HEATMAP_OVERLAYS_FILENAME
+        if _save_cae_heatmap_overlays(overlays, heatmap_path) is not None:
+            active_meta["heatmap_overlays_path"] = heatmap_path.name
+
+    active_meta["evaluation_results_path"] = CAE_EVALUATION_RESULTS_FILENAME
+    active_meta["evaluation_results_version"] = CAE_EVALUATION_RESULTS_VERSION
+    active_meta["anomalous_indices"] = results.get("anomalous_indices", [])
+    results["metadata"] = active_meta
+
+    snapshot = {key: value for key, value in results.items() if key != "heatmap_overlays"}
+    result_path = registry_dir / CAE_EVALUATION_RESULTS_FILENAME
+    temporary_path = result_path.with_suffix(".json.tmp")
+    with open(temporary_path, "w", encoding="utf-8") as result_file:
+        json.dump(snapshot, result_file, indent=2, default=_json_default)
+    temporary_path.replace(result_path)
+
+    with open(registry_dir / "metadata.json", "w", encoding="utf-8") as metadata_file:
+        json.dump(active_meta, metadata_file, indent=4, default=_json_default)
+
 
 def _load_images_as_numpy(paths: list[Any], img_size: int, pipeline: PreprocessingPipeline | None = None) -> np.ndarray:
     """Load, resize, and convert a list of image paths to a batched numpy array.
@@ -127,6 +226,7 @@ def _resolve_cae_cache_and_config(
     force_retrain: bool,
     model_hash: str | None,
     cache_evidence: dict[str, Any],
+    registry_base: str | Path,
 ) -> tuple[tuple[Path, dict[str, Any]] | None, dict[str, Any], PreprocessingPipeline, list[dict[str, Any]]]:
     """Resolve model cache or compute unique hash identifiers and parameters for Keras CAE.
 
@@ -146,6 +246,7 @@ def _resolve_cae_cache_and_config(
         force_retrain: If True, bypass cache.
         model_hash: Specific target hash.
         cache_evidence: Fair evaluation split and protocol evidence dict.
+        registry_base: Directory containing Keras CAE model caches.
 
     Returns:
         Tuple of (cached_tuple_or_None, resolved_config_dict, proc_pipeline, norm_prep).
@@ -164,6 +265,7 @@ def _resolve_cae_cache_and_config(
             pipeline=pipeline,
             target_hash=model_hash,
             expected_split_evidence=cache_evidence,
+            registry_base=registry_base,
         )
         if not force_retrain
         else None
@@ -225,7 +327,7 @@ def _resolve_cae_cache_and_config(
             f"{AUPIMO_FPR_BOUNDS}_{AUPIMO_NUM_THRESHOLDS}_{PIXEL_METRICS_VERSION}"
         )
         computed_hash = hashlib.sha256(hp_string.encode()).hexdigest()[:12]
-        reg_dir = Path("data/models/keras_cae") / computed_hash
+        reg_dir = Path(registry_base) / computed_hash
         cfg.update(
             {
                 "model_hash": computed_hash,
@@ -347,6 +449,46 @@ def _compute_cae_heatmaps(
     return heatmap_overlays
 
 
+def _save_cae_four_panel_images(
+    registry_dir: Path,
+    test_images: np.ndarray,
+    test_reconstructed: np.ndarray,
+    heatmap_overlays: dict[int, dict[str, list[Any]]],
+    anomalous_indices: list[int],
+) -> Path | None:
+    """Save input, reconstruction, anomaly, and ground-truth panels for CAE results."""
+    from app.pipelines.modelling.anomalib.visualization import add_panel_headers
+
+    panel_dir = registry_dir / CAE_FOUR_PANEL_DIRNAME
+    saved = 0
+    for index in anomalous_indices:
+        overlay = heatmap_overlays.get(index)
+        if not overlay or "heatmap" not in overlay or "gt_and_heatmap" not in overlay:
+            continue
+
+        input_image = np.clip(test_images[index] * 255.0, 0, 255).astype(np.uint8)
+        reconstruction = np.clip(test_reconstructed[index] * 255.0, 0, 255).astype(np.uint8)
+        anomaly_overlay = np.asarray(overlay["heatmap"], dtype=np.uint8)
+        ground_truth_overlay = np.asarray(overlay["gt_and_heatmap"], dtype=np.uint8)
+        panels = [input_image, reconstruction, anomaly_overlay, ground_truth_overlay]
+        panel_height, panel_width = input_image.shape[:2]
+        if any(panel.shape[:2] != (panel_height, panel_width) for panel in panels):
+            logger.warning("Skipping mismatched CAE four-panel image %d", index)
+            continue
+
+        panel_dir.mkdir(parents=True, exist_ok=True)
+        grid = Image.fromarray(np.concatenate(panels, axis=1), mode="RGB")
+        labelled = add_panel_headers(
+            grid,
+            ["Input", "Reconstruction", "Anomaly Map", "Ground Truth Overlay"],
+            panel_width=panel_width,
+        )
+        labelled.save(panel_dir / f"{index:04d}.png", optimize=True)
+        saved += 1
+
+    return panel_dir if saved else None
+
+
 def _build_cae_result_dict(
     results: dict[str, Any],
     cfg: dict[str, Any],
@@ -375,7 +517,7 @@ def _build_cae_result_dict(
         Standardized baseline result dictionary.
     """
     registry_dir: Path = cfg["registry_dir"]
-    pixel_file = registry_dir / "pixel_metrics.npz"
+    pixel_file = registry_dir / "pixel_metrics.json"
     results["image_level"] = {
         "auroc": results.get("auroc", 0.0),
         "f1_score": results.get("f1_score", 0.0),
@@ -411,6 +553,8 @@ def _build_cae_result_dict(
         "dataset_split": dataset_split,
         "threshold_source": "normal_validation",
         "img_threshold": threshold,
+        "image_auroc": results["auroc"],
+        "accuracy": results["accuracy"],
         "true_positives": results["true_positives"],
         "false_positives": results["false_positives"],
         "false_negatives": results["false_negatives"],
@@ -418,7 +562,11 @@ def _build_cae_result_dict(
         "precision": results["precision"],
         "recall": results["recall"],
         "f1_score": results["f1_score"],
+        "manual_image_f1": results["f1_score"],
+        "manual_image_prec": results["precision"],
+        "manual_image_rec": results["recall"],
         "pixel_auroc": results["pixel_auroc"],
+        "manual_pixel_f1": results["pixel_f1"],
         "pixel_aupimo": results["pixel_aupimo"],
         "aupimo_fpr_bounds": list(AUPIMO_FPR_BOUNDS),
         "aupimo_num_thresholds": AUPIMO_NUM_THRESHOLDS,
@@ -471,7 +619,9 @@ def run_keras_cae_pipeline(
     run_heatmap: bool = False,
     force_retrain: bool = False,
     model_hash: str | None = None,
+    reevaluate_cached: bool = False,
     trial: Any | None = None,
+    registry_base: str | Path = "data/models/keras_cae",
 ) -> dict[str, Any]:
     """Run the complete Keras CAE anomaly detection pipeline for one MVTec category.
 
@@ -503,14 +653,51 @@ def run_keras_cae_pipeline(
         run_heatmap: Whether to compute Reconstruction Error heatmap overlays for anomalous images.
         force_retrain: If True, bypass the cache and force training of a new model.
         model_hash: Optional specific model hash to load directly from registry.
+        reevaluate_cached: If True, explicitly rerun evaluation for a cached model and replace its result snapshot.
         trial: Optional Optuna trial for hyperparameter optimization and pruning.
+        registry_base: Directory containing Keras CAE model caches. Tests can
+            override this to avoid writing into the application's registry.
 
     Returns:
         Dictionary with all results (metrics, scores, heatmap, optional anomaly heatmaps).
     """
-    tf = _require_tf()
+    if model_hash and force_retrain:
+        raise ValueError("An explicit cached model cannot be combined with force_retrain=True")
+
+    # Loading an archived evaluation only reads its saved snapshot. The original
+    # split evidence contains machine-specific paths, so requiring a local
+    # dataset here would reject a valid cache restored on another computer.
+    if model_hash and not reevaluate_cached:
+        requested = find_cached_model(
+            category=category,
+            img_size=img_size,
+            target_hash=model_hash,
+            expected_split_evidence=None,
+            registry_base=registry_base,
+        )
+        if requested is None:
+            raise FileNotFoundError(f"Cached CAE model {model_hash} does not exist or is missing model.keras")
+        return _load_cached_cae_result(*requested)
 
     manifest = build_mvtec_manifest(data_root)
+
+    # Resolve an exact model's category from metadata. Stale UI widget state must
+    # not validate a selected model against a different category's split.
+    if model_hash:
+        requested = find_cached_model(
+            category=category,
+            img_size=img_size,
+            target_hash=model_hash,
+            expected_split_evidence=None,
+            registry_base=registry_base,
+        )
+        if requested is None:
+            raise FileNotFoundError(f"Cached CAE model {model_hash} does not exist or is missing model.keras")
+        requested_category = requested[1].get("category")
+        if not isinstance(requested_category, str) or not requested_category:
+            raise ValueError(f"Cached CAE model {model_hash} has no valid category metadata")
+        category = requested_category
+
     fair_split = build_fair_evaluation_split(manifest, category)
     split_evidence = fair_split.evidence()
     cache_evidence = {**split_evidence, **fair_metric_evidence()}
@@ -531,7 +718,20 @@ def run_keras_cae_pipeline(
         force_retrain=force_retrain,
         model_hash=model_hash,
         cache_evidence=cache_evidence,
+        registry_base=registry_base,
     )
+
+    if model_hash and cached is None:
+        raise FileNotFoundError(
+            f"Cached CAE model {model_hash} does not match the current fair-evaluation dataset protocol. "
+            "Refusing to train from a Load action."
+        )
+
+    if cached is not None and not reevaluate_cached:
+        registry_dir, meta = cached
+        return _load_cached_cae_result(registry_dir, meta)
+
+    tf = _require_tf()
 
     if cached is not None:
         registry_dir, meta = cached
@@ -661,5 +861,16 @@ def run_keras_cae_pipeline(
             gt_masks=gt_masks,
             anomalous_indices=results["anomalous_indices"],
         )
+        four_panel_dir = _save_cae_four_panel_images(
+            registry_dir=cfg["registry_dir"],
+            test_images=test_images,
+            test_reconstructed=test_reconstructed,
+            heatmap_overlays=results["heatmap_overlays"],
+            anomalous_indices=results["anomalous_indices"],
+        )
+        if four_panel_dir is not None:
+            active_meta["four_panel_images_path"] = four_panel_dir.name
+
+    _persist_cae_evaluation_snapshot(results, cfg["registry_dir"], active_meta)
 
     return results

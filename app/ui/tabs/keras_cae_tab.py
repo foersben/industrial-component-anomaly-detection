@@ -45,6 +45,9 @@ def _parse_cae_metadata_file(meta_file: Path) -> dict[str, Any] | None:
             "Batch": meta.get("batch_size", 16),
             "Mask Ratio": meta.get("mask_ratio", 0.25),
             "Preprocessing": prep_display,
+            "Saved Results": (
+                "Yes" if (meta_file.parent / "evaluation_results.json").is_file() else "Needs re-evaluation"
+            ),
             "Created": created_display,
             "_raw_timestamp": ts_str,
             "_raw_preprocessing_steps": prep_list,
@@ -124,7 +127,7 @@ def _sync_cae_session_state(selected_meta: dict[str, Any]) -> None:
 def _handle_cae_single_selection(
     selected_meta: dict[str, Any],
     registry_path: Path,
-) -> bool:
+) -> tuple[bool, bool]:
     """Handle single model selection, state sync, and action buttons in registry.
 
     Args:
@@ -132,7 +135,7 @@ def _handle_cae_single_selection(
         registry_path: Registry root directory path.
 
     Returns:
-        True if the user clicked the Load & Evaluate button, False otherwise.
+        Tuple containing whether Load Saved Results or Re-evaluate & Cache Results was clicked.
     """
     _sync_cae_session_state(selected_meta)
     selected_model_hash = str(selected_meta.get("Hash"))
@@ -145,12 +148,28 @@ def _handle_cae_single_selection(
         f"Preprocessing: `{selected_meta.get('Preprocessing')}`, "
         f"Created: `{selected_meta.get('Created')}`)"
     )
-    col_load, col_del, _ = st.columns([2, 1, 3])
+    col_load, col_reevaluate, col_del, _ = st.columns([2, 2, 1, 2])
+    has_saved_results = selected_meta.get("Saved Results") == "Yes"
     load_selected_clicked = col_load.button(
-        f"⚡ Load & Evaluate Model `{selected_model_hash}`",
+        f"⚡ Load Saved Results `{selected_model_hash}`",
         type="primary",
         key="btn_load_kcae_selected",
+        help="Loads persisted metrics and visualizations only. This action can never train or run inference.",
+        disabled=not has_saved_results,
     )
+    reevaluate_selected_clicked = col_reevaluate.button(
+        "Re-evaluate & Cache Results",
+        key="btn_reevaluate_kcae_selected",
+        help=(
+            "Runs inference and evaluation without training, then saves a snapshot for instant future loading. "
+            "This can take about a minute for a legacy cache."
+        ),
+    )
+    if not has_saved_results:
+        st.warning(
+            "This legacy model has no complete saved result snapshot. Re-evaluate it once to enable instant loading. "
+            "Re-evaluation runs inference and metrics, but it cannot train."
+        )
     with col_del.popover("🗑️ Delete Model", help=f"Move model {selected_model_hash} to Trash"):
         st.warning(f"Move model `{selected_model_hash}` to Trash (can be restored)?")
         if st.button("Move to Trash", type="primary", key="btn_confirm_delete_single"):
@@ -160,7 +179,7 @@ def _handle_cae_single_selection(
                 st.rerun()
             else:
                 st.error(f"Failed to delete model `{selected_model_hash}`.")
-    return load_selected_clicked
+    return load_selected_clicked, reevaluate_selected_clicked
 
 
 def _handle_cae_multi_deletion(selected_hashes: list[str], registry_path: Path) -> None:
@@ -194,20 +213,20 @@ def _handle_cae_multi_deletion(selected_hashes: list[str], registry_path: Path) 
 
 def _render_cae_registry_section(
     registry_path: Path,
-) -> tuple[str | None, dict[str, Any] | None, bool]:
+) -> tuple[str | None, dict[str, Any] | None, bool, bool]:
     """Render the cached model registry table and selection controls.
 
     Args:
         registry_path: Root path to the model registry directory.
 
     Returns:
-        Tuple of (selected_model_hash, selected_model_meta, load_selected_clicked).
+        Tuple of selected hash, metadata, load click, and explicit re-evaluation click.
     """
     st.subheader("Model Registry (Cached Models)")
     cached_models = _load_cached_cae_models_list(registry_path)
     if not cached_models:
         st.caption("No cached models found in registry.")
-        return None, None, False
+        return None, None, False, False
 
     display_models = [{k: v for k, v in m.items() if not k.startswith("_")} for m in cached_models]
     df_models = pd.DataFrame(display_models)
@@ -227,17 +246,17 @@ def _render_cae_registry_section(
     if not selected_model_hashes:
         st.info(
             "💡 **Interactive Model Registry:** Click on any row above to select, load, or delete that "
-            "cached model. The pipeline always loads the newest matching cached model automatically when available."
+            "cached model. Loading saved results never runs training or inference."
         )
-        return None, None, False
+        return None, None, False, False
 
     if len(selected_model_hashes) == 1:
         meta = selected_model_metas[0]
-        load_clicked = _handle_cae_single_selection(meta, registry_path)
-        return selected_model_hashes[0], meta, load_clicked
+        load_clicked, reevaluate_clicked = _handle_cae_single_selection(meta, registry_path)
+        return selected_model_hashes[0], meta, load_clicked, reevaluate_clicked
 
     _handle_cae_multi_deletion(selected_model_hashes, registry_path)
-    return None, None, False
+    return None, None, False, False
 
 
 def _restore_cae_models(
@@ -464,6 +483,7 @@ def _execute_and_display_cae(
     selected_hash: str | None,
     selected_meta: dict[str, Any] | None,
     load_selected_clicked: bool,
+    reevaluate_selected_clicked: bool,
 ) -> None:
     """Execute the Keras CAE pipeline and display results and heatmaps.
 
@@ -472,16 +492,25 @@ def _execute_and_display_cae(
         selected_hash: Model hash if a specific cached model is loaded.
         selected_meta: Metadata dictionary if loading an existing model.
         load_selected_clicked: Whether execution was triggered via registry load.
+        reevaluate_selected_clicked: Whether explicit cached-model re-evaluation was requested.
     """
-    active_hash = selected_hash if load_selected_clicked else None
-    active_force_retrain = False if load_selected_clicked else cfg["force_retrain"]
+    selected_action = load_selected_clicked or reevaluate_selected_clicked
+    active_hash = selected_hash if selected_action else None
+    active_force_retrain = False if selected_action else cfg["force_retrain"]
     active_prep = (
         selected_meta.get("_raw_preprocessing_steps", cfg["prep_steps"])
-        if load_selected_clicked and selected_meta
+        if selected_action and selected_meta
         else cfg["prep_steps"]
     )
 
-    with st.spinner("Executing Keras CAE pipeline and evaluating..."):
+    if load_selected_clicked:
+        spinner_message = f"Loading saved CAE results `{active_hash}`..."
+    elif reevaluate_selected_clicked:
+        spinner_message = f"Re-evaluating CAE model `{active_hash}` and caching results (no training)..."
+    else:
+        spinner_message = "Executing Keras CAE pipeline..."
+
+    with st.spinner(spinner_message):
         try:
             results = run_keras_cae_pipeline(
                 data_root=cfg["data_root"],
@@ -497,8 +526,14 @@ def _execute_and_display_cae(
                 run_heatmap=True,
                 force_retrain=active_force_retrain,
                 model_hash=active_hash,
+                reevaluate_cached=reevaluate_selected_clicked,
             )
-            st.success("Pipeline completed successfully!")
+            if load_selected_clicked:
+                st.success("Saved CAE results loaded. No training or inference was run.")
+            elif reevaluate_selected_clicked:
+                st.success("CAE evaluation completed and cached. No training was run.")
+            else:
+                st.success("Pipeline completed successfully!")
         except Exception as e:
             st.error(f"Pipeline error: {e}")
             return
@@ -529,12 +564,14 @@ def render_keras_cae_tab() -> None:
     )
 
     registry_path = Path("data/models/keras_cae")
-    selected_hash, selected_meta, load_selected_clicked = _render_cae_registry_section(registry_path)
+    selected_hash, selected_meta, load_selected_clicked, reevaluate_selected_clicked = _render_cae_registry_section(
+        registry_path
+    )
     _render_cae_trash_section(registry_path)
     st.divider()
 
     cfg, run_clicked = _render_cae_config_controls()
-    if not (load_selected_clicked or run_clicked):
+    if not (load_selected_clicked or reevaluate_selected_clicked or run_clicked):
         cached_results = st.session_state.get("_kcae_displayed_results")
         if isinstance(cached_results, dict) and st.session_state.get(
             "_kcae_displayed_signature"
@@ -553,6 +590,7 @@ def render_keras_cae_tab() -> None:
         selected_hash=selected_hash,
         selected_meta=selected_meta,
         load_selected_clicked=load_selected_clicked,
+        reevaluate_selected_clicked=reevaluate_selected_clicked,
     )
 
 

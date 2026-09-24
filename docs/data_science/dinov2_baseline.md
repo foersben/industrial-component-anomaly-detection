@@ -61,7 +61,7 @@ pixi run python -m app.cli dinov2 --category all --masking published
 
 The all-category runner resumes safely: it reuses a category only when its metadata and both metric archives are complete (and its heatmap archive is present when `--heatmap` was requested). Between categories it releases trainer and accelerator state. Saved heatmaps remain available on disk but are omitted from the in-memory all-category response to prevent their nested pixel lists from accumulating into several gigabytes. The response contains compact per-category results and unweighted macro averages. These aggregates are final reporting outputs only; they are not used to change masking, neighbours, thresholds, or any other setting.
 
-The API exposes the same runner at `POST /api/pipelines/dinov2`. Artifacts are written under `data/models/dinov2/<model-hash>/` as `metadata.json`, `image_metrics.npz`, `pixel_metrics.npz`, and optional compressed heatmap overlays. Metadata includes the exact path digests, split parameters, masking policy, thresholds, metric settings, and raw summary values needed to audit comparisons.
+The API exposes the same runner at `POST /api/pipelines/dinov2`. Artifacts are written under `data/models/dinov2/<model-hash>/` as `metadata.json`, `image_metrics.npz`, compact downsampled `pixel_metrics.json`, and optional compressed heatmap overlays. Metadata includes the exact path digests, split parameters, masking policy, thresholds, metric settings, and raw summary values needed to audit comparisons.
 
 ## Enhanced position-aware experiment
 
