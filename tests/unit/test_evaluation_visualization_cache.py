@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from app.pipelines.evaluation.metrics import MAX_PERSISTED_PIXEL_CURVE_POINTS, save_evaluation_metrics
 from app.pipelines.evaluation.visualization import (
     MAX_PLOT_POINTS,
     _downsample_curve,
@@ -55,3 +56,27 @@ def test_curve_display_is_bounded_without_losing_endpoints() -> None:
     assert sampled_x[0] == x[0]
     assert sampled_x[-1] == x[-1]
     np.testing.assert_array_equal(sampled_y, sampled_x * 2)
+
+
+def test_pixel_curve_is_compact_but_keeps_exact_summaries(tmp_path: Path) -> None:
+    """Pixel caches retain exact summaries while bounding persisted curve points."""
+    thresholds = np.linspace(0.0, 1.0, MAX_PERSISTED_PIXEL_CURVE_POINTS * 3)
+    precision = np.linspace(0.2, 1.0, len(thresholds) + 1)
+    recall = np.linspace(1.0, 0.0, len(thresholds) + 1)
+    metrics_path = tmp_path / "pixel_metrics.json"
+
+    save_evaluation_metrics(metrics_path, precision, recall, thresholds, aupimo=0.73, level="pixel")
+
+    import json
+
+    archive = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert len(archive["thresholds"]) == MAX_PERSISTED_PIXEL_CURVE_POINTS
+    assert int(archive["curve_points_full"]) == len(thresholds)
+    assert bool(archive["curve_compacted"])
+    assert float(archive["aupimo"]) == pytest.approx(0.73)
+    exact_aupr = float(archive["integrated_aupr"])
+    exact_crossover = float(archive["t_crossover"])
+
+    loaded = load_and_prepare_evaluation_data(str(metrics_path))
+    assert loaded.integrated_aupr == pytest.approx(exact_aupr)
+    assert loaded.t_crossover == pytest.approx(exact_crossover)

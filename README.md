@@ -55,34 +55,44 @@ code .
 
 ### 3. Bootstrap the Environment
 
-Run the unified setup command to synchronize dependencies, configure Git hooks, and install extensions:
+Install the development environment:
 
 ```bash
-pixi run setup
-# Or if 'just' is in your system path:
-just setup
+pixi install -e dev
 ```
 
-### 4. Fetching the Data & Benchmarks
+### 4. Restore Saved Evaluations and Images
 
-We host the ~5 GB MVTec AD dataset on Hugging Face to prevent Git LFS bloat. We also pull the pre-computed anomaly score baseline matrices. Run:
+The public [model archive](https://huggingface.co/abulhawa/industrial-component-anomaly-detection-models) contains the saved metrics, heatmaps, and four-panel galleries. Download it into the registry expected by Streamlit:
 
 ```bash
-just fetch-data
+pixi run --frozen -e dev hf download \
+  abulhawa/industrial-component-anomaly-detection-models \
+  --repo-type model --local-dir data/models
 ```
 
-*(This downloads the image arrays to `data/raw/` and the benchmark metadata to `data/external/aupimo_benchmarks/`)*.
+The PatchCore and Keras CAE **Load Saved Results** actions read these snapshots without the raw dataset. See the [model artifact storage guide](docs/guides/model_artifact_storage.md) for details.
+
+### 5. Download MVTec AD for New Evaluations
+
+Training or re-evaluating models requires the MVTec AD dataset. Download it separately:
+
+```bash
+pixi run --frozen -e dev just download-data
+```
+
+The dataset is not included in the model archive. DINO baseline runners also need the dataset to reproduce their evaluations.
 
 ---
 
 ## 🖥️ Interactive Application (Streamlit)
 
-Once the environment is setup and data is fetched, you can launch the interactive web application to evaluate models and analyze anomaly heatmaps.
+Once the environment and model archive are installed, you can launch the interactive web application to browse saved evaluations and anomaly heatmaps. Download the dataset before training or re-evaluating.
 
 This launches a **Monolithic Streamlit** application on port 8501.
 
 ```bash
-just run
+pixi run --frozen -e dev ui
 ```
 
 The defense presentation displays pages from `docs/latex/latex_beamer_presentation/main.pdf` inside Streamlit. Use the Previous/Next buttons or scroll the mouse wheel to change slides; the live demo remains in the app. After editing `main.tex`, rebuild the PDF and refresh Streamlit:
@@ -319,7 +329,7 @@ To retrieve the dataset, we host the ~5 GB high-resolution images on Hugging Fac
 just download-data
 ```
 
-For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md).
+For detailed instructions on the dataset scope, how to upload it to Hugging Face, or how it is structured, refer to the [Dataset Setup Guide](./docs/guides/dataset_setup.md). Trained artifacts can be archived separately by following the [Model Artifact Storage Guide](./docs/guides/model_artifact_storage.md).
 
 ### 5. Extract Dataset (Optional)
 
@@ -362,6 +372,8 @@ Use `just` to coordinate all workspace tasks. **Never call bare `pip`, `poetry`,
 | `just extract-data` | Extracts the downloaded `.tar.xz` dataset packages locally (if downloaded manually). |
 | `just hf-login` | Integrates with KeePassXC Secret Service to log in to Hugging Face Hub (falls back to interactive login). |
 | `just upload-data` | Uploads a local directory back to the Hugging Face Hub dataset repository. |
+| `just upload-models REPO_ID` | Archives active `data/models/` artifacts in a Hugging Face model repository without deleting local files. |
+| `just download-models REPO_ID` | Restores an archived Hugging Face model repository into `data/models/`. |
 | `just lint` | Sequentially auto-fixes lint errors, enforces layout formatting, evaluates strict types via Mypy, and runs the OKF compliance Python script. |
 | `just test` | Runs the asynchronous test suite via Pytest with code coverage matrix evaluation. |
 | `just format` | Safely forces code blocks to match global stylistic spacing layout parameters. |

@@ -90,19 +90,20 @@ def _load_cached_patchcore_result(
         Structured BaselineResult matching fair-eval-v1 protocol.
 
     Raises:
-        FileNotFoundError: If metric npz files are absent.
+        FileNotFoundError: If cached metric artifacts are absent.
         ValueError: If genuine AUPIMO or required metrics are missing.
     """
     logger.info("Found cached Patchcore model in %s. Loading evaluation metrics...", cached_dir)
-    pixel_file = cached_dir / "pixel_metrics.npz"
+    pixel_file = cached_dir / "pixel_metrics.json"
     image_file = cached_dir / "image_metrics.npz"
 
     if not pixel_file.exists() or not image_file.exists():
         raise FileNotFoundError("Fair PatchCore cache is missing required metric artifacts")
-    with np.load(pixel_file, allow_pickle=False) as pixel_data:
-        if "aupimo" not in pixel_data:
-            raise ValueError("Fair PatchCore pixel metrics are missing genuine AUPIMO")
-        aupimo = float(pixel_data["aupimo"])
+    with open(pixel_file, encoding="utf-8") as metrics_file:
+        pixel_data = json.load(metrics_file)
+    if "aupimo" not in pixel_data:
+        raise ValueError("Fair PatchCore pixel metrics are missing genuine AUPIMO")
+    aupimo = float(pixel_data["aupimo"])
 
     required_metric_keys = {
         "image_auroc",
@@ -218,6 +219,36 @@ def run_patchcore_pipeline(
     """
     if not np.isclose(fpr_limit, AUPIMO_FPR_BOUNDS[1]):
         raise ValueError(f"fair-eval-v1 requires fpr_limit={AUPIMO_FPR_BOUNDS[1]}")
+    if model_hash and force_retrain:
+        raise ValueError("An explicit cached model cannot be combined with force_retrain=True")
+
+    # An exact-hash Load action only needs the archived metrics. Dataset path
+    # fingerprints are machine-specific and are checked for new evaluations
+    # below, where the dataset is actually used.
+    if model_hash:
+        selected = find_cached_patchcore_model(
+            category=category,
+            target_hash=model_hash,
+            registry_base=registry_base,
+            expected_split_evidence=None,
+        )
+        if selected is None:
+            raise FileNotFoundError(f"Cached PatchCore run {model_hash} does not exist")
+        cached_dir, meta = selected
+        cached_category = meta.get("category")
+        if not isinstance(cached_category, str) or not cached_category:
+            raise ValueError(f"Cached PatchCore run {model_hash} has no valid category metadata")
+        return _load_cached_patchcore_result(
+            cached_dir=cached_dir,
+            meta=meta,
+            category=cached_category,
+            backbone=backbone,
+            feature_layers=feature_layers,
+            coreset_sampling_ratio=coreset_sampling_ratio,
+            num_neighbors=num_neighbors,
+            fpr_limit=fpr_limit,
+            raw_prep_list=meta.get("preprocessing_steps", []),
+        )
 
     if isinstance(pipeline, PreprocessingPipeline):
         proc_pipeline = pipeline

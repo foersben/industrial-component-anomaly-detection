@@ -1,5 +1,6 @@
 """Evaluation visualization functions for Streamlit."""
 
+import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, NamedTuple
@@ -52,11 +53,23 @@ def _downsample_curve(
 def _load_and_prepare_evaluation_data_cached(data_path: str, modified_ns: int) -> ProcessedEvaluationData:
     """Load processed metrics once for an unchanged on-disk artifact."""
     del modified_ns
-    with np.load(data_path, allow_pickle=True) as data:
-        precisions = data["precision"]
-        recalls = data["recall"]
-        thresholds = data["thresholds"]
-        raw_level = str(data["level"]) if "level" in data else ""
+    if Path(data_path).suffix == ".json":
+        with open(data_path, encoding="utf-8") as metrics_file:
+            data = json.load(metrics_file)
+        precisions = np.asarray(data["precision"])
+        recalls = np.asarray(data["recall"])
+        thresholds = np.asarray(data["thresholds"])
+        raw_level = str(data.get("level", ""))
+        stored_t_crossover = float(data["t_crossover"]) if "t_crossover" in data else None
+        stored_integrated_aupr = float(data["integrated_aupr"]) if "integrated_aupr" in data else None
+    else:
+        with np.load(data_path, allow_pickle=False) as data:
+            precisions = data["precision"]
+            recalls = data["recall"]
+            thresholds = data["thresholds"]
+            raw_level = str(data["level"]) if "level" in data else ""
+            stored_t_crossover = float(data["t_crossover"]) if "t_crossover" in data else None
+            stored_integrated_aupr = float(data["integrated_aupr"]) if "integrated_aupr" in data else None
 
     # Align shapes if metrics returned boundary values
     if len(precisions) == len(thresholds) + 1:
@@ -65,7 +78,7 @@ def _load_and_prepare_evaluation_data_cached(data_path: str, modified_ns: int) -
 
     # Calculate Optimal Breakpoint
     diff = np.abs(precisions - recalls)
-    t_crossover = float(thresholds[np.argmin(diff)])
+    t_crossover = stored_t_crossover if stored_t_crossover is not None else float(thresholds[np.argmin(diff)])
 
     # Arrays from precision_recall_curve are ordered by decision threshold,
     # making recall monotonically decreasing. This preserves the curve's continuous line.
@@ -77,7 +90,9 @@ def _load_and_prepare_evaluation_data_cached(data_path: str, modified_ns: int) -
         sorted_recalls = np.append(sorted_recalls, 0.0)
         sorted_precisions = np.append(sorted_precisions, sorted_precisions[-1])
 
-    integrated_aupr = float(auc(sorted_recalls, sorted_precisions))
+    integrated_aupr = (
+        stored_integrated_aupr if stored_integrated_aupr is not None else float(auc(sorted_recalls, sorted_precisions))
+    )
     eval_level_label = (
         "Image-Level (Classification)" if "image" in raw_level or "image" in data_path else "Pixel-Level (Localization)"
     )
