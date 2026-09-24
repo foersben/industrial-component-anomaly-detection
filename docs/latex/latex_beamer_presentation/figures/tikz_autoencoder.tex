@@ -1,0 +1,33 @@
+\begin{tikzpicture}[
+  scale=0.72, every node/.style={scale=0.72},
+  block/.style={draw=darkink!70, fill=white, rounded corners=2pt, minimum height=1.2cm, align=center, font=\tiny},
+  arr/.style={-{Stealth[scale=0.7]}, thick, color=darkink!60}
+]
+  % Input
+  \node[block, minimum width=0.6cm, fill=teal!10] (in) {$x$};
+  
+  % Encoder (Trapezoid)
+  \node[draw=teal!80, fill=teal!15, shape=trapezium, shape border rotate=270, 
+        minimum height=1.1cm, trapezium angle=75, right=0.35cm of in, font=\tiny\bfseries\color{teal}] (enc) {Enc};
+  
+  % Bottleneck
+  \node[block, right=0.35cm of enc, minimum width=0.25cm, minimum height=0.6cm, fill=accent!25] (z) {\tiny $z$};
+  
+  % Decoder (Trapezoid)
+  \node[draw=teal!80, fill=teal!15, shape=trapezium, shape border rotate=90, 
+        minimum height=1.1cm, trapezium angle=75, right=0.35cm of z, font=\tiny\bfseries\color{teal}] (dec) {Dec};
+  
+  % Output & Error
+  \node[block, minimum width=0.6cm, fill=teal!10, right=0.35cm of dec] (out) {$\hat{x}$};
+  \node[draw=defectred, fill=defectred!15, circle, inner sep=1.5pt, right=0.3cm of out, font=\tiny\bfseries\color{defectred}] (diff) {$\Delta$};
+
+  % Arrows
+  \draw[arr] (in) -- (enc);
+  \draw[arr] (enc) -- (z);
+  \draw[arr] (z) -- (dec);
+  \draw[arr] (dec) -- (out);
+  \draw[arr] (out) -- (diff);
+  
+  % Bottom note
+  \node[below=0.25cm of z, font=\tiny\color{muted}, xshift=0.35cm] {Score: $\mathrm{TopK}_{0.2\%}\!\bigl(0.84(1{-}\mathrm{SSIM}) + 0.16\,\mathrm{MAE}\bigr)$};
+\end{tikzpicture}

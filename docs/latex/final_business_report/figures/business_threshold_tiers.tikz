@@ -18,7 +18,7 @@
     title={Risk tiers select different quantiles of the same normal-validation distribution},
     title style={
         font=\small,
-        yshift=-1.5ex,   % Pulls the title down closer to the top border (adjust to taste)
+        yshift=-0.5ex,   % Pulls the title down closer to the top border (adjust to taste)
         inner ysep=0pt   % Strips the node's internal top/bottom padding
     },
     xlabel={\scriptsize Illustrative anomaly score (higher means less like the normal reference set)},
@@ -59,8 +59,8 @@
     \def\gaussRed{\scaleRed * exp(-((x-\muRed)^2)/(2*\sigmaRed^2))}
 
     % 1. Filled Area Distributions (Plotted first so lines go on top)
-    \addplot[fill=pltBlue, fill opacity=0.25, draw=none, domain=0:1, samples=150] {\gaussBlue} \closedcycle;
-    \addplot[fill=pltRed, fill opacity=0.25, draw=none, domain=0:1, samples=150] {\gaussRed} \closedcycle;
+    \addplot[fill=pltBlue, fill opacity=0.25, draw=none, forget plot, domain=0:1, samples=150] {\gaussBlue} \closedcycle;
+    \addplot[fill=pltRed, fill opacity=0.25, draw=none, forget plot, domain=0:1, samples=150] {\gaussRed} \closedcycle;
 
     % 2. Solid Lines for Distributions
     \addplot[color=pltBlue, line width=1.5pt, domain=0:1, samples=150] {\gaussBlue};

@@ -8,7 +8,6 @@ import pandas as pd
 import streamlit as st
 
 from app.domain.categories import discover_dataset_categories
-from app.pipelines.evaluation.visualization import render_evaluation_curves
 from app.pipelines.modelling.patchcore import (
     delete_cached_patchcore_model,
     list_trashed_patchcore_models,
@@ -468,10 +467,6 @@ def _execute_and_display_patchcore(
         st.session_state["_patchcore_displayed_results"] = results_dict
         st.session_state["_patchcore_displayed_signature"] = _patchcore_display_signature(cfg)
         _render_evaluation_summary(results_dict, model_type="patchcore")
-        pixel_metrics = results_dict.get("pixel_level", {})
-        metrics_path = pixel_metrics.get("metrics_path")
-        if metrics_path:
-            render_evaluation_curves(metrics_path)
         _render_heatmap_explorer(results_dict)
     else:
         st.text_area("Results Summary", value=str(results_dict), height=180)
@@ -497,8 +492,6 @@ def render_baseline_patchcore_tab() -> None:
         cached_results := st.session_state.get("_patchcore_displayed_results"), dict
     ) and st.session_state.get("_patchcore_displayed_signature") == _patchcore_display_signature(cfg):
         _render_evaluation_summary(cached_results, model_type="patchcore")
-        if metrics_path := cached_results.get("pixel_level", {}).get("metrics_path"):
-            render_evaluation_curves(metrics_path)
         _render_heatmap_explorer(cached_results)
 
 
