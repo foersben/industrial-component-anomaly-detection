@@ -13,9 +13,7 @@ def main() -> None:
     args = parser.parse_args()
 
     paths = sorted(
-        path
-        for path in args.registry.rglob("pixel_metrics.npz")
-        if ".legacy_migration_backups" not in path.parts
+        path for path in args.registry.rglob("pixel_metrics.npz") if ".legacy_migration_backups" not in path.parts
     )
     original_bytes = 0
     compacted_bytes = 0
